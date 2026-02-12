@@ -1,0 +1,6 @@
+<div id="toast-wrapper-{{.ID}}" class="toast-wrapper" hx-swap-oob="beforeend:#toast-container">
+    <div id="toast-{{.ID}}" class="toast toast-{{.Type}}" data-toast>
+        <span class="toast-message">{{.Message}}</span>
+        <button class="toast-close" onclick="this.parentElement.parentElement.remove()">&times;</button>
+    </div>
+</div>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Werewolf - Sign In</title>
+    <link rel="stylesheet" href="/static/pico.min.css">
+    <script src="/static/htmx.min.js"></script>
+    <style>
+        #toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 400px;
+        }
+        .toast {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-radius: var(--pico-border-radius);
+            background: var(--pico-card-background-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: toast-in 0.3s ease-out;
+        }
+        .toast-error { border-left: 4px solid var(--pico-del-color); }
+        .toast-message { flex: 1; margin-right: 1rem; }
+        .toast-close {
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 0;
+            width: auto;
+            color: var(--pico-muted-color);
+        }
+        .toast-close:hover { color: var(--pico-color); }
+        .toast-wrapper { transition: all 0.3s ease-out; }
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toast-out {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
+        .toast.removing { animation: toast-out 0.3s ease-in forwards; }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+    <main class="container">
+        <article>
+            <header>
+                <h1>Werewolf</h1>
+                <p>A social deduction game</p>
+            </header>
+
+            <div id="auth-container">
+                {{if .}}
+                <section>
+                    <a href="/game" role="button">Join Game</a>
+                    <a href="/logout" role="button" class="secondary">Logout</a>
+                </section>
+                {{else}}
+                <section>
+                    <h2>New Player</h2>
+                    <form hx-post="/signup" hx-target="#auth-container" hx-swap="innerHTML">
+                        <label for="signup-name">
+                            Choose your name
+                            <input type="text" id="signup-name" name="name" placeholder="Enter your name" required>
+                        </label>
+                        <button type="submit" id="btn-signup">Join Game</button>
+                    </form>
+                </section>
+
+                <hr>
+
+                <section>
+                    <h2>Returning Player</h2>
+                    <p>Already signed up on another device? Enter your name and secret code.</p>
+                    <form hx-post="/login" hx-target="#auth-container" hx-swap="innerHTML">
+                        <label for="login-name">
+                            Name
+                            <input type="text" id="login-name" name="name" placeholder="Your name" required>
+                        </label>
+                        <label for="secret-code">
+                            Secret Code
+                            <input type="text" id="secret-code" name="secret_code" placeholder="Your secret code" required>
+                        </label>
+                        <button type="submit" id="btn-login">Login</button>
+                    </form>
+                </section>
+                {{end}}
+            </div>
+        </article>
+    </main>
+    <script>
+        function initToast(toast) {
+            let timeout;
+            let remaining = 10000;
+            let startTime;
+            function startTimer() {
+                startTime = Date.now();
+                timeout = setTimeout(function() {
+                    toast.classList.add('removing');
+                    setTimeout(function() { toast.remove(); }, 300);
+                }, remaining);
+            }
+            function pauseTimer() {
+                clearTimeout(timeout);
+                remaining -= Date.now() - startTime;
+            }
+            toast.addEventListener('mouseenter', pauseTimer);
+            toast.addEventListener('mouseleave', startTimer);
+            startTimer();
+        }
+        document.querySelectorAll('[data-toast]').forEach(initToast);
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) {
+                        if (node.hasAttribute('data-toast')) initToast(node);
+                        node.querySelectorAll('[data-toast]').forEach(initToast);
+                    }
+                });
+            });
+        });
+        observer.observe(document.getElementById('toast-container'), { childList: true, subtree: true });
+    </script>
+</body>
+</html>

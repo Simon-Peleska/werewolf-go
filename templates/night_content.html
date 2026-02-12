@@ -1,0 +1,15 @@
+<div id="game-content" hx-swap-oob="true">
+    <section>
+        <h2>Night Phase</h2>
+        <p>The village sleeps...</p>
+    </section>
+
+    <section>
+        <h2>Players</h2>
+        <ul class="player-list">
+            {{range .Players}}
+            <li>{{.Name}}</li>
+            {{end}}
+        </ul>
+    </section>
+</div>

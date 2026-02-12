@@ -1,0 +1,7 @@
+<div id="character-info" class="role-reveal" hx-swap-oob="true">
+    <h2>Character Information</h2>
+    <p><strong>Role:</strong> {{.RoleName}}</p>
+    <p>{{.RoleDescription}}</p>
+    <p><strong>Team:</strong> {{.Team}}</p>
+    <p><strong>Status:</strong> {{if .IsAlive}}Alive{{else}}Dead{{end}}</p>
+</div>

@@ -1,0 +1,70 @@
+<div id="game-content" hx-swap-oob="true">
+    <div id="status-bar" class="status-bar">
+        <span><strong>Players:</strong> {{.PlayerCount}}</span>
+        <span><strong>Roles:</strong> {{.TotalRoles}}</span>
+        <span id="status-message">
+            {{if .CanStart}}
+                Ready to start!
+            {{else if gt .TotalRoles .PlayerCount}}
+                Need {{subtract .TotalRoles .PlayerCount}} more players
+            {{else if lt .TotalRoles .PlayerCount}}
+                Need {{subtract .PlayerCount .TotalRoles}} more roles
+            {{else if eq .TotalRoles 0}}
+                Configure roles below
+            {{end}}
+        </span>
+    </div>
+
+    <section>
+        <h2>Players ({{.PlayerCount}})</h2>
+        {{if .Players}}
+        <ul id="player-list" class="player-list">
+            {{range .Players}}
+            <li>{{.Name}}</li>
+            {{end}}
+        </ul>
+        {{else}}
+        <p id="player-list">No players have joined yet.</p>
+        {{end}}
+    </section>
+
+    <hr>
+
+    <section>
+        <h2>Role Configuration</h2>
+        <p><small>Select which roles and how many of each to include in the game.</small></p>
+
+        {{range .RoleConfigs}}
+        <div id="role-{{.Role.ID}}" class="role-counter role-team-{{.Role.Team}}">
+            <form ws-send style="display:inline;">
+                <input type="hidden" name="action" value="update_role">
+                <input type="hidden" name="role_id" value="{{.Role.ID}}">
+                <input type="hidden" name="delta" value="-1">
+                <button type="submit" id="btn-remove-{{.Role.ID}}" {{if eq .Count 0}}disabled{{end}}>-</button>
+            </form>
+            <span id="count-{{.Role.ID}}" class="role-count">{{.Count}}</span>
+            <form ws-send style="display:inline;">
+                <input type="hidden" name="action" value="update_role">
+                <input type="hidden" name="role_id" value="{{.Role.ID}}">
+                <input type="hidden" name="delta" value="1">
+                <button type="submit" id="btn-add-{{.Role.ID}}">+</button>
+            </form>
+            <span class="role-name">
+                <strong>{{.Role.Name}}</strong>
+                <br><small>{{.Role.Description}}</small>
+            </span>
+        </div>
+        {{end}}
+    </section>
+
+    <hr>
+
+    <section>
+        <form ws-send>
+            <input type="hidden" name="action" value="start_game">
+            <button type="submit" id="btn-start" {{if not .CanStart}}disabled{{end}}>
+                Start Game
+            </button>
+        </form>
+    </section>
+</div>
