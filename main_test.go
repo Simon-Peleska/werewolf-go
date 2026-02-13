@@ -1740,3 +1740,388 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 
 	ctx.logger.Debug("=== Test passed ===")
 }
+
+// ============================================================================
+// Day Phase Test Helpers
+// ============================================================================
+
+// dayVoteForPlayer clicks the day vote button for a specific player
+func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Day voting for: %s", tp.Name, targetName)
+	}
+
+	// Find the button that contains this player's name
+	buttons, err := tp.p().Elements("[id^='day-vote-btn-']")
+	if err != nil {
+		if tp.logger != nil {
+			tp.logger.Debug("[%s] Failed to find day vote buttons: %v", tp.Name, err)
+		}
+		return
+	}
+
+	for _, btn := range buttons {
+		text := strings.TrimSpace(btn.MustText())
+		if strings.Contains(text, targetName) {
+			btn.MustClick()
+			time.Sleep(20 * time.Millisecond)
+			tp.logHTML("after day voting for " + targetName)
+			return
+		}
+	}
+
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Could not find day vote button for: %s", tp.Name, targetName)
+	}
+}
+
+// getDayVoteButtons returns the names of players that can be voted for during day
+func (tp *TestPlayer) getDayVoteButtons() []string {
+	tp.reload()
+	time.Sleep(20 * time.Millisecond)
+
+	var names []string
+	elements, err := tp.p().Elements("[id^='day-vote-btn-']")
+	if err != nil {
+		return names
+	}
+	for _, el := range elements {
+		text := strings.TrimSpace(el.MustText())
+		if text != "" {
+			names = append(names, text)
+		}
+	}
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Day vote buttons: %v", tp.Name, names)
+	}
+	return names
+}
+
+// isGameFinished checks if the game has ended
+func (tp *TestPlayer) isGameFinished() bool {
+	html, _ := tp.Page.HTML()
+	isFinished := strings.Contains(html, "Game Over")
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Is game finished: %v", tp.Name, isFinished)
+	}
+	return isFinished
+}
+
+// getWinner returns the winner if game is finished
+func (tp *TestPlayer) getWinner() string {
+	html, _ := tp.Page.HTML()
+	if strings.Contains(html, "Villagers Win") {
+		return "villagers"
+	}
+	if strings.Contains(html, "Werewolves Win") {
+		return "werewolves"
+	}
+	return ""
+}
+
+// ============================================================================
+// Day Phase Tests
+// ============================================================================
+
+// setupDayPhaseGame creates a game, starts night, werewolves kill someone, transitions to day
+func setupDayPhaseGame(ctx *TestContext, browser *TestBrowser, numVillagers, numWerewolves int) ([]*TestPlayer, []*TestPlayer, []*TestPlayer) {
+	players := setupNightPhaseGame(ctx, browser, numVillagers, numWerewolves)
+	werewolves, villagers := findPlayersByRole(players)
+
+	// All werewolves vote for the first villager to transition to day
+	targetName := villagers[0].Name
+	for _, w := range werewolves {
+		w.voteForPlayer(targetName)
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	ctx.logger.LogDB("after night kill, should be in day phase")
+
+	return players, werewolves, villagers
+}
+
+func TestDayVoteByAlivePlayer(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing day vote by alive player ===")
+
+	// Setup: 3 villagers, 1 werewolf - werewolf kills villager 0, leaves 2 villagers and 1 werewolf
+	players, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	// Verify we're in day phase
+	werewolves[0].reload()
+	time.Sleep(20 * time.Millisecond)
+	if !werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: not in day phase")
+		t.Fatal("Should be in day phase after night kill")
+	}
+
+	// Alive player should see vote buttons
+	voteButtons := villagers[1].getDayVoteButtons()
+	if len(voteButtons) == 0 {
+		ctx.logger.LogDB("FAIL: no day vote buttons")
+		t.Fatal("Alive player should see day vote buttons")
+	}
+
+	ctx.logger.Debug("Day vote buttons: %v", voteButtons)
+
+	// Vote for the werewolf
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+
+	// Verify vote was recorded (check page shows vote list)
+	villagers[1].reload()
+	content := villagers[1].getGameContent()
+	if !strings.Contains(content, "voted for") {
+		ctx.logger.LogDB("FAIL: vote not shown")
+		t.Error("Vote should be visible in the vote list")
+	}
+
+	ctx.logger.Debug("Players: %d", len(players))
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDayVoteTransitionToNight(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing day vote transition to night ===")
+
+	// Setup: 2 villagers, 1 werewolf - after night kill, 1 villager and 1 werewolf remain
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 2, 1)
+
+	// Both alive players vote for each other (the remaining villager and werewolf)
+	// With 2 alive players, majority is 2, so both must vote for same person
+	// Let's have both vote for the werewolf
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(20 * time.Millisecond)
+	werewolves[0].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(50 * time.Millisecond)
+
+	ctx.logger.LogDB("after day votes")
+
+	// With a split vote (1-1), no majority, should transition to night without elimination
+	villagers[1].reload()
+	time.Sleep(20 * time.Millisecond)
+
+	if villagers[1].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: still in day phase after all voted")
+		t.Error("Should transition to night after all players voted")
+	}
+
+	// Should be in night 2 now
+	if !villagers[1].isInNightPhase() {
+		content := villagers[1].getGameContent()
+		ctx.logger.LogDB("FAIL: not in night phase")
+		t.Errorf("Should be in night phase. Content: %s", content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestVillagersWinByEliminatingWerewolf(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing villagers win by eliminating werewolf ===")
+
+	// Setup: 3 villagers, 1 werewolf - after night kill, 2 villagers and 1 werewolf remain
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	// Both remaining villagers vote for the werewolf (majority of 2 out of 3)
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(20 * time.Millisecond)
+	villagers[2].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(20 * time.Millisecond)
+	// Werewolf votes for a villager (won't matter)
+	werewolves[0].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(50 * time.Millisecond)
+
+	ctx.logger.LogDB("after day elimination vote")
+
+	// Game should be finished with villagers winning
+	villagers[1].reload()
+	time.Sleep(20 * time.Millisecond)
+
+	if !villagers[1].isGameFinished() {
+		content := villagers[1].getGameContent()
+		ctx.logger.LogDB("FAIL: game not finished")
+		t.Errorf("Game should be finished after eliminating last werewolf. Content: %s", content)
+		return
+	}
+
+	winner := villagers[1].getWinner()
+	if winner != "villagers" {
+		ctx.logger.LogDB("FAIL: wrong winner")
+		t.Errorf("Villagers should win, got: %s", winner)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestWerewolvesWinByEliminatingVillagers(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing werewolves win by eliminating villagers ===")
+
+	// Setup: 2 villagers, 2 werewolves - after night kill, 1 villager and 2 werewolves remain
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 2, 2)
+
+	// Both werewolves vote for the remaining villager
+	werewolves[0].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(20 * time.Millisecond)
+	werewolves[1].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(20 * time.Millisecond)
+	// Villager votes for a werewolf (won't matter with 2v1)
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(50 * time.Millisecond)
+
+	ctx.logger.LogDB("after day elimination vote")
+
+	// Game should be finished with werewolves winning
+	werewolves[0].reload()
+	time.Sleep(20 * time.Millisecond)
+
+	if !werewolves[0].isGameFinished() {
+		content := werewolves[0].getGameContent()
+		ctx.logger.LogDB("FAIL: game not finished")
+		t.Errorf("Game should be finished after eliminating last villager. Content: %s", content)
+		return
+	}
+
+	winner := werewolves[0].getWinner()
+	if winner != "werewolves" {
+		ctx.logger.LogDB("FAIL: wrong winner")
+		t.Errorf("Werewolves should win, got: %s", winner)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestNoEliminationOnTiedVote(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing no elimination on tied vote ===")
+
+	// Setup: 3 villagers, 2 werewolves - after night kill, 2 villagers and 2 werewolves remain (4 alive)
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 2)
+
+	// Create a tie: 2 votes for villager, 2 votes for werewolf
+	werewolves[0].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(20 * time.Millisecond)
+	werewolves[1].dayVoteForPlayer(villagers[1].Name)
+	time.Sleep(20 * time.Millisecond)
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(20 * time.Millisecond)
+	villagers[2].dayVoteForPlayer(werewolves[0].Name)
+	time.Sleep(50 * time.Millisecond)
+
+	ctx.logger.LogDB("after tied vote")
+
+	// With a 2-2 tie, no majority (need 3), should transition to night without elimination
+	villagers[1].reload()
+	time.Sleep(20 * time.Millisecond)
+
+	// Should be in night 2
+	if !villagers[1].isInNightPhase() {
+		if villagers[1].isGameFinished() {
+			ctx.logger.LogDB("FAIL: game ended on tie")
+			t.Error("Game should not end on a tied vote")
+		} else {
+			content := villagers[1].getGameContent()
+			ctx.logger.LogDB("FAIL: not in night after tie")
+			t.Errorf("Should transition to night after tied vote. Content: %s", content)
+		}
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDeadPlayerCannotVote(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing dead player cannot vote ===")
+
+	// Setup: 3 villagers, 1 werewolf - werewolf kills villager 0
+	_, _, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	// villagers[0] is dead (killed at night)
+	deadPlayer := villagers[0]
+
+	// Dead player should NOT see vote buttons
+	deadPlayer.reload()
+	time.Sleep(20 * time.Millisecond)
+
+	voteButtons := deadPlayer.getDayVoteButtons()
+	if len(voteButtons) > 0 {
+		ctx.logger.LogDB("FAIL: dead player sees vote buttons")
+		t.Errorf("Dead player should not see vote buttons, but found: %v", voteButtons)
+	}
+
+	// Check that the page shows "You are dead and cannot vote"
+	content := deadPlayer.getGameContent()
+	if !strings.Contains(content, "dead") || !strings.Contains(content, "cannot vote") {
+		ctx.logger.LogDB("FAIL: no dead message shown")
+		t.Error("Dead player should see message that they cannot vote")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestCannotVoteForDeadPlayer(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing cannot vote for dead player ===")
+
+	// Setup: 3 villagers, 1 werewolf - werewolf kills villager 0
+	_, _, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	// villagers[0] is dead
+	deadPlayerName := villagers[0].Name
+
+	// Living player should NOT see dead player in vote buttons
+	alivePlayer := villagers[1]
+	voteButtons := alivePlayer.getDayVoteButtons()
+
+	for _, name := range voteButtons {
+		if name == deadPlayerName {
+			ctx.logger.LogDB("FAIL: dead player in vote options")
+			t.Errorf("Dead player %s should not be in vote options", deadPlayerName)
+		}
+	}
+
+	// Should only see alive players (2 villagers + 1 werewolf = 3)
+	expectedAlive := 3 // villagers[1], villagers[2], werewolves[0]
+	if len(voteButtons) != expectedAlive {
+		ctx.logger.LogDB("FAIL: wrong number of vote buttons")
+		t.Errorf("Expected %d vote buttons for alive players, got %d: %v", expectedAlive, len(voteButtons), voteButtons)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}

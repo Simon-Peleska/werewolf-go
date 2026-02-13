@@ -200,14 +200,105 @@ type WSMessage struct {
 	TargetPlayerID string `json:"target_player_id,omitempty"`
 }
 
-// NightAction represents an action taken during the night phase
-type NightAction struct {
+// GameAction represents any action taken during the game (night or day phase)
+// Visibility determines who can see this action:
+//   - "public": everyone can see
+//   - "team:werewolf": only werewolf team can see
+//   - "team:villager": only villager team can see
+//   - "actor": only the actor can see
+//   - "resolved": hidden until phase ends, then becomes public
+type GameAction struct {
 	ID             int64  `db:"id"`
 	GameID         int64  `db:"game_id"`
-	NightNumber    int    `db:"night_number"`
+	Round          int    `db:"round"`
+	Phase          string `db:"phase"` // "night" or "day"
 	ActorPlayerID  int64  `db:"actor_player_id"`
 	ActionType     string `db:"action_type"`
 	TargetPlayerID *int64 `db:"target_player_id"`
+	Visibility     string `db:"visibility"`
+}
+
+// Action types
+const (
+	ActionWerewolfKill = "werewolf_kill"
+	ActionDayVote      = "day_vote"
+	ActionElimination  = "elimination"
+)
+
+// Visibility types
+const (
+	VisibilityPublic       = "public"
+	VisibilityTeamWerewolf = "team:werewolf"
+	VisibilityTeamVillager = "team:villager"
+	VisibilityActor        = "actor"
+	VisibilityResolved     = "resolved"
+)
+
+// canSeeAction determines if a player can see a specific action based on visibility rules
+func canSeeAction(action GameAction, viewer Player, currentRound int, currentPhase string) bool {
+	switch action.Visibility {
+	case VisibilityPublic:
+		return true
+	case VisibilityTeamWerewolf:
+		return viewer.Team == "werewolf"
+	case VisibilityTeamVillager:
+		return viewer.Team == "villager"
+	case VisibilityActor:
+		return viewer.PlayerID == action.ActorPlayerID
+	case VisibilityResolved:
+		// Visible once we're past the phase when action was created
+		if action.Round < currentRound {
+			return true
+		}
+		if action.Round == currentRound && action.Phase == "night" && currentPhase == "day" {
+			return true
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// getActionsForPlayer returns all actions a player is allowed to see for a specific round/phase
+func getActionsForPlayer(gameID int64, viewer Player, currentRound int, currentPhase string, queryRound int, queryPhase string) ([]GameAction, error) {
+	var allActions []GameAction
+	err := db.Select(&allActions, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = ?`,
+		gameID, queryRound, queryPhase)
+	if err != nil {
+		return nil, err
+	}
+
+	var visibleActions []GameAction
+	for _, action := range allActions {
+		if canSeeAction(action, viewer, currentRound, currentPhase) {
+			visibleActions = append(visibleActions, action)
+		}
+	}
+	return visibleActions, nil
+}
+
+// getVoteCounts returns vote counts for a specific phase
+func getVoteCounts(gameID int64, round int, phase string, actionType string) (map[int64]int, int, error) {
+	var actions []GameAction
+	err := db.Select(&actions, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = ? AND action_type = ?`,
+		gameID, round, phase, actionType)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	voteCounts := make(map[int64]int)
+	for _, action := range actions {
+		if action.TargetPlayerID != nil {
+			voteCounts[*action.TargetPlayerID]++
+		}
+	}
+	return voteCounts, len(actions), nil
 }
 
 // Client represents a websocket connection with player info
@@ -428,17 +519,20 @@ func initDB() error {
 		player_id INTEGER NOT NULL,
 		FOREIGN KEY (player_id) REFERENCES player(rowid)
 	);
-	CREATE TABLE IF NOT EXISTS night_action (
+	CREATE TABLE IF NOT EXISTS game_action (
 		game_id INTEGER NOT NULL,
-		night_number INTEGER NOT NULL,
+		round INTEGER NOT NULL,
+		phase TEXT NOT NULL,
 		actor_player_id INTEGER NOT NULL,
 		action_type TEXT NOT NULL,
 		target_player_id INTEGER,
+		visibility TEXT NOT NULL DEFAULT 'public',
 		FOREIGN KEY (game_id) REFERENCES game(rowid),
 		FOREIGN KEY (actor_player_id) REFERENCES player(rowid),
 		FOREIGN KEY (target_player_id) REFERENCES player(rowid),
-		UNIQUE(game_id, night_number, actor_player_id, action_type)
+		UNIQUE(game_id, round, phase, actor_player_id, action_type)
 	);
+	CREATE INDEX IF NOT EXISTS idx_game_action_lookup ON game_action(game_id, round, phase, visibility);
 
 	INSERT OR IGNORE INTO role (name, description, team)
 	VALUES
@@ -702,6 +796,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSStartGame(client)
 	case "werewolf_vote":
 		handleWSWerewolfVote(client, msg)
+	case "day_vote":
+		handleWSDayVote(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -886,11 +982,11 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 
 	// Record or update the vote
 	_, err = db.Exec(`
-		INSERT INTO night_action (game_id, night_number, actor_player_id, action_type, target_player_id)
-		VALUES (?, ?, ?, 'werewolf_kill', ?)
-		ON CONFLICT(game_id, night_number, actor_player_id, action_type)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 		DO UPDATE SET target_player_id = ?`,
-		game.ID, game.NightNumber, client.playerID, targetID, targetID)
+		game.ID, game.NightNumber, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, targetID)
 	if err != nil {
 		logError("handleWSWerewolfVote: db.Exec insert vote", err)
 		sendErrorToast(client.playerID, "Failed to record vote")
@@ -921,12 +1017,12 @@ func resolveWerewolfVotes(game *Game) {
 	}
 
 	// Get all werewolf votes for this night
-	var votes []NightAction
+	var votes []GameAction
 	err = db.Select(&votes, `
-		SELECT rowid as id, game_id, night_number, actor_player_id, action_type, target_player_id
-		FROM night_action
-		WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill'`,
-		game.ID, game.NightNumber)
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.NightNumber, ActionWerewolfKill)
 	if err != nil {
 		logError("resolveWerewolfVotes: get votes", err)
 		return
@@ -989,6 +1085,226 @@ func resolveWerewolfVotes(game *Game) {
 	log.Printf("Night %d ended, transitioning to day phase", game.NightNumber)
 	DebugLog("resolveWerewolfVotes", "Night %d ended, transitioning to day", game.NightNumber)
 	LogDBState("after night resolution")
+
+	broadcastGameUpdate()
+}
+
+func handleWSDayVote(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSDayVote: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "day" {
+		sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		return
+	}
+
+	// Check that the player is alive
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSDayVote: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+
+	// Parse target player ID
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	// Check that the target is valid (alive)
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot vote for a dead player")
+		return
+	}
+
+	// Record or update the vote
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'day', ?, ?, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionDayVote, targetID, VisibilityPublic, targetID)
+	if err != nil {
+		logError("handleWSDayVote: db.Exec insert vote", err)
+		sendErrorToast(client.playerID, "Failed to record vote")
+		return
+	}
+
+	log.Printf("Player %d (%s) voted to eliminate player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+	DebugLog("handleWSDayVote", "Player '%s' voted to eliminate '%s'", voter.Name, target.Name)
+	LogDBState("after day vote")
+
+	// Check if all alive players have voted and resolve if so
+	resolveDayVotes(game)
+}
+
+// resolveDayVotes checks if all alive players have voted and resolves the elimination
+func resolveDayVotes(game *Game) {
+	// Get all living players
+	var alivePlayers []Player
+	err := db.Select(&alivePlayers, `
+		SELECT g.rowid as id, g.player_id as player_id, p.name as name
+		FROM game_player g
+		JOIN player p ON g.player_id = p.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
+	if err != nil {
+		logError("resolveDayVotes: get alive players", err)
+		return
+	}
+
+	// Get all day votes for this round
+	voteCounts, totalVotes, err := getVoteCounts(game.ID, game.NightNumber, "day", ActionDayVote)
+	if err != nil {
+		logError("resolveDayVotes: getVoteCounts", err)
+		return
+	}
+
+	log.Printf("Day vote check: %d alive players, %d votes", len(alivePlayers), totalVotes)
+
+	// Check if all alive players have voted
+	if totalVotes < len(alivePlayers) {
+		log.Printf("Not all players have voted yet (%d/%d)", totalVotes, len(alivePlayers))
+		broadcastGameUpdate()
+		return
+	}
+
+	// Find the target with the most votes
+	var maxVotes int
+	var eliminatedID int64
+	var isTie bool
+	for targetID, count := range voteCounts {
+		if count > maxVotes {
+			maxVotes = count
+			eliminatedID = targetID
+			isTie = false
+		} else if count == maxVotes {
+			isTie = true
+		}
+	}
+
+	// Check for majority (more than half of alive players)
+	majority := len(alivePlayers)/2 + 1
+	if maxVotes < majority || isTie {
+		log.Printf("No majority reached (need %d, max is %d, tie: %v) - no elimination", majority, maxVotes, isTie)
+		// No elimination, transition to night
+		transitionToNight(game)
+		return
+	}
+
+	// Eliminate the player
+	_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, eliminatedID)
+	if err != nil {
+		logError("resolveDayVotes: eliminate player", err)
+		return
+	}
+
+	// Record the elimination action
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
+		game.ID, game.NightNumber, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic)
+	if err != nil {
+		logError("resolveDayVotes: record elimination", err)
+	}
+
+	var eliminatedName string
+	db.Get(&eliminatedName, "SELECT name FROM player WHERE rowid = ?", eliminatedID)
+	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
+	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
+
+	// Check win conditions
+	if checkWinConditions(game) {
+		return // Game ended
+	}
+
+	// Transition to night
+	transitionToNight(game)
+}
+
+// transitionToNight moves the game to the next night phase
+func transitionToNight(game *Game) {
+	newRound := game.NightNumber + 1
+	_, err := db.Exec("UPDATE game SET status = 'night', night_number = ? WHERE rowid = ?", newRound, game.ID)
+	if err != nil {
+		logError("transitionToNight: update game", err)
+		return
+	}
+
+	log.Printf("Day %d ended, transitioning to night %d", game.NightNumber, newRound)
+	DebugLog("transitionToNight", "Day %d ended, transitioning to night %d", game.NightNumber, newRound)
+	LogDBState("after day resolution")
+
+	broadcastGameUpdate()
+}
+
+// checkWinConditions checks if the game has ended and returns true if so
+func checkWinConditions(game *Game) bool {
+	var werewolfCount, villagerCount int
+	err := db.Get(&werewolfCount, `
+		SELECT COUNT(*) FROM game_player g
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+	if err != nil {
+		logError("checkWinConditions: count werewolves", err)
+		return false
+	}
+
+	err = db.Get(&villagerCount, `
+		SELECT COUNT(*) FROM game_player g
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'villager'`, game.ID)
+	if err != nil {
+		logError("checkWinConditions: count villagers", err)
+		return false
+	}
+
+	log.Printf("Win check: %d werewolves, %d villagers alive", werewolfCount, villagerCount)
+
+	// Villagers win if all werewolves are dead
+	if werewolfCount == 0 {
+		log.Printf("VILLAGERS WIN - all werewolves eliminated")
+		endGame(game, "villagers")
+		return true
+	}
+
+	// Werewolves win if all villagers are dead
+	if villagerCount == 0 {
+		log.Printf("WEREWOLVES WIN - all villagers eliminated")
+		endGame(game, "werewolves")
+		return true
+	}
+
+	return false
+}
+
+// endGame marks the game as finished with a winner
+func endGame(game *Game, winner string) {
+	_, err := db.Exec("UPDATE game SET status = 'finished' WHERE rowid = ?", game.ID)
+	if err != nil {
+		logError("endGame: update game status", err)
+		return
+	}
+
+	log.Printf("Game %d finished, winner: %s", game.ID, winner)
+	DebugLog("endGame", "Game %d finished, winner: %s", game.ID, winner)
+	LogDBState("after game end")
 
 	broadcastGameUpdate()
 }
@@ -1077,14 +1393,14 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		var currentVote int64
 
 		if isWerewolf {
-			var nightActions []NightAction
-			db.Select(&nightActions, `
-				SELECT rowid as id, game_id, night_number, actor_player_id, action_type, target_player_id
-				FROM night_action
-				WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill'`,
-				game.ID, game.NightNumber)
+			var actions []GameAction
+			db.Select(&actions, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+				game.ID, game.NightNumber, ActionWerewolfKill)
 
-			for _, action := range nightActions {
+			for _, action := range actions {
 				var voterName, targetName string
 				db.Get(&voterName, "SELECT name FROM player WHERE rowid = ?", action.ActorPlayerID)
 				if action.TargetPlayerID != nil {
@@ -1112,17 +1428,23 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			return nil, err
 		}
 	} else if game.Status == "day" {
-		// Find who died last night (players who are dead but were killed by werewolves)
+		// Get the current player's info
+		currentPlayer, err := getPlayerInGame(game.ID, playerID)
+		if err != nil {
+			logError("getGameComponent: getPlayerInGame for day", err)
+			return nil, err
+		}
+
+		// Find who died last night
 		var lastVictim string
 		var lastVictimRole string
 		for _, p := range players {
 			if !p.IsAlive {
-				// Check if this player was killed this night
 				var count int
 				db.Get(&count, `
-					SELECT COUNT(*) FROM night_action
-					WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill' AND target_player_id = ?`,
-					game.ID, game.NightNumber, p.PlayerID)
+					SELECT COUNT(*) FROM game_action
+					WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
+					game.ID, game.NightNumber, ActionWerewolfKill, p.PlayerID)
 				if count > 0 {
 					lastVictim = p.Name
 					lastVictimRole = p.RoleName
@@ -1131,15 +1453,72 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Get alive players as targets
+		var aliveTargets []Player
+		for _, p := range players {
+			if p.IsAlive {
+				aliveTargets = append(aliveTargets, p)
+			}
+		}
+
+		// Get current votes for this day
+		var votes []DayVote
+		var currentVote int64
+
+		var actions []GameAction
+		db.Select(&actions, `
+			SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+			FROM game_action
+			WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
+			game.ID, game.NightNumber, ActionDayVote)
+
+		for _, action := range actions {
+			var voterName, targetName string
+			db.Get(&voterName, "SELECT name FROM player WHERE rowid = ?", action.ActorPlayerID)
+			if action.TargetPlayerID != nil {
+				db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+				if action.ActorPlayerID == playerID {
+					currentVote = *action.TargetPlayerID
+				}
+			}
+			votes = append(votes, DayVote{VoterName: voterName, TargetName: targetName})
+		}
+
 		data := DayData{
 			Players:             players,
+			AliveTargets:        aliveTargets,
 			NightNumber:         game.NightNumber,
 			LastNightVictim:     lastVictim,
 			LastNightVictimRole: lastVictimRole,
+			Votes:               votes,
+			CurrentVote:         currentVote,
+			IsAlive:             currentPlayer.IsAlive,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate day_content", err)
+			return nil, err
+		}
+	} else if game.Status == "finished" {
+		// Determine winner
+		var werewolfCount int
+		db.Get(&werewolfCount, `
+			SELECT COUNT(*) FROM game_player g
+			JOIN role r ON g.role_id = r.rowid
+			WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+
+		winner := "villagers"
+		if werewolfCount > 0 {
+			winner = "werewolves"
+		}
+
+		data := FinishedData{
+			Players: players,
+			Winner:  winner,
+		}
+
+		if err := templates.ExecuteTemplate(&buf, "finished_content.html", data); err != nil {
+			logError("getGameComponent: ExecuteTemplate finished_content", err)
 			return nil, err
 		}
 	}
@@ -1340,12 +1719,28 @@ type NightData struct {
 	NightNumber  int
 }
 
+// DayVote represents a player's vote during the day
+type DayVote struct {
+	VoterName  string
+	TargetName string
+}
+
 // DayData holds all data needed to render the day phase
 type DayData struct {
 	Players             []Player
+	AliveTargets        []Player
 	NightNumber         int
 	LastNightVictim     string
 	LastNightVictimRole string
+	Votes               []DayVote
+	CurrentVote         int64 // 0 means no vote
+	IsAlive             bool
+}
+
+// FinishedData holds all data needed to render the finished game screen
+type FinishedData struct {
+	Players []Player
+	Winner  string // "villagers" or "werewolves"
 }
 
 type GameData struct {

@@ -3,22 +3,49 @@
         <h2>Day {{.NightNumber}}</h2>
 
         {{if .LastNightVictim}}
-        <div class="death-announcement">
+        <div class="death-announcement" id="death-announcement">
             <p><strong>{{.LastNightVictim}}</strong> was found dead this morning.</p>
             <p>They were a <strong>{{.LastNightVictimRole}}</strong>.</p>
         </div>
         {{else}}
-        <p>The village awakens. No one died last night.</p>
+        <p id="no-death-message">The village awakens. No one died last night.</p>
         {{end}}
-
-        <p>The day phase is not yet implemented. The werewolves have made their choice.</p>
     </section>
 
     <section>
-        <h3>Players</h3>
-        <ul class="player-list">
+        <h3>Vote to Eliminate</h3>
+        {{if .IsAlive}}
+        <p><small>Choose a player to eliminate. Majority vote required.</small></p>
+
+        {{$currentVote := .CurrentVote}}
+        {{range .AliveTargets}}
+        <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="day_vote">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="day-vote-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote .PlayerID}} selected{{end}}">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{else}}
+        <p><em>You are dead and cannot vote.</em></p>
+        {{end}}
+
+        {{if .Votes}}
+        <h3>Current Votes</h3>
+        <ul id="day-vote-list" class="vote-list">
+            {{range .Votes}}
+            <li>{{.VoterName}} voted for {{if .TargetName}}{{.TargetName}}{{else}}<em>undecided</em>{{end}}</li>
+            {{end}}
+        </ul>
+        {{end}}
+    </section>
+
+    <section>
+        <h3>All Players</h3>
+        <ul id="day-player-list" class="player-list">
             {{range .Players}}
-            <li class="{{if not .IsAlive}}dead-player{{end}}">
+            <li id="day-player-{{.PlayerID}}" class="{{if not .IsAlive}}dead-player{{end}}">
                 {{.Name}}
                 {{if not .IsAlive}} 💀 ({{.RoleName}}){{end}}
             </li>

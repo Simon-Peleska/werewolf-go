@@ -1,0 +1,27 @@
+<div id="game-content" hx-swap-oob="true">
+    <section>
+        <h2>Game Over</h2>
+
+        <div id="winner-announcement" class="winner-announcement winner-{{.Winner}}">
+            {{if eq .Winner "villagers"}}
+            <h3>The Villagers Win!</h3>
+            <p>All werewolves have been eliminated. The village is safe.</p>
+            {{else}}
+            <h3>The Werewolves Win!</h3>
+            <p>The werewolves have devoured the village.</p>
+            {{end}}
+        </div>
+    </section>
+
+    <section>
+        <h3>Final Roster</h3>
+        <ul id="final-player-list" class="player-list">
+            {{range .Players}}
+            <li id="final-player-{{.PlayerID}}" class="{{if .IsAlive}}survivor{{else}}dead-player{{end}} team-{{.Team}}">
+                {{.Name}} - <strong>{{.RoleName}}</strong>
+                {{if .IsAlive}} (Survived){{else}} (Dead){{end}}
+            </li>
+            {{end}}
+        </ul>
+    </section>
+</div>
