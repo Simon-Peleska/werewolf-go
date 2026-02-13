@@ -2839,3 +2839,108 @@ func TestNightWaitsForDoctor(t *testing.T) {
 
 	ctx.logger.Debug("=== Test passed ===")
 }
+
+func TestTwoDoctorsActIndependently(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing two doctors act independently ===")
+
+	// Setup: 1 werewolf + 2 doctors + 1 villager = 4 players
+	var players []*TestPlayer
+	for _, name := range []string{"I1", "I2", "I3", "I4"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleDoctor)
+	players[0].addRoleByID(RoleDoctor)
+	players[0].addRoleByID(RoleVillager)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, doctors := findPlayersByRoleWithDoctor(players)
+	if len(doctors) < 2 || len(werewolves) == 0 || len(villagers) == 0 {
+		t.Fatalf("Need 2 doctors, 1 werewolf, 1 villager, got doctors=%d werewolves=%d villagers=%d", len(doctors), len(werewolves), len(villagers))
+	}
+
+	doctor1 := doctors[0]
+	doctor2 := doctors[1]
+	werewolf := werewolves[0]
+	villager := villagers[0]
+	ctx.logger.Debug("Doctor1: %s, Doctor2: %s, Werewolf: %s, Villager: %s", doctor1.Name, doctor2.Name, werewolf.Name, villager.Name)
+
+	// Both doctors protect BEFORE the werewolf votes so the night stays active
+	// and we can verify each sees their own confirmation.
+
+	// Doctor1 protects the villager
+	doctor1.reload()
+	time.Sleep(20 * time.Millisecond)
+	doctor1.doctorProtectPlayer(villager.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Doctor2 protects the werewolf (a different player)
+	doctor2.reload()
+	time.Sleep(20 * time.Millisecond)
+	doctor2.doctorProtectPlayer(werewolf.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Night is still active (werewolf hasn't voted) - verify and read both confirmations
+	doctor1.reload()
+	time.Sleep(20 * time.Millisecond)
+	if doctor1.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: night ended before werewolf voted")
+		t.Error("Night should not end before werewolf votes")
+	}
+
+	// Each doctor sees their own protection target
+	result1 := doctor1.getDoctorResult()
+	if !strings.Contains(result1, villager.Name) {
+		t.Errorf("Doctor1 should see confirmation with %s, got: %s", villager.Name, result1)
+	}
+	// Doctor1 should NOT see doctor2's target in their confirmation
+	if strings.Contains(result1, werewolf.Name) {
+		t.Errorf("Doctor1 should not see Doctor2's protection target %s", werewolf.Name)
+	}
+
+	doctor2.reload()
+	time.Sleep(20 * time.Millisecond)
+	result2 := doctor2.getDoctorResult()
+	if !strings.Contains(result2, werewolf.Name) {
+		t.Errorf("Doctor2 should see confirmation with %s, got: %s", werewolf.Name, result2)
+	}
+	// Doctor2 should NOT see doctor1's target in their confirmation
+	if strings.Contains(result2, villager.Name) {
+		t.Errorf("Doctor2 should not see Doctor1's protection target %s", villager.Name)
+	}
+
+	// Werewolf votes for the villager (protected by doctor1) - all conditions met, night ends
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	werewolf.voteForPlayer(villager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Day should show no one died (doctor1 protected the villager)
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: did not transition to day after werewolf voted")
+		t.Fatal("Should transition to day after all conditions met")
+	}
+
+	if !werewolf.hasNoDeathMessage() {
+		content := werewolf.getGameContent()
+		ctx.logger.LogDB("FAIL: doctor1 should have saved the villager")
+		t.Errorf("Doctor1 protected the villager, expected 'no one died'. Content: %s", content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
