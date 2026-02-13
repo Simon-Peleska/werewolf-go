@@ -1,14 +1,54 @@
 <div id="game-content" hx-swap-oob="true">
     <section>
-        <h2>Night Phase</h2>
+        <h2>Night {{.NightNumber}}</h2>
+        {{if .IsWerewolf}}
+        <p>The werewolves awaken...</p>
+
+        <h3>Your Pack</h3>
+        <ul class="player-list">
+            {{range .Werewolves}}
+            <li class="werewolf-player">🐺 {{.Name}}</li>
+            {{end}}
+        </ul>
+
+        <h3>Choose a Victim</h3>
+        <p><small>Select a player to kill. All werewolves must vote.</small></p>
+
+        {{$currentVote := .CurrentVote}}
+        {{range .AliveTargets}}
+        <form ws-send id="vote-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="werewolf_vote">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="vote-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote .PlayerID}} selected{{end}}">
+                {{.Name}}
+                {{if eq .Team "werewolf"}} 🐺{{end}}
+            </button>
+        </form>
+        {{end}}
+
+        {{if .Votes}}
+        <h3>Current Votes</h3>
+        <ul class="vote-list">
+            {{range .Votes}}
+            <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>undecided</em>{{end}}</li>
+            {{end}}
+        </ul>
+        {{end}}
+
+        {{else}}
         <p>The village sleeps...</p>
+        <p>Close your eyes and wait for morning.</p>
+        {{end}}
     </section>
 
     <section>
-        <h2>Players</h2>
+        <h3>All Players</h3>
         <ul class="player-list">
             {{range .Players}}
-            <li>{{.Name}}</li>
+            <li class="{{if not .IsAlive}}dead-player{{end}}">
+                {{.Name}}
+                {{if not .IsAlive}}💀{{end}}
+            </li>
             {{end}}
         </ul>
     </section>

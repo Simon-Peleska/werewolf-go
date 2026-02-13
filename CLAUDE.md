@@ -49,9 +49,11 @@ Night actions occur in the following order:
 ### 3. Day Phase
 1. **Morning Announcement** - Reveal who died during the night (if anyone)
 2. **Lovers Check** - If one lover dies, the other dies immediately from heartbreak
+6. **Win Condition Check** - Check if either team has won
 3. **Discussion Period** - Players discuss and debate who might be a werewolf
 4. **Voting Period** - Players vote to eliminate one player (majority vote required)
 5. **Elimination** - The player with most votes is eliminated and their role is revealed
+2. **Lovers Check** - If one lover dies, the other dies immediately from heartbreak
 6. **Win Condition Check** - Check if either team has won
 7. **Transition to Night** - If game continues, return to Night Phase
 

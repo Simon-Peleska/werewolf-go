@@ -1,10 +1,8 @@
 
-convert scripts to tool use
+implement day
 Add log for user
 Add ai for story telling
-implement night
-implement day
-implement special characters<
+implement special characters
 hide character information in lobby
 
 styling

@@ -71,8 +71,9 @@ func sendErrorToast(playerID int64, message string) {
 }
 
 type Game struct {
-	ID     int64  `db:"id"`
-	Status string `db:"status"` // waiting, playing, finished
+	ID          int64  `db:"id"`
+	Status      string `db:"status"` // lobby, night, day, finished
+	NightNumber int    `db:"night_number"`
 }
 
 type GameRoleConfig struct {
@@ -193,9 +194,20 @@ func getRoleById(id int) (Role, error) {
 
 // WSMessage represents a message from the client
 type WSMessage struct {
-	Action string `json:"action"`
-	RoleID string `json:"role_id,omitempty"`
-	Delta  string `json:"delta,omitempty"`
+	Action         string `json:"action"`
+	RoleID         string `json:"role_id,omitempty"`
+	Delta          string `json:"delta,omitempty"`
+	TargetPlayerID string `json:"target_player_id,omitempty"`
+}
+
+// NightAction represents an action taken during the night phase
+type NightAction struct {
+	ID             int64  `db:"id"`
+	GameID         int64  `db:"game_id"`
+	NightNumber    int    `db:"night_number"`
+	ActorPlayerID  int64  `db:"actor_player_id"`
+	ActionType     string `db:"action_type"`
+	TargetPlayerID *int64 `db:"target_player_id"`
 }
 
 // Client represents a websocket connection with player info
@@ -296,11 +308,10 @@ func (h *Hub) run() {
 	}
 }
 
-
 func disableCaching(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Cache-Control", "no-cache")
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -382,7 +393,8 @@ func initDB() error {
 	PRAGMA journal_mode=WAL;
 
 	CREATE TABLE IF NOT EXISTS game (
-		status TEXT NOT NULL DEFAULT 'lobby'
+		status TEXT NOT NULL DEFAULT 'lobby',
+		night_number INTEGER NOT NULL DEFAULT 0
 	);
 	CREATE TABLE IF NOT EXISTS player (
 		name TEXT UNIQUE NOT NULL,
@@ -415,6 +427,17 @@ func initDB() error {
 		token INTEGER PRIMARY KEY,
 		player_id INTEGER NOT NULL,
 		FOREIGN KEY (player_id) REFERENCES player(rowid)
+	);
+	CREATE TABLE IF NOT EXISTS night_action (
+		game_id INTEGER NOT NULL,
+		night_number INTEGER NOT NULL,
+		actor_player_id INTEGER NOT NULL,
+		action_type TEXT NOT NULL,
+		target_player_id INTEGER,
+		FOREIGN KEY (game_id) REFERENCES game(rowid),
+		FOREIGN KEY (actor_player_id) REFERENCES player(rowid),
+		FOREIGN KEY (target_player_id) REFERENCES player(rowid),
+		UNIQUE(game_id, night_number, actor_player_id, action_type)
 	);
 
 	INSERT OR IGNORE INTO role (name, description, team)
@@ -677,6 +700,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSUpdateRole(client, msg)
 	case "start_game":
 		handleWSStartGame(client)
+	case "werewolf_vote":
+		handleWSWerewolfVote(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -794,19 +819,178 @@ func handleWSStartGame(client *Client) {
 	}
 	log.Printf("Roles assigned, updating game status...")
 
-	// Update game status
-	_, err = db.Exec("UPDATE game SET status = 'night' WHERE rowid = ?", game.ID)
+	// Update game status and set night 1
+	_, err = db.Exec("UPDATE game SET status = 'night', night_number = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
 		logError("handleWSStartGame: db.Exec update game status", err)
 		sendErrorToast(client.playerID, "Failed to start game")
 		return
 	}
-	log.Printf("Game status updated to 'night', broadcasting...")
-	DebugLog("handleWSStartGame", "Game %d started, transitioning to night phase", game.ID)
+	log.Printf("Game status updated to 'night' (night 1), broadcasting...")
+	DebugLog("handleWSStartGame", "Game %d started, transitioning to night phase (night 1)", game.ID)
 	LogDBState("after game start")
 
 	broadcastGameUpdate()
 	log.Printf("Game started successfully!")
+}
+
+func handleWSWerewolfVote(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfVote: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+
+	// Check that the player is a werewolf
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfVote: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		return
+	}
+
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+
+	// Parse target player ID
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	// Check that the target is valid (alive)
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot target a dead player")
+		return
+	}
+
+	// Record or update the vote
+	_, err = db.Exec(`
+		INSERT INTO night_action (game_id, night_number, actor_player_id, action_type, target_player_id)
+		VALUES (?, ?, ?, 'werewolf_kill', ?)
+		ON CONFLICT(game_id, night_number, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = ?`,
+		game.ID, game.NightNumber, client.playerID, targetID, targetID)
+	if err != nil {
+		logError("handleWSWerewolfVote: db.Exec insert vote", err)
+		sendErrorToast(client.playerID, "Failed to record vote")
+		return
+	}
+
+	log.Printf("Werewolf %d (%s) voted to kill player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+	DebugLog("handleWSWerewolfVote", "Werewolf '%s' voted to kill '%s'", voter.Name, target.Name)
+	LogDBState("after werewolf vote")
+
+	// Check if all werewolves have voted and resolve if so
+	resolveWerewolfVotes(game)
+}
+
+// resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
+func resolveWerewolfVotes(game *Game) {
+	// Get all living werewolves
+	var werewolves []Player
+	err := db.Select(&werewolves, `
+		SELECT g.rowid as id, g.player_id as player_id, p.name as name
+		FROM game_player g
+		JOIN player p ON g.player_id = p.rowid
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+	if err != nil {
+		logError("resolveWerewolfVotes: get werewolves", err)
+		return
+	}
+
+	// Get all werewolf votes for this night
+	var votes []NightAction
+	err = db.Select(&votes, `
+		SELECT rowid as id, game_id, night_number, actor_player_id, action_type, target_player_id
+		FROM night_action
+		WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill'`,
+		game.ID, game.NightNumber)
+	if err != nil {
+		logError("resolveWerewolfVotes: get votes", err)
+		return
+	}
+
+	log.Printf("Werewolf vote check: %d werewolves, %d votes", len(werewolves), len(votes))
+
+	// Check if all werewolves have voted
+	if len(votes) < len(werewolves) {
+		log.Printf("Not all werewolves have voted yet (%d/%d)", len(votes), len(werewolves))
+		broadcastGameUpdate()
+		return
+	}
+
+	// Count votes for each target
+	voteCounts := make(map[int64]int)
+	for _, v := range votes {
+		if v.TargetPlayerID != nil {
+			voteCounts[*v.TargetPlayerID]++
+		}
+	}
+
+	// Find the target with the most votes
+	var maxVotes int
+	var victim int64
+	for targetID, count := range voteCounts {
+		if count > maxVotes {
+			maxVotes = count
+			victim = targetID
+		}
+	}
+
+	// Check for majority (more than half of werewolves)
+	majority := len(werewolves)/2 + 1
+	if maxVotes < majority {
+		log.Printf("No majority reached yet (need %d, max is %d)", majority, maxVotes)
+		broadcastGameUpdate()
+		return
+	}
+
+	// Kill the victim
+	_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim)
+	if err != nil {
+		logError("resolveWerewolfVotes: kill victim", err)
+		return
+	}
+
+	var victimName string
+	db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
+	log.Printf("Werewolves killed %s (player ID %d)", victimName, victim)
+	DebugLog("resolveWerewolfVotes", "Werewolves killed '%s'", victimName)
+
+	// Transition to day phase
+	_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
+	if err != nil {
+		logError("resolveWerewolfVotes: transition to day", err)
+		return
+	}
+
+	log.Printf("Night %d ended, transitioning to day phase", game.NightNumber)
+	DebugLog("resolveWerewolfVotes", "Night %d ended, transitioning to day", game.NightNumber)
+	LogDBState("after night resolution")
+
+	broadcastGameUpdate()
 }
 
 func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
@@ -861,21 +1045,107 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			return nil, err
 		}
 	} else if game.Status == "night" {
-		data := struct {
-			Players []Player
-		}{
-			Players: players,
+		// Get the current player's info
+		currentPlayer, err := getPlayerInGame(game.ID, playerID)
+		if err != nil {
+			logError("getGameComponent: getPlayerInGame", err)
+			return nil, err
+		}
+
+		isWerewolf := currentPlayer.Team == "werewolf"
+
+		// Get werewolves (for werewolf players to see their team)
+		var werewolves []Player
+		if isWerewolf {
+			for _, p := range players {
+				if p.Team == "werewolf" && p.IsAlive {
+					werewolves = append(werewolves, p)
+				}
+			}
+		}
+
+		// Get alive players as targets
+		var aliveTargets []Player
+		for _, p := range players {
+			if p.IsAlive {
+				aliveTargets = append(aliveTargets, p)
+			}
+		}
+
+		// Get current votes for this night (werewolves only)
+		var votes []WerewolfVote
+		var currentVote int64
+
+		if isWerewolf {
+			var nightActions []NightAction
+			db.Select(&nightActions, `
+				SELECT rowid as id, game_id, night_number, actor_player_id, action_type, target_player_id
+				FROM night_action
+				WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill'`,
+				game.ID, game.NightNumber)
+
+			for _, action := range nightActions {
+				var voterName, targetName string
+				db.Get(&voterName, "SELECT name FROM player WHERE rowid = ?", action.ActorPlayerID)
+				if action.TargetPlayerID != nil {
+					db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+					if action.ActorPlayerID == playerID {
+						currentVote = *action.TargetPlayerID
+					}
+				}
+				votes = append(votes, WerewolfVote{VoterName: voterName, TargetName: targetName})
+			}
+		}
+
+		data := NightData{
+			Players:      players,
+			AliveTargets: aliveTargets,
+			IsWerewolf:   isWerewolf,
+			Werewolves:   werewolves,
+			Votes:        votes,
+			CurrentVote:  currentVote,
+			NightNumber:  game.NightNumber,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate night_content", err)
 			return nil, err
 		}
+	} else if game.Status == "day" {
+		// Find who died last night (players who are dead but were killed by werewolves)
+		var lastVictim string
+		var lastVictimRole string
+		for _, p := range players {
+			if !p.IsAlive {
+				// Check if this player was killed this night
+				var count int
+				db.Get(&count, `
+					SELECT COUNT(*) FROM night_action
+					WHERE game_id = ? AND night_number = ? AND action_type = 'werewolf_kill' AND target_player_id = ?`,
+					game.ID, game.NightNumber, p.PlayerID)
+				if count > 0 {
+					lastVictim = p.Name
+					lastVictimRole = p.RoleName
+					break
+				}
+			}
+		}
+
+		data := DayData{
+			Players:             players,
+			NightNumber:         game.NightNumber,
+			LastNightVictim:     lastVictim,
+			LastNightVictimRole: lastVictimRole,
+		}
+
+		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
+			logError("getGameComponent: ExecuteTemplate day_content", err)
+			return nil, err
+		}
 	}
 
 	return &buf, nil
 }
-
 
 func handleCharacterInfo(w http.ResponseWriter, r *http.Request) {
 	playerID, err := getPlayerIdFromSession(r)
@@ -921,9 +1191,9 @@ func handleGameComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	
 	buf.WriteTo(w)
 }
+
 // addPlayerToLobby adds a player to the game if it's in lobby state
 func addPlayerToLobby(playerID int64) {
 	var playerName string
@@ -1020,14 +1290,14 @@ func broadcastGameUpdate() {
 // getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
 func getOrCreateCurrentGame() (*Game, error) {
 	var game Game
-	err := db.Get(&game, "SELECT rowid as id, status FROM game ORDER BY id DESC LIMIT 1")
+	err := db.Get(&game, "SELECT rowid as id, status, night_number FROM game ORDER BY id DESC LIMIT 1")
 	if err == sql.ErrNoRows {
-		result, err := db.Exec("INSERT INTO game (status) VALUES ('lobby')")
+		result, err := db.Exec("INSERT INTO game (status, night_number) VALUES ('lobby', 0)")
 		if err != nil {
 			return nil, err
 		}
 		gameID, _ := result.LastInsertId()
-		game = Game{ID: gameID, Status: "lobby"}
+		game = Game{ID: gameID, Status: "lobby", NightNumber: 0}
 		log.Printf("Created new game: id=%d, status='lobby'", gameID)
 		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
 		LogDBState("after new game created")
@@ -1052,6 +1322,32 @@ type RoleConfigDisplay struct {
 	Role  Role
 	Count int
 }
+
+// WerewolfVote represents a werewolf's vote during the night
+type WerewolfVote struct {
+	VoterName  string
+	TargetName string
+}
+
+// NightData holds all data needed to render the night phase
+type NightData struct {
+	Players      []Player
+	AliveTargets []Player
+	IsWerewolf   bool
+	Werewolves   []Player
+	Votes        []WerewolfVote
+	CurrentVote  int64 // 0 means no vote
+	NightNumber  int
+}
+
+// DayData holds all data needed to render the day phase
+type DayData struct {
+	Players             []Player
+	NightNumber         int
+	LastNightVictim     string
+	LastNightVictimRole string
+}
+
 type GameData struct {
 	Player        *Player
 	Players       []Player
