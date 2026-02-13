@@ -2090,6 +2090,368 @@ func TestDeadPlayerCannotVote(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+// ============================================================================
+// Seer Phase Test Helpers
+// ============================================================================
+
+// findPlayersByRoleExtended returns players grouped by their role including Seer
+func findPlayersByRoleExtended(players []*TestPlayer) (werewolves, villagers, seers []*TestPlayer) {
+	for _, p := range players {
+		role := p.getRole()
+		switch role {
+		case "Werewolf":
+			werewolves = append(werewolves, p)
+		case "Seer":
+			seers = append(seers, p)
+		default:
+			villagers = append(villagers, p)
+		}
+	}
+	return
+}
+
+// seerInvestigatePlayer clicks the seer investigate button for a specific player
+func (tp *TestPlayer) seerInvestigatePlayer(targetName string) {
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Seer investigating: %s", tp.Name, targetName)
+	}
+
+	buttons, err := tp.p().Elements(".seer-button")
+	if err != nil {
+		if tp.logger != nil {
+			tp.logger.Debug("[%s] Failed to find seer buttons: %v", tp.Name, err)
+		}
+		return
+	}
+
+	for _, btn := range buttons {
+		text := strings.TrimSpace(btn.MustText())
+		if strings.Contains(text, targetName) {
+			btn.MustClick()
+			time.Sleep(20 * time.Millisecond)
+			tp.logHTML("after seer investigation of " + targetName)
+			return
+		}
+	}
+
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Could not find seer button for: %s", tp.Name, targetName)
+	}
+}
+
+// getSeerResult returns the text of the seer's investigation result for the current night
+func (tp *TestPlayer) getSeerResult() string {
+	el, err := tp.p().Element("#seer-result")
+	if err != nil {
+		return ""
+	}
+	text := el.MustText()
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Seer result: %s", tp.Name, text)
+	}
+	return text
+}
+
+// canSeeSeerButtons checks if the seer investigation buttons are visible
+func (tp *TestPlayer) canSeeSeerButtons() bool {
+	elements, err := tp.p().Elements(".seer-button")
+	canSee := err == nil && len(elements) > 0
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Can see seer buttons: %v", tp.Name, canSee)
+	}
+	return canSee
+}
+
+// ============================================================================
+// Seer Tests
+// ============================================================================
+
+func TestSeerCanInvestigateVillager(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing Seer can investigate villager ===")
+
+	// Setup: 1 villager + 1 werewolf + 1 seer = 3 players
+	var players []*TestPlayer
+	for i, name := range []string{"A1", "A2", "A3"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+		_ = i
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleSeer)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, seers := findPlayersByRoleExtended(players)
+	if len(seers) == 0 {
+		t.Fatal("No Seer found after role assignment")
+	}
+	if len(werewolves) == 0 || len(villagers) == 0 {
+		t.Fatal("Missing werewolves or villagers")
+	}
+
+	seer := seers[0]
+	villager := villagers[0]
+	ctx.logger.Debug("Seer: %s, investigating Villager: %s", seer.Name, villager.Name)
+
+	// Seer should see investigation buttons
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !seer.canSeeSeerButtons() {
+		ctx.logger.LogDB("FAIL: seer cannot see investigate buttons")
+		t.Fatal("Seer should see investigation buttons during night phase")
+	}
+
+	// Seer investigates the villager
+	seer.seerInvestigatePlayer(villager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Seer should see result showing "Not a Werewolf"
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	result := seer.getSeerResult()
+	if !strings.Contains(result, "Not a Werewolf") {
+		ctx.logger.LogDB("FAIL: seer result incorrect")
+		t.Errorf("Seer investigating villager should see 'Not a Werewolf', got: %s", result)
+	}
+	if !strings.Contains(result, villager.Name) {
+		t.Errorf("Seer result should mention target name %s, got: %s", villager.Name, result)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestSeerCanInvestigateWerewolf(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing Seer can investigate werewolf ===")
+
+	// Setup: 1 villager + 1 werewolf + 1 seer
+	var players []*TestPlayer
+	for _, name := range []string{"B1", "B2", "B3"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleSeer)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, _, seers := findPlayersByRoleExtended(players)
+	if len(seers) == 0 || len(werewolves) == 0 {
+		t.Fatal("Missing seer or werewolf")
+	}
+
+	seer := seers[0]
+	werewolf := werewolves[0]
+	ctx.logger.Debug("Seer: %s, investigating Werewolf: %s", seer.Name, werewolf.Name)
+
+	// Seer investigates the werewolf
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	seer.seerInvestigatePlayer(werewolf.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Seer should see result showing "a Werewolf!"
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	result := seer.getSeerResult()
+	if !strings.Contains(result, "Werewolf") {
+		ctx.logger.LogDB("FAIL: seer result did not identify werewolf")
+		t.Errorf("Seer investigating werewolf should see 'a Werewolf!', got: %s", result)
+	}
+	if !strings.Contains(result, werewolf.Name) {
+		t.Errorf("Seer result should mention target name %s, got: %s", werewolf.Name, result)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestNightWaitsForSeer(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing night waits for seer to investigate ===")
+
+	// Setup: 1 seer + 1 werewolf (2 players, werewolf needs to vote AND seer must investigate)
+	var players []*TestPlayer
+	for _, name := range []string{"C1", "C2"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleSeer)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, _, seers := findPlayersByRoleExtended(players)
+	if len(seers) == 0 || len(werewolves) == 0 {
+		t.Fatal("Missing seer or werewolf")
+	}
+
+	seer := seers[0]
+	werewolf := werewolves[0]
+	ctx.logger.Debug("Seer: %s, Werewolf: %s", seer.Name, werewolf.Name)
+
+	// Werewolf votes - night should NOT end yet (seer hasn't investigated)
+	werewolf.voteForPlayer(seer.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: night ended before seer investigated")
+		t.Error("Night should not end until seer has investigated")
+	}
+	if !werewolf.isInNightPhase() {
+		t.Error("Should still be in night phase")
+	}
+
+	ctx.logger.Debug("Werewolf voted, night still active. Now seer investigates...")
+
+	// Seer investigates - night SHOULD end now
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	seer.seerInvestigatePlayer(werewolf.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	seer.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !seer.isInDayPhase() {
+		content := seer.getGameContent()
+		ctx.logger.LogDB("FAIL: did not transition to day after seer investigated")
+		t.Errorf("Should transition to day after both werewolf voted and seer investigated. Content: %s", content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestTwoSeersActIndependently(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing two seers act independently ===")
+
+	// Setup: 1 werewolf + 2 seers + 1 villager = 4 players
+	var players []*TestPlayer
+	for _, name := range []string{"D1", "D2", "D3", "D4"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleSeer)
+	players[0].addRoleByID(RoleSeer)
+	players[0].addRoleByID(RoleVillager)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, seers := findPlayersByRoleExtended(players)
+	if len(seers) < 2 || len(werewolves) == 0 {
+		t.Fatalf("Need 2 seers and 1 werewolf, got seers=%d werewolves=%d", len(seers), len(werewolves))
+	}
+
+	seer1 := seers[0]
+	seer2 := seers[1]
+	werewolf := werewolves[0]
+	villager := villagers[0]
+	ctx.logger.Debug("Seer1: %s, Seer2: %s, Werewolf: %s, Villager: %s", seer1.Name, seer2.Name, werewolf.Name, villager.Name)
+
+	// Both seers investigate BEFORE the werewolf votes so the night stays active
+	// and we can read results while still in night phase.
+
+	// Seer1 investigates werewolf
+	seer1.reload()
+	time.Sleep(20 * time.Millisecond)
+	seer1.seerInvestigatePlayer(werewolf.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Seer2 investigates villager
+	seer2.reload()
+	time.Sleep(20 * time.Millisecond)
+	seer2.seerInvestigatePlayer(villager.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Night is still active (werewolf hasn't voted) - verify and read both results
+	seer1.reload()
+	time.Sleep(20 * time.Millisecond)
+	if seer1.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: night ended before werewolf voted")
+		t.Error("Night should not end before werewolf votes")
+	}
+
+	result1 := seer1.getSeerResult()
+	if !strings.Contains(result1, "Werewolf") {
+		t.Errorf("Seer1 should see 'Werewolf' result, got: %s", result1)
+	}
+
+	seer2.reload()
+	time.Sleep(20 * time.Millisecond)
+	result2 := seer2.getSeerResult()
+	if !strings.Contains(result2, "Not a Werewolf") {
+		t.Errorf("Seer2 should see 'Not a Werewolf' result, got: %s", result2)
+	}
+
+	// Each seer sees only their own result, not the other's
+	if strings.Contains(result1, villager.Name) {
+		t.Errorf("Seer1 should not see Seer2's investigation of %s", villager.Name)
+	}
+	if strings.Contains(result2, werewolf.Name) {
+		t.Errorf("Seer2 should not see Seer1's investigation of %s", werewolf.Name)
+	}
+
+	// Werewolf votes - all conditions now met, night ends
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	werewolf.voteForPlayer(villager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: did not transition to day after werewolf voted")
+		t.Error("Should transition to day after werewolf voted (both seers already investigated)")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 func TestCannotVoteForDeadPlayer(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()

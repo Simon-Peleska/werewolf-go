@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(go build:*)",
-      "Bash(./agent_tools/run_server.sh:*)"
+      "Bash(./agent_tools/run_server.sh:*)",
+      "Bash(./agent_tools/run_tests.sh:*)"
     ]
   },
   "hooks": {

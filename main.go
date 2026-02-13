@@ -220,9 +220,10 @@ type GameAction struct {
 
 // Action types
 const (
-	ActionWerewolfKill = "werewolf_kill"
-	ActionDayVote      = "day_vote"
-	ActionElimination  = "elimination"
+	ActionWerewolfKill    = "werewolf_kill"
+	ActionDayVote         = "day_vote"
+	ActionElimination     = "elimination"
+	ActionSeerInvestigate = "seer_investigate"
 )
 
 // Visibility types
@@ -798,6 +799,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSWerewolfVote(client, msg)
 	case "day_vote":
 		handleWSDayVote(client, msg)
+	case "seer_investigate":
+		handleWSSeerInvestigate(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -1001,6 +1004,81 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+func handleWSSeerInvestigate(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSSeerInvestigate: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only investigate during night phase")
+		return
+	}
+
+	investigator, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSSeerInvestigate: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if investigator.RoleName != "Seer" {
+		sendErrorToast(client.playerID, "Only the Seer can investigate")
+		return
+	}
+
+	if !investigator.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+
+	// Check if already investigated this night
+	var existingCount int
+	db.Get(&existingCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionSeerInvestigate)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already investigated this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot investigate a dead player")
+		return
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+		game.ID, game.NightNumber, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor)
+	if err != nil {
+		logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
+		sendErrorToast(client.playerID, "Failed to record investigation")
+		return
+	}
+
+	log.Printf("Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
+	DebugLog("handleWSSeerInvestigate", "Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
+	LogDBState("after seer investigation")
+
+	resolveWerewolfVotes(game)
+}
+
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
@@ -1059,6 +1137,25 @@ func resolveWerewolfVotes(game *Game) {
 	majority := len(werewolves)/2 + 1
 	if maxVotes < majority {
 		log.Printf("No majority reached yet (need %d, max is %d)", majority, maxVotes)
+		broadcastGameUpdate()
+		return
+	}
+
+	// Check if all alive Seers have investigated before resolving the night
+	var aliveSeerCount int
+	db.Get(&aliveSeerCount, `
+		SELECT COUNT(*) FROM game_player g
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Seer'`, game.ID)
+
+	var seerInvestigateCount int
+	db.Get(&seerInvestigateCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.NightNumber, ActionSeerInvestigate)
+
+	if seerInvestigateCount < aliveSeerCount {
+		log.Printf("Waiting for seers to investigate (%d/%d)", seerInvestigateCount, aliveSeerCount)
 		broadcastGameUpdate()
 		return
 	}
@@ -1413,14 +1510,47 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate seer-specific data
+		isSeer := currentPlayer.RoleName == "Seer"
+		var hasInvestigated bool
+		var seerResults []SeerResult
+
+		if isSeer {
+			// Only show the current night's investigation result
+			var action GameAction
+			err := db.Get(&action, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionSeerInvestigate)
+			if err == nil && action.TargetPlayerID != nil {
+				hasInvestigated = true
+				var targetName string
+				var targetTeam string
+				db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+				db.Get(&targetTeam, `
+					SELECT r.team FROM game_player g JOIN role r ON g.role_id = r.rowid
+					WHERE g.game_id = ? AND g.player_id = ?`,
+					game.ID, *action.TargetPlayerID)
+				seerResults = []SeerResult{{
+					Round:      action.Round,
+					TargetName: targetName,
+					IsWerewolf: targetTeam == "werewolf",
+				}}
+			}
+		}
+
 		data := NightData{
-			Players:      players,
-			AliveTargets: aliveTargets,
-			IsWerewolf:   isWerewolf,
-			Werewolves:   werewolves,
-			Votes:        votes,
-			CurrentVote:  currentVote,
-			NightNumber:  game.NightNumber,
+			Players:         players,
+			AliveTargets:    aliveTargets,
+			IsWerewolf:      isWerewolf,
+			Werewolves:      werewolves,
+			Votes:           votes,
+			CurrentVote:     currentVote,
+			NightNumber:     game.NightNumber,
+			IsSeer:          isSeer,
+			HasInvestigated: hasInvestigated,
+			SeerResults:     seerResults,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
@@ -1708,15 +1838,25 @@ type WerewolfVote struct {
 	TargetName string
 }
 
+// SeerResult represents a seer's investigation result
+type SeerResult struct {
+	Round      int
+	TargetName string
+	IsWerewolf bool
+}
+
 // NightData holds all data needed to render the night phase
 type NightData struct {
-	Players      []Player
-	AliveTargets []Player
-	IsWerewolf   bool
-	Werewolves   []Player
-	Votes        []WerewolfVote
-	CurrentVote  int64 // 0 means no vote
-	NightNumber  int
+	Players         []Player
+	AliveTargets    []Player
+	IsWerewolf      bool
+	Werewolves      []Player
+	Votes           []WerewolfVote
+	CurrentVote     int64 // 0 means no vote
+	NightNumber     int
+	IsSeer          bool
+	HasInvestigated bool
+	SeerResults     []SeerResult
 }
 
 // DayVote represents a player's vote during the day

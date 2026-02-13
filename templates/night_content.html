@@ -37,7 +37,34 @@
 
         {{else}}
         <p>The village sleeps...</p>
-        <p>Close your eyes and wait for morning.</p>
+        {{if not .IsSeer}}<p>Close your eyes and wait for morning.</p>{{end}}
+
+        {{if .IsSeer}}
+        <h3>🔮 Your Investigation</h3>
+        {{if .HasInvestigated}}
+        <p><em>You have already investigated tonight.</em></p>
+        {{if .SeerResults}}
+        {{range .SeerResults}}
+        <p id="seer-result">
+            <strong>{{.TargetName}}</strong> is
+            {{if .IsWerewolf}}<strong class="seer-werewolf">a Werewolf!</strong>{{else}}<span class="seer-safe">Not a Werewolf</span>{{end}}
+        </p>
+        {{end}}
+        {{end}}
+        {{else}}
+        <p><small>Choose a player to investigate. You will learn if they are a werewolf.</small></p>
+        {{range .AliveTargets}}
+        <form ws-send id="seer-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="seer_investigate">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="seer-btn-{{.PlayerID}}" class="seer-button">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+        {{end}}
+
         {{end}}
     </section>
 
