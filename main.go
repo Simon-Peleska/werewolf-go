@@ -224,6 +224,7 @@ const (
 	ActionDayVote         = "day_vote"
 	ActionElimination     = "elimination"
 	ActionSeerInvestigate = "seer_investigate"
+	ActionDoctorProtect   = "doctor_protect"
 )
 
 // Visibility types
@@ -801,6 +802,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSDayVote(client, msg)
 	case "seer_investigate":
 		handleWSSeerInvestigate(client, msg)
+	case "doctor_protect":
+		handleWSDoctorProtect(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -1079,6 +1082,81 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+func handleWSDoctorProtect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSDoctorProtect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only protect during night phase")
+		return
+	}
+
+	doctor, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSDoctorProtect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if doctor.RoleName != "Doctor" {
+		sendErrorToast(client.playerID, "Only the Doctor can protect players")
+		return
+	}
+
+	if !doctor.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+
+	// One protection per night
+	var existingCount int
+	db.Get(&existingCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionDoctorProtect)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already protected someone this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot protect a dead player")
+		return
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+		game.ID, game.NightNumber, client.playerID, ActionDoctorProtect, targetID, VisibilityActor)
+	if err != nil {
+		logError("handleWSDoctorProtect: db.Exec insert protection", err)
+		sendErrorToast(client.playerID, "Failed to record protection")
+		return
+	}
+
+	log.Printf("Doctor '%s' is protecting '%s'", doctor.Name, target.Name)
+	DebugLog("handleWSDoctorProtect", "Doctor '%s' protecting '%s'", doctor.Name, target.Name)
+	LogDBState("after doctor protect")
+
+	resolveWerewolfVotes(game)
+}
+
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
@@ -1156,6 +1234,49 @@ func resolveWerewolfVotes(game *Game) {
 
 	if seerInvestigateCount < aliveSeerCount {
 		log.Printf("Waiting for seers to investigate (%d/%d)", seerInvestigateCount, aliveSeerCount)
+		broadcastGameUpdate()
+		return
+	}
+
+	// Check if all alive Doctors have protected before resolving the night
+	var aliveDoctorCount int
+	db.Get(&aliveDoctorCount, `
+		SELECT COUNT(*) FROM game_player g
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Doctor'`, game.ID)
+
+	var doctorProtectCount int
+	db.Get(&doctorProtectCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.NightNumber, ActionDoctorProtect)
+
+	if doctorProtectCount < aliveDoctorCount {
+		log.Printf("Waiting for doctors to protect (%d/%d)", doctorProtectCount, aliveDoctorCount)
+		broadcastGameUpdate()
+		return
+	}
+
+	// Check if the victim is protected by any Doctor
+	var protectionCount int
+	db.Get(&protectionCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
+		game.ID, game.NightNumber, ActionDoctorProtect, victim)
+
+	if protectionCount > 0 {
+		var victimName string
+		db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
+		log.Printf("Doctor saved %s (player ID %d) from werewolf attack", victimName, victim)
+		DebugLog("resolveWerewolfVotes", "Doctor saved '%s', no kill this night", victimName)
+
+		_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
+		if err != nil {
+			logError("resolveWerewolfVotes: transition to day (no kill)", err)
+			return
+		}
+		log.Printf("Night %d ended (doctor save), transitioning to day phase", game.NightNumber)
+		LogDBState("after doctor save")
 		broadcastGameUpdate()
 		return
 	}
@@ -1540,17 +1661,38 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate doctor-specific data
+		isDoctor := currentPlayer.RoleName == "Doctor"
+		var hasProtected bool
+		var doctorProtecting string
+
+		if isDoctor {
+			var action GameAction
+			err := db.Get(&action, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionDoctorProtect)
+			if err == nil && action.TargetPlayerID != nil {
+				hasProtected = true
+				db.Get(&doctorProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+			}
+		}
+
 		data := NightData{
-			Players:         players,
-			AliveTargets:    aliveTargets,
-			IsWerewolf:      isWerewolf,
-			Werewolves:      werewolves,
-			Votes:           votes,
-			CurrentVote:     currentVote,
-			NightNumber:     game.NightNumber,
-			IsSeer:          isSeer,
-			HasInvestigated: hasInvestigated,
-			SeerResults:     seerResults,
+			Players:          players,
+			AliveTargets:     aliveTargets,
+			IsWerewolf:       isWerewolf,
+			Werewolves:       werewolves,
+			Votes:            votes,
+			CurrentVote:      currentVote,
+			NightNumber:      game.NightNumber,
+			IsSeer:           isSeer,
+			HasInvestigated:  hasInvestigated,
+			SeerResults:      seerResults,
+			IsDoctor:         isDoctor,
+			HasProtected:     hasProtected,
+			DoctorProtecting: doctorProtecting,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
@@ -1847,16 +1989,19 @@ type SeerResult struct {
 
 // NightData holds all data needed to render the night phase
 type NightData struct {
-	Players         []Player
-	AliveTargets    []Player
-	IsWerewolf      bool
-	Werewolves      []Player
-	Votes           []WerewolfVote
-	CurrentVote     int64 // 0 means no vote
-	NightNumber     int
-	IsSeer          bool
-	HasInvestigated bool
-	SeerResults     []SeerResult
+	Players          []Player
+	AliveTargets     []Player
+	IsWerewolf       bool
+	Werewolves       []Player
+	Votes            []WerewolfVote
+	CurrentVote      int64 // 0 means no vote
+	NightNumber      int
+	IsSeer           bool
+	HasInvestigated  bool
+	SeerResults      []SeerResult
+	IsDoctor         bool
+	HasProtected     bool
+	DoctorProtecting string // Name of player being protected this night
 }
 
 // DayVote represents a player's vote during the day

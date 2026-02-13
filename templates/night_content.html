@@ -1,6 +1,7 @@
 <div id="game-content" hx-swap-oob="true">
     <section>
         <h2>Night {{.NightNumber}}</h2>
+
         {{if .IsWerewolf}}
         <p>The werewolves awaken...</p>
 
@@ -35,11 +36,7 @@
         </ul>
         {{end}}
 
-        {{else}}
-        <p>The village sleeps...</p>
-        {{if not .IsSeer}}<p>Close your eyes and wait for morning.</p>{{end}}
-
-        {{if .IsSeer}}
+        {{else if .IsSeer}}
         <h3>🔮 Your Investigation</h3>
         {{if .HasInvestigated}}
         <p><em>You have already investigated tonight.</em></p>
@@ -63,8 +60,27 @@
         </form>
         {{end}}
         {{end}}
+
+        {{else if .IsDoctor}}
+        <h3>🏥 Your Protection</h3>
+        {{if .HasProtected}}
+        <p id="doctor-result"><em>You are protecting <strong>{{.DoctorProtecting}}</strong> tonight.</em></p>
+        {{else}}
+        <p><small>Choose a player to protect from the werewolves tonight.</small></p>
+        {{range .AliveTargets}}
+        <form ws-send id="doctor-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="doctor_protect">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="doctor-btn-{{.PlayerID}}" class="doctor-button">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
         {{end}}
 
+        {{else}}
+        <p>The village sleeps...</p>
+        <p>Close your eyes and wait for morning.</p>
         {{end}}
     </section>
 

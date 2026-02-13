@@ -2487,3 +2487,355 @@ func TestCannotVoteForDeadPlayer(t *testing.T) {
 
 	ctx.logger.Debug("=== Test passed ===")
 }
+
+// ============================================================================
+// Doctor Test Helpers
+// ============================================================================
+
+// findPlayersByRoleWithDoctor returns players grouped by role including Doctor
+func findPlayersByRoleWithDoctor(players []*TestPlayer) (werewolves, villagers, doctors []*TestPlayer) {
+	for _, p := range players {
+		role := p.getRole()
+		switch role {
+		case "Werewolf":
+			werewolves = append(werewolves, p)
+		case "Doctor":
+			doctors = append(doctors, p)
+		default:
+			villagers = append(villagers, p)
+		}
+	}
+	return
+}
+
+// doctorProtectPlayer clicks the doctor protect button for a specific player
+func (tp *TestPlayer) doctorProtectPlayer(targetName string) {
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Doctor protecting: %s", tp.Name, targetName)
+	}
+
+	buttons, err := tp.p().Elements(".doctor-button")
+	if err != nil {
+		if tp.logger != nil {
+			tp.logger.Debug("[%s] Failed to find doctor buttons: %v", tp.Name, err)
+		}
+		return
+	}
+
+	for _, btn := range buttons {
+		text := strings.TrimSpace(btn.MustText())
+		if strings.Contains(text, targetName) {
+			btn.MustClick()
+			time.Sleep(20 * time.Millisecond)
+			tp.logHTML("after doctor protection of " + targetName)
+			return
+		}
+	}
+
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Could not find doctor button for: %s", tp.Name, targetName)
+	}
+}
+
+// getDoctorResult returns the text of the doctor's protection confirmation
+func (tp *TestPlayer) getDoctorResult() string {
+	el, err := tp.p().Element("#doctor-result")
+	if err != nil {
+		return ""
+	}
+	text := el.MustText()
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Doctor result: %s", tp.Name, text)
+	}
+	return text
+}
+
+// canSeeDoctorButtons checks if the doctor protection buttons are visible
+func (tp *TestPlayer) canSeeDoctorButtons() bool {
+	elements, err := tp.p().Elements(".doctor-button")
+	canSee := err == nil && len(elements) > 0
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Can see doctor buttons: %v", tp.Name, canSee)
+	}
+	return canSee
+}
+
+// hasNoDeathMessage checks if the day phase shows "no one died last night"
+func (tp *TestPlayer) hasNoDeathMessage() bool {
+	el, err := tp.p().Element("#no-death-message")
+	found := err == nil && el != nil
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Has no-death message: %v", tp.Name, found)
+	}
+	return found
+}
+
+// ============================================================================
+// Doctor Tests
+// ============================================================================
+
+func TestDoctorCanProtect(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing Doctor can see protect buttons and get confirmation ===")
+
+	// Setup: 1 villager + 1 werewolf + 1 doctor = 3 players
+	var players []*TestPlayer
+	for _, name := range []string{"E1", "E2", "E3"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleDoctor)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, doctors := findPlayersByRoleWithDoctor(players)
+	if len(doctors) == 0 {
+		t.Fatal("No Doctor found after role assignment")
+	}
+	if len(werewolves) == 0 || len(villagers) == 0 {
+		t.Fatal("Missing werewolves or villagers")
+	}
+
+	doctor := doctors[0]
+	villager := villagers[0]
+	ctx.logger.Debug("Doctor: %s, protecting Villager: %s", doctor.Name, villager.Name)
+
+	// Doctor should see protection buttons
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !doctor.canSeeDoctorButtons() {
+		ctx.logger.LogDB("FAIL: doctor cannot see protect buttons")
+		t.Fatal("Doctor should see protection buttons during night phase")
+	}
+
+	// Doctor protects the villager - night stays active (werewolf hasn't voted yet)
+	doctor.doctorProtectPlayer(villager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Doctor should see confirmation
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	result := doctor.getDoctorResult()
+	if !strings.Contains(result, villager.Name) {
+		ctx.logger.LogDB("FAIL: doctor protection confirmation missing")
+		t.Errorf("Doctor should see protection confirmation with target name %s, got: %s", villager.Name, result)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDoctorSavesVictim(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing Doctor saves the werewolf's target ===")
+
+	// Setup: 1 villager + 1 werewolf + 1 doctor = 3 players
+	var players []*TestPlayer
+	for _, name := range []string{"F1", "F2", "F3"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleDoctor)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, doctors := findPlayersByRoleWithDoctor(players)
+	if len(doctors) == 0 || len(werewolves) == 0 || len(villagers) == 0 {
+		t.Fatal("Missing required roles")
+	}
+
+	doctor := doctors[0]
+	werewolf := werewolves[0]
+	villager := villagers[0]
+	ctx.logger.Debug("Doctor: %s, Werewolf: %s, Villager (target): %s", doctor.Name, werewolf.Name, villager.Name)
+
+	// Doctor protects the villager first (before werewolf votes)
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	doctor.doctorProtectPlayer(villager.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Werewolf votes for the villager (the protected player)
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	werewolf.voteForPlayer(villager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Night should end - check day phase shows "no one died"
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: did not transition to day")
+		t.Fatal("Should have transitioned to day phase")
+	}
+
+	if !werewolf.hasNoDeathMessage() {
+		content := werewolf.getGameContent()
+		ctx.logger.LogDB("FAIL: victim not saved by doctor")
+		t.Errorf("Doctor should have saved the victim, expected 'no one died' message. Content: %s", content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDoctorDoesNotSaveWrongPlayer(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing Doctor protecting wrong player does not save victim ===")
+
+	// Setup: 2 villagers + 1 werewolf + 1 doctor = 4 players
+	var players []*TestPlayer
+	for _, name := range []string{"G1", "G2", "G3", "G4"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleDoctor)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, villagers, doctors := findPlayersByRoleWithDoctor(players)
+	if len(doctors) == 0 || len(werewolves) == 0 || len(villagers) < 2 {
+		t.Fatalf("Missing required roles, got doctors=%d werewolves=%d villagers=%d", len(doctors), len(werewolves), len(villagers))
+	}
+
+	doctor := doctors[0]
+	werewolf := werewolves[0]
+	villager0 := villagers[0] // doctor protects this one
+	villager1 := villagers[1] // werewolf kills this one
+	ctx.logger.Debug("Doctor: %s protects %s, Werewolf: %s kills %s", doctor.Name, villager0.Name, werewolf.Name, villager1.Name)
+
+	// Doctor protects villager0
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	doctor.doctorProtectPlayer(villager0.Name)
+	time.Sleep(20 * time.Millisecond)
+
+	// Werewolf kills villager1 (a different player - not protected)
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	werewolf.voteForPlayer(villager1.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Day should show villager1 died
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: did not transition to day")
+		t.Fatal("Should have transitioned to day phase")
+	}
+
+	if werewolf.hasNoDeathMessage() {
+		ctx.logger.LogDB("FAIL: expected death but got no-death message")
+		t.Error("Doctor protected wrong player, villager1 should have died")
+	}
+
+	content := werewolf.getGameContent()
+	if !strings.Contains(content, villager1.Name) {
+		ctx.logger.LogDB("FAIL: death announcement missing victim name")
+		t.Errorf("Day announcement should mention %s (the victim), got: %s", villager1.Name, content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestNightWaitsForDoctor(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing night waits for doctor to protect ===")
+
+	// Setup: 1 doctor + 1 werewolf = 2 players
+	var players []*TestPlayer
+	for _, name := range []string{"H1", "H2"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleDoctor)
+	time.Sleep(20 * time.Millisecond)
+	players[0].reload()
+	players[0].startGame()
+	time.Sleep(20 * time.Millisecond)
+
+	werewolves, _, doctors := findPlayersByRoleWithDoctor(players)
+	if len(doctors) == 0 || len(werewolves) == 0 {
+		t.Fatal("Missing doctor or werewolf")
+	}
+
+	doctor := doctors[0]
+	werewolf := werewolves[0]
+	ctx.logger.Debug("Doctor: %s, Werewolf: %s", doctor.Name, werewolf.Name)
+
+	// Werewolf votes - night should NOT end yet (doctor hasn't protected)
+	werewolf.voteForPlayer(doctor.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	werewolf.reload()
+	time.Sleep(20 * time.Millisecond)
+	if werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: night ended before doctor protected")
+		t.Error("Night should not end until doctor has protected")
+	}
+	if !werewolf.isInNightPhase() {
+		t.Error("Should still be in night phase")
+	}
+
+	ctx.logger.Debug("Werewolf voted, night still active. Now doctor protects...")
+
+	// Doctor protects - night SHOULD end now
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	doctor.doctorProtectPlayer(werewolf.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	doctor.reload()
+	time.Sleep(20 * time.Millisecond)
+	if !doctor.isInDayPhase() {
+		content := doctor.getGameContent()
+		ctx.logger.LogDB("FAIL: did not transition to day after doctor protected")
+		t.Errorf("Should transition to day after both werewolf voted and doctor protected. Content: %s", content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
