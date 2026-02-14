@@ -225,6 +225,7 @@ const (
 	ActionElimination     = "elimination"
 	ActionSeerInvestigate = "seer_investigate"
 	ActionDoctorProtect   = "doctor_protect"
+	ActionGuardProtect    = "guard_protect"
 )
 
 // Visibility types
@@ -804,6 +805,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSSeerInvestigate(client, msg)
 	case "doctor_protect":
 		handleWSDoctorProtect(client, msg)
+	case "guard_protect":
+		handleWSGuardProtect(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -1157,6 +1160,100 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+func handleWSGuardProtect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSGuardProtect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only protect during night phase")
+		return
+	}
+
+	guard, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSGuardProtect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if guard.RoleName != "Guard" {
+		sendErrorToast(client.playerID, "Only the Guard can protect players")
+		return
+	}
+
+	if !guard.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+
+	// One protection per night
+	var existingCount int
+	db.Get(&existingCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionGuardProtect)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already protected someone this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	// Guard cannot protect themselves
+	if targetID == client.playerID {
+		sendErrorToast(client.playerID, "Guard cannot protect themselves")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot protect a dead player")
+		return
+	}
+
+	// Guard cannot protect the same player as last night
+	if game.NightNumber > 1 {
+		var lastTargetID int64
+		err := db.Get(&lastTargetID, `
+			SELECT target_player_id FROM game_action
+			WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+			game.ID, game.NightNumber-1, client.playerID, ActionGuardProtect)
+		if err == nil && lastTargetID == targetID {
+			sendErrorToast(client.playerID, "Cannot protect the same player two nights in a row")
+			return
+		}
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+		game.ID, game.NightNumber, client.playerID, ActionGuardProtect, targetID, VisibilityActor)
+	if err != nil {
+		logError("handleWSGuardProtect: db.Exec insert protection", err)
+		sendErrorToast(client.playerID, "Failed to record protection")
+		return
+	}
+
+	log.Printf("Guard '%s' is protecting '%s'", guard.Name, target.Name)
+	DebugLog("handleWSGuardProtect", "Guard '%s' protecting '%s'", guard.Name, target.Name)
+	LogDBState("after guard protect")
+
+	resolveWerewolfVotes(game)
+}
+
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
@@ -1257,6 +1354,25 @@ func resolveWerewolfVotes(game *Game) {
 		return
 	}
 
+	// Check if all alive Guards have protected before resolving the night
+	var aliveGuardCount int
+	db.Get(&aliveGuardCount, `
+		SELECT COUNT(*) FROM game_player g
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Guard'`, game.ID)
+
+	var guardProtectCount int
+	db.Get(&guardProtectCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.NightNumber, ActionGuardProtect)
+
+	if guardProtectCount < aliveGuardCount {
+		log.Printf("Waiting for guards to protect (%d/%d)", guardProtectCount, aliveGuardCount)
+		broadcastGameUpdate()
+		return
+	}
+
 	// Check if the victim is protected by any Doctor
 	var protectionCount int
 	db.Get(&protectionCount, `
@@ -1264,19 +1380,32 @@ func resolveWerewolfVotes(game *Game) {
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
 		game.ID, game.NightNumber, ActionDoctorProtect, victim)
 
-	if protectionCount > 0 {
+	// Check if the victim is protected by any Guard
+	var guardProtectionCount int
+	db.Get(&guardProtectionCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
+		game.ID, game.NightNumber, ActionGuardProtect, victim)
+
+	if protectionCount > 0 || guardProtectionCount > 0 {
 		var victimName string
 		db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
-		log.Printf("Doctor saved %s (player ID %d) from werewolf attack", victimName, victim)
-		DebugLog("resolveWerewolfVotes", "Doctor saved '%s', no kill this night", victimName)
+		if protectionCount > 0 {
+			log.Printf("Doctor saved %s (player ID %d) from werewolf attack", victimName, victim)
+			DebugLog("resolveWerewolfVotes", "Doctor saved '%s', no kill this night", victimName)
+		}
+		if guardProtectionCount > 0 {
+			log.Printf("Guard saved %s (player ID %d) from werewolf attack", victimName, victim)
+			DebugLog("resolveWerewolfVotes", "Guard saved '%s', no kill this night", victimName)
+		}
 
 		_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
 		if err != nil {
 			logError("resolveWerewolfVotes: transition to day (no kill)", err)
 			return
 		}
-		log.Printf("Night %d ended (doctor save), transitioning to day phase", game.NightNumber)
-		LogDBState("after doctor save")
+		log.Printf("Night %d ended (protection save), transitioning to day phase", game.NightNumber)
+		LogDBState("after protection save")
 		broadcastGameUpdate()
 		return
 	}
@@ -1679,20 +1808,66 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate guard-specific data
+		isGuard := currentPlayer.RoleName == "Guard"
+		var guardHasProtected bool
+		var guardProtecting string
+		var guardTargets []Player
+
+		if isGuard {
+			var action GameAction
+			err := db.Get(&action, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionGuardProtect)
+			if err == nil && action.TargetPlayerID != nil {
+				guardHasProtected = true
+				db.Get(&guardProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+			}
+
+			// Build guard targets: alive players excluding self and last night's target
+			var lastProtectedID int64
+			if game.NightNumber > 1 {
+				var lastAction GameAction
+				err := db.Get(&lastAction, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+					game.ID, game.NightNumber-1, playerID, ActionGuardProtect)
+				if err == nil && lastAction.TargetPlayerID != nil {
+					lastProtectedID = *lastAction.TargetPlayerID
+				}
+			}
+			for _, t := range aliveTargets {
+				if t.PlayerID == playerID {
+					continue // Cannot protect self
+				}
+				if lastProtectedID != 0 && t.PlayerID == lastProtectedID {
+					continue // Cannot protect same player as last night
+				}
+				guardTargets = append(guardTargets, t)
+			}
+		}
+
 		data := NightData{
-			Players:          players,
-			AliveTargets:     aliveTargets,
-			IsWerewolf:       isWerewolf,
-			Werewolves:       werewolves,
-			Votes:            votes,
-			CurrentVote:      currentVote,
-			NightNumber:      game.NightNumber,
-			IsSeer:           isSeer,
-			HasInvestigated:  hasInvestigated,
-			SeerResults:      seerResults,
-			IsDoctor:         isDoctor,
-			HasProtected:     hasProtected,
-			DoctorProtecting: doctorProtecting,
+			Players:           players,
+			AliveTargets:      aliveTargets,
+			IsWerewolf:        isWerewolf,
+			Werewolves:        werewolves,
+			Votes:             votes,
+			CurrentVote:       currentVote,
+			NightNumber:       game.NightNumber,
+			IsSeer:            isSeer,
+			HasInvestigated:   hasInvestigated,
+			SeerResults:       seerResults,
+			IsDoctor:          isDoctor,
+			HasProtected:      hasProtected,
+			DoctorProtecting:  doctorProtecting,
+			IsGuard:           isGuard,
+			GuardHasProtected: guardHasProtected,
+			GuardProtecting:   guardProtecting,
+			GuardTargets:      guardTargets,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
@@ -1989,19 +2164,23 @@ type SeerResult struct {
 
 // NightData holds all data needed to render the night phase
 type NightData struct {
-	Players          []Player
-	AliveTargets     []Player
-	IsWerewolf       bool
-	Werewolves       []Player
-	Votes            []WerewolfVote
-	CurrentVote      int64 // 0 means no vote
-	NightNumber      int
-	IsSeer           bool
-	HasInvestigated  bool
-	SeerResults      []SeerResult
-	IsDoctor         bool
-	HasProtected     bool
-	DoctorProtecting string // Name of player being protected this night
+	Players           []Player
+	AliveTargets      []Player
+	IsWerewolf        bool
+	Werewolves        []Player
+	Votes             []WerewolfVote
+	CurrentVote       int64 // 0 means no vote
+	NightNumber       int
+	IsSeer            bool
+	HasInvestigated   bool
+	SeerResults       []SeerResult
+	IsDoctor          bool
+	HasProtected      bool
+	DoctorProtecting  string // Name of player being protected this night
+	IsGuard           bool
+	GuardHasProtected bool
+	GuardProtecting   string   // Name of player being protected this night
+	GuardTargets      []Player // Alive targets excluding self and last night's target
 }
 
 // DayVote represents a player's vote during the day

@@ -78,6 +78,23 @@
         {{end}}
         {{end}}
 
+        {{else if .IsGuard}}
+        <h3>🛡️ Your Protection</h3>
+        {{if .GuardHasProtected}}
+        <p id="guard-result"><em>You are protecting <strong>{{.GuardProtecting}}</strong> tonight.</em></p>
+        {{else}}
+        <p><small>Choose a player to protect from the werewolves tonight. You cannot protect yourself or the same player two nights in a row.</small></p>
+        {{range .GuardTargets}}
+        <form ws-send id="guard-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="guard_protect">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="guard-btn-{{.PlayerID}}" class="guard-button">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+
         {{else}}
         <p>The village sleeps...</p>
         <p>Close your eyes and wait for morning.</p>

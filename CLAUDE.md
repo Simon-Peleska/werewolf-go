@@ -297,6 +297,8 @@ Use `--help` with any script for full usage details.
 --- htmx ideomorph extension
 --- htmx Web Socket extension
 --- Pico.css
+--- Metal Mania Google Font https://fonts.google.com/specimen/Metal+Mania
+--- IM Fell Great Primer Google font https://fonts.google.com/specimen/IM+Fell+Great+Primer
 -- testing
 --- go-rod
 
