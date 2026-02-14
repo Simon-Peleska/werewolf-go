@@ -1,6 +1,5 @@
 # Todos
 - implement special characters
-- relace minified js and css with original
 - add compression
 - split code
 - styling
