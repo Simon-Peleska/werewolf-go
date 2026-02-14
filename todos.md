@@ -1,5 +1,13 @@
 # Todos
 - implement special characters
+  - [x] Seer
+  - [x] Doctor
+  - [x] Guard
+  - [ ] Witch
+  - [x] Hunter
+  - [ ] Cupid
+  - [ ] Mason
+  - [ ] Wolf Cub
 - add compression
 - split code
 - styling

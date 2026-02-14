@@ -226,6 +226,7 @@ const (
 	ActionSeerInvestigate = "seer_investigate"
 	ActionDoctorProtect   = "doctor_protect"
 	ActionGuardProtect    = "guard_protect"
+	ActionHunterRevenge   = "hunter_revenge"
 )
 
 // Visibility types
@@ -807,6 +808,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSDoctorProtect(client, msg)
 	case "guard_protect":
 		handleWSGuardProtect(client, msg)
+	case "hunter_revenge":
+		handleWSHunterRevenge(client, msg)
 	default:
 		log.Printf("Unknown WebSocket action: %s", msg.Action)
 	}
@@ -1254,6 +1257,113 @@ func handleWSGuardProtect(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+func handleWSHunterRevenge(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSHunterRevenge: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "day" {
+		sendErrorToast(client.playerID, "Hunter revenge not active")
+		return
+	}
+
+	hunter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSHunterRevenge: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if hunter.RoleName != "Hunter" {
+		sendErrorToast(client.playerID, "Only the Hunter can take a revenge shot")
+		return
+	}
+
+	if hunter.IsAlive {
+		sendErrorToast(client.playerID, "Hunter revenge is only available when eliminated")
+		return
+	}
+
+	// Check if this Hunter already took their revenge shot
+	var revengeCount int
+	db.Get(&revengeCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND actor_player_id = ? AND action_type = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionHunterRevenge)
+	if revengeCount > 0 {
+		sendErrorToast(client.playerID, "You have already taken your revenge shot")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot shoot a dead player")
+		return
+	}
+
+	// Kill the target
+	_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, targetID)
+	if err != nil {
+		logError("handleWSHunterRevenge: kill target", err)
+		sendErrorToast(client.playerID, "Failed to kill target")
+		return
+	}
+
+	// Record the revenge action (public visibility)
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
+		game.ID, game.NightNumber, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic)
+	if err != nil {
+		logError("handleWSHunterRevenge: record action", err)
+	}
+
+	log.Printf("Hunter '%s' took revenge on '%s'", hunter.Name, target.Name)
+	DebugLog("handleWSHunterRevenge", "Hunter '%s' shot '%s'", hunter.Name, target.Name)
+	LogDBState("after hunter revenge")
+
+	// Check if the target is also a Hunter — they get to take their shot too
+	if target.RoleName == "Hunter" {
+		log.Printf("Hunter '%s' was killed by another Hunter's revenge — entering chained revenge", target.Name)
+		broadcastGameUpdate()
+		return
+	}
+
+	// Check win conditions
+	if checkWinConditions(game) {
+		return // Game ended
+	}
+
+	// Check if a day elimination happened this round (the chain started from a day vote)
+	var dayEliminationCount int
+	db.Get(&dayEliminationCount, `
+		SELECT COUNT(*) FROM game_action
+		WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
+		game.ID, game.NightNumber, ActionElimination)
+
+	if dayEliminationCount > 0 {
+		// Chain started from day elimination — transition to night
+		transitionToNight(game)
+	} else {
+		// Chain started from night kill — stay in day for voting
+		broadcastGameUpdate()
+	}
+}
+
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
@@ -1575,6 +1685,18 @@ func resolveDayVotes(game *Game) {
 	db.Get(&eliminatedName, "SELECT name FROM player WHERE rowid = ?", eliminatedID)
 	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
+
+	// Check if eliminated player is a Hunter — they get a revenge shot before game continues
+	var eliminatedRole string
+	db.Get(&eliminatedRole, `
+		SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.player_id = ?`, game.ID, eliminatedID)
+	if eliminatedRole == "Hunter" {
+		log.Printf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", eliminatedName)
+		LogDBState("after hunter elimination - waiting for revenge")
+		broadcastGameUpdate()
+		return
+	}
 
 	// Check win conditions
 	if checkWinConditions(game) {
@@ -1908,6 +2030,52 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate Hunter revenge data — check for any dead Hunter who hasn't taken their revenge shot yet
+		var hunterRevengeNeeded, hunterRevengeDone bool
+		var hunterName, hunterVictim, hunterVictimRole string
+		var isTheHunter bool
+		var hunterTargets []Player
+
+		// Step 1: Find a dead Hunter who hasn't taken revenge yet (pending — takes priority)
+		for _, p := range players {
+			if p.IsAlive || p.RoleName != "Hunter" {
+				continue
+			}
+			var revengeCount int
+			db.Get(&revengeCount, `
+				SELECT COUNT(*) FROM game_action
+				WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
+				game.ID, p.PlayerID, ActionHunterRevenge)
+			if revengeCount == 0 {
+				hunterRevengeNeeded = true
+				hunterName = p.Name
+				isTheHunter = (p.PlayerID == playerID)
+				hunterTargets = aliveTargets
+				break
+			}
+		}
+
+		// Step 2: If no pending Hunter, check if any revenge happened this round (show result)
+		if !hunterRevengeNeeded {
+			var revengeAction GameAction
+			err = db.Get(&revengeAction, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND action_type = ?
+				ORDER BY rowid DESC LIMIT 1`,
+				game.ID, game.NightNumber, ActionHunterRevenge)
+			if err == nil && revengeAction.TargetPlayerID != nil {
+				hunterRevengeNeeded = true
+				hunterRevengeDone = true
+				db.Get(&hunterName, "SELECT name FROM player WHERE rowid = ?", revengeAction.ActorPlayerID)
+				db.Get(&hunterVictim, "SELECT name FROM player WHERE rowid = ?", *revengeAction.TargetPlayerID)
+				db.Get(&hunterVictimRole, `
+					SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid
+					WHERE g.game_id = ? AND g.player_id = ?`, game.ID, *revengeAction.TargetPlayerID)
+				isTheHunter = (revengeAction.ActorPlayerID == playerID)
+			}
+		}
+
 		// Get current votes for this day
 		var votes []DayVote
 		var currentVote int64
@@ -1940,6 +2108,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			Votes:               votes,
 			CurrentVote:         currentVote,
 			IsAlive:             currentPlayer.IsAlive,
+			HunterRevengeNeeded: hunterRevengeNeeded,
+			HunterRevengeDone:   hunterRevengeDone,
+			HunterName:          hunterName,
+			HunterVictim:        hunterVictim,
+			HunterVictimRole:    hunterVictimRole,
+			IsTheHunter:         isTheHunter,
+			HunterTargets:       hunterTargets,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
@@ -2199,6 +2374,13 @@ type DayData struct {
 	Votes               []DayVote
 	CurrentVote         int64 // 0 means no vote
 	IsAlive             bool
+	HunterRevengeNeeded bool     // Night victim was a Hunter who hasn't shot yet
+	HunterRevengeDone   bool     // Hunter has taken their shot
+	HunterName          string   // Name of the dead Hunter
+	HunterVictim        string   // Who the Hunter shot (after revenge)
+	HunterVictimRole    string   // Role of Hunter's target
+	IsTheHunter         bool     // Is this player the dead Hunter needing to shoot?
+	HunterTargets       []Player // Alive targets for the Hunter to pick from
 }
 
 // FinishedData holds all data needed to render the finished game screen

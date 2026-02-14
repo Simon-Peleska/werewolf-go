@@ -10,8 +10,34 @@
         {{else}}
         <p id="no-death-message">The village awakens. No one died last night.</p>
         {{end}}
+
+        {{if .HunterRevengeNeeded}}
+        <div id="hunter-revenge-section">
+            {{if .HunterRevengeDone}}
+            <div class="death-announcement" id="hunter-revenge-result">
+                <p>The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
+                <p>They were a <strong>{{.HunterVictimRole}}</strong>.</p>
+            </div>
+            {{else if .IsTheHunter}}
+            <h3>🏹 Your Last Shot</h3>
+            <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
+            {{range .HunterTargets}}
+            <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form">
+                <input type="hidden" name="action" value="hunter_revenge">
+                <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+                <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">
+                    {{.Name}}
+                </button>
+            </form>
+            {{end}}
+            {{else}}
+            <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
+            {{end}}
+        </div>
+        {{end}}
     </section>
 
+    {{if not .HunterRevengeNeeded | or .HunterRevengeDone}}
     <section>
         <h3>Vote to Eliminate</h3>
         {{if .IsAlive}}
@@ -40,6 +66,7 @@
         </ul>
         {{end}}
     </section>
+    {{end}}
 
     <section>
         <h3>All Players</h3>
