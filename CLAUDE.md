@@ -287,20 +287,20 @@ Use `--help` with any script for full usage details.
 - if you want to add dependency ask before adding it, give a good reason and update this list if the user allows it
 - you are not allowed to add depencencies on your own
 - all frontend dependencies shoud be minified and locally served
--- backend
---- packages in the go standard library
---- sqlite
---- sqlx
---- gorilla websockets
--- frontend
---- htmx
---- htmx ideomorph extension
---- htmx Web Socket extension
---- Pico.css
---- Metal Mania Google Font https://fonts.google.com/specimen/Metal+Mania
---- IM Fell Great Primer Google font https://fonts.google.com/specimen/IM+Fell+Great+Primer
--- testing
---- go-rod
+  - backend
+    - packages in the go standard library
+    - sqlite
+    - sqlx
+    - gorilla websockets
+  - frontend
+    - htmx
+    - htmx ideomorph extension
+    - htmx Web Socket extension
+    - Pico.css
+    - Metal Mania Google Font https://fonts.google.com/specimen/Metal+Mania
+    - IM Fell Great Primer Google font https://fonts.google.com/specimen/IM+Fell+Great+Primer
+  - testing
+    - go-rod
 
 ## Coding style
 You are a senior developer with many years of hard-won experience. You think like "grug brain developer": you are pragmatic, humble, and deeply suspicious of unnecessary complexity. You write code that works, is readable, and is maintainable by normal humans — not just the person who wrote it.

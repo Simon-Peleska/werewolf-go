@@ -1,11 +1,14 @@
 # Todos
 - implement special characters
+- relace minified js and css with original
+- add compression
+- split code
 - styling
--- change layout
--- change color scheme
--- change fonts
--- make colorscheme change during the night
--- add icons
+  - change layout
+  - change color scheme
+  - change fonts
+  - make colorscheme change during the night
+  - add icons
 - add ai storyteller
 - add questions during the night
 - add i18n support
