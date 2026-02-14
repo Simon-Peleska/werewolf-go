@@ -1,0 +1,15 @@
+# Todos
+- implement special characters
+- styling
+-- change layout
+-- change color scheme
+-- change fonts
+-- make colorscheme change during the night
+-- add icons
+- add ai storyteller
+- add questions during the night
+- add i18n support
+- add different scenario support
+- add multigame support
+- create nix flake for setup build and testing 
+- deploy on host provider
