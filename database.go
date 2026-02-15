@@ -155,6 +155,7 @@ const (
 	ActionHunterRevenge   = "hunter_revenge"
 	ActionWitchHeal       = "witch_heal"
 	ActionWitchKill       = "witch_kill"
+	ActionWitchPass       = "witch_pass"
 )
 
 // Visibility types

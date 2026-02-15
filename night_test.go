@@ -509,3 +509,253 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 
 	ctx.logger.Debug("=== Test passed ===")
 }
+
+func TestWitchHealSavesVictim(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 4 villagers (including witch) + 2 werewolves = 6 players
+	var players []*TestPlayer
+	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWitch)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	time.Sleep(20 * time.Millisecond)
+	players[0].startGame()
+	time.Sleep(50 * time.Millisecond)
+
+	var werewolves, villagers []*TestPlayer
+	werewolves, villagers = findPlayersByRole(players)
+
+	ctx.logger.Debug("=== Test: Witch heals victim ===")
+	ctx.logger.Debug("Players: %d werewolves, %d villagers", len(werewolves), len(villagers))
+
+	// Find witch
+	var witch *TestPlayer
+	for _, p := range villagers {
+		if p.getRole() == "Witch" {
+			witch = p
+			break
+		}
+	}
+	if witch == nil {
+		t.Fatal("Witch not found in villagers")
+	}
+
+	// Werewolves kill first villager (not the witch)
+	targetVillager := villagers[0]
+	if targetVillager == witch {
+		targetVillager = villagers[1]
+	}
+	werewolves[0].voteForPlayer(targetVillager.Name)
+	werewolves[1].voteForPlayer(targetVillager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Witch waits for majority then heals
+	witch.reload()
+	// Witch should see the victim name
+	gameContent := witch.getGameContent()
+	if !strings.Contains(gameContent, targetVillager.Name) {
+		t.Errorf("Witch should see werewolf target name: %s", targetVillager.Name)
+	}
+
+	// Send heal action
+	witch.p().MustElement("#witch-heal-form").MustClick()
+	time.Sleep(100 * time.Millisecond)
+
+	// Witch passes to end night
+	witch.reload()
+	witch.p().MustElement("#witch-pass-form").MustClick()
+	time.Sleep(100 * time.Millisecond)
+
+	// Check day phase - victim should be alive
+	targetVillager.reload()
+	if !targetVillager.isInDayPhase() {
+		content := targetVillager.getGameContent()
+		ctx.logger.LogDB("FAIL: not in day phase")
+		t.Errorf("Should be in day phase after night with heal. Content: %s", content)
+	}
+
+	// Verify victim is still alive (no death announcement)
+	announcement := targetVillager.getDeathAnnouncement()
+	if strings.Contains(announcement, targetVillager.Name) {
+		t.Errorf("Victim should not be in death announcement: %s", announcement)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestWitchPoisonKillsPlayer(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 4 villagers (including witch) + 2 werewolves = 6 players
+	var players []*TestPlayer
+	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWitch)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	time.Sleep(20 * time.Millisecond)
+	players[0].startGame()
+	time.Sleep(50 * time.Millisecond)
+
+	var werewolves, villagers []*TestPlayer
+	werewolves, villagers = findPlayersByRole(players)
+
+	ctx.logger.Debug("=== Test: Witch poison kills player ===")
+
+	// Find witch
+	var witch *TestPlayer
+	var otherVillager *TestPlayer
+	for _, p := range villagers {
+		if p.getRole() == "Witch" {
+			witch = p
+		} else if otherVillager == nil {
+			otherVillager = p
+		}
+	}
+	if witch == nil {
+		t.Fatal("Witch not found")
+	}
+
+	// Werewolves kill first villager (not the witch or the one we'll poison)
+	targetVillager := villagers[0]
+	if targetVillager == witch {
+		targetVillager = villagers[1]
+	}
+	werewolves[0].voteForPlayer(targetVillager.Name)
+	werewolves[1].voteForPlayer(targetVillager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Witch poisons a different player (not the target)
+	witch.reload()
+	// Find poison button for otherVillager
+	buttons, err := witch.p().Elements(".witch-kill-button")
+	if err != nil {
+		t.Fatalf("Failed to find poison buttons: %v", err)
+	}
+	for _, btn := range buttons {
+		text := btn.MustText()
+		if strings.Contains(text, otherVillager.Name) {
+			btn.MustClick()
+			break
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	// Witch passes
+	witch.reload()
+	witch.p().MustElement("#witch-pass-form").MustClick()
+	time.Sleep(100 * time.Millisecond)
+
+	// Check results in day phase
+	otherVillager.reload()
+	if !otherVillager.isInDayPhase() {
+		content := otherVillager.getGameContent()
+		t.Errorf("Should be in day phase after night. Content: %s", content)
+	}
+
+	// Verify poison target is dead (appears in death announcement with victim and poison target)
+	announcement := otherVillager.getDeathAnnouncement()
+	if !strings.Contains(announcement, otherVillager.Name) {
+		content := otherVillager.getGameContent()
+		t.Errorf("Poisoned player %s should be in death announcement. Announcement: %s, Content: %s",
+			otherVillager.Name, announcement, content)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestWitchPassEndNight(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 4 villagers (including witch) + 2 werewolves = 6 players
+	var players []*TestPlayer
+	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		p.waitForGame()
+		players = append(players, p)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWitch)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	time.Sleep(20 * time.Millisecond)
+	players[0].startGame()
+	time.Sleep(50 * time.Millisecond)
+
+	var werewolves, villagers []*TestPlayer
+	werewolves, villagers = findPlayersByRole(players)
+
+	ctx.logger.Debug("=== Test: Witch pass ends night ===")
+
+	// Find witch
+	var witch *TestPlayer
+	for _, p := range villagers {
+		if p.getRole() == "Witch" {
+			witch = p
+			break
+		}
+	}
+	if witch == nil {
+		t.Fatal("Witch not found")
+	}
+
+	// Werewolves kill
+	targetVillager := villagers[0]
+	if targetVillager == witch {
+		targetVillager = villagers[1]
+	}
+	werewolves[0].voteForPlayer(targetVillager.Name)
+	werewolves[1].voteForPlayer(targetVillager.Name)
+	time.Sleep(50 * time.Millisecond)
+
+	// Witch just passes without using potions
+	witch.reload()
+	witch.p().MustElement("#witch-pass-form").MustClick()
+	time.Sleep(100 * time.Millisecond)
+
+	// Should transition to day
+	witch.reload()
+	if !witch.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: not in day phase after witch pass")
+		t.Error("Should transition to day after witch passes")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}

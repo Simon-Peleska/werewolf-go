@@ -334,6 +334,12 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSDayVote(client, msg)
 	case "hunter_revenge":
 		handleWSHunterRevenge(client, msg)
+	case "witch_heal":
+		handleWSWitchHeal(client, msg)
+	case "witch_kill":
+		handleWSWitchKill(client, msg)
+	case "witch_pass":
+		handleWSWitchPass(client, msg)
 	default:
 		log.Printf("Unknown action: %s for player %d (%s) in game %d (status: %s)", msg.Action, client.playerID, playerName, game.ID, game.Status)
 	}
@@ -534,24 +540,115 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate witch-specific data
+		isWitch := currentPlayer.RoleName == "Witch"
+		var healPotionUsed, poisonPotionUsed bool
+		var witchHealedThisNight, witchKilledThisNight, witchDoneThisNight bool
+		var witchKilledTarget string
+		var witchVictim string
+		var witchVictimID int64
+
+		if isWitch {
+			// Permanent potion usage (across all rounds)
+			var healUsed, poisonUsed int
+			db.Get(&healUsed, `
+				SELECT COUNT(*) FROM game_action
+				WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
+				game.ID, playerID, ActionWitchHeal)
+			db.Get(&poisonUsed, `
+				SELECT COUNT(*) FROM game_action
+				WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
+				game.ID, playerID, ActionWitchKill)
+			healPotionUsed = healUsed > 0
+			poisonPotionUsed = poisonUsed > 0
+
+			// This-night actions
+			var healedCount int
+			db.Get(&healedCount, `
+				SELECT COUNT(*) FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night'
+				AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionWitchHeal)
+			witchHealedThisNight = healedCount > 0
+
+			var killedAction GameAction
+			err := db.Get(&killedAction, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night'
+				AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionWitchKill)
+			if err == nil && killedAction.TargetPlayerID != nil {
+				witchKilledThisNight = true
+				db.Get(&witchKilledTarget, "SELECT name FROM player WHERE rowid = ?", *killedAction.TargetPlayerID)
+			}
+
+			var doneCount int
+			db.Get(&doneCount, `
+				SELECT COUNT(*) FROM game_action
+				WHERE game_id = ? AND round = ? AND phase = 'night'
+				AND actor_player_id = ? AND action_type = ?`,
+				game.ID, game.NightNumber, playerID, ActionWitchPass)
+			witchDoneThisNight = doneCount > 0
+
+			// Find werewolf majority victim
+			type voteCount struct {
+				TargetPlayerID int64  `db:"target_player_id"`
+				TargetName     string `db:"target_name"`
+				Count          int    `db:"count"`
+			}
+			var wvotes []voteCount
+			db.Select(&wvotes, `
+				SELECT ga.target_player_id, p.name as target_name, COUNT(*) as count
+				FROM game_action ga
+				JOIN player p ON ga.target_player_id = p.rowid
+				WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
+				GROUP BY ga.target_player_id
+				ORDER BY count DESC`,
+				game.ID, game.NightNumber, ActionWerewolfKill)
+
+			var totalWerewolves int
+			db.Get(&totalWerewolves, `
+				SELECT COUNT(*) FROM game_player gp
+				JOIN role r ON gp.role_id = r.rowid
+				WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+
+			if len(wvotes) > 0 && totalWerewolves > 0 {
+				majority := totalWerewolves/2 + 1
+				if wvotes[0].Count >= majority {
+					witchVictim = wvotes[0].TargetName
+					witchVictimID = wvotes[0].TargetPlayerID
+				}
+			}
+		}
+
 		data := NightData{
-			Players:           players,
-			AliveTargets:      aliveTargets,
-			IsWerewolf:        isWerewolf,
-			Werewolves:        werewolves,
-			Votes:             votes,
-			CurrentVote:       currentVote,
-			NightNumber:       game.NightNumber,
-			IsSeer:            isSeer,
-			HasInvestigated:   hasInvestigated,
-			SeerResults:       seerResults,
-			IsDoctor:          isDoctor,
-			HasProtected:      hasProtected,
-			DoctorProtecting:  doctorProtecting,
-			IsGuard:           isGuard,
-			GuardHasProtected: guardHasProtected,
-			GuardProtecting:   guardProtecting,
-			GuardTargets:      guardTargets,
+			Players:              players,
+			AliveTargets:         aliveTargets,
+			IsWerewolf:           isWerewolf,
+			Werewolves:           werewolves,
+			Votes:                votes,
+			CurrentVote:          currentVote,
+			NightNumber:          game.NightNumber,
+			IsSeer:               isSeer,
+			HasInvestigated:      hasInvestigated,
+			SeerResults:          seerResults,
+			IsDoctor:             isDoctor,
+			HasProtected:         hasProtected,
+			DoctorProtecting:     doctorProtecting,
+			IsGuard:              isGuard,
+			GuardHasProtected:    guardHasProtected,
+			GuardProtecting:      guardProtecting,
+			GuardTargets:         guardTargets,
+			IsWitch:              isWitch,
+			WitchVictim:          witchVictim,
+			WitchVictimID:        witchVictimID,
+			HealPotionUsed:       healPotionUsed,
+			PoisonPotionUsed:     poisonPotionUsed,
+			WitchHealedThisNight: witchHealedThisNight,
+			WitchKilledThisNight: witchKilledThisNight,
+			WitchKilledTarget:    witchKilledTarget,
+			WitchDoneThisNight:   witchDoneThisNight,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
