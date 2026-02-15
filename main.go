@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -185,6 +187,111 @@ func disableCaching(next http.Handler) http.Handler {
 		w.Header().Add("Cache-Control", "no-cache")
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// gzipWriter wraps http.ResponseWriter to compress output
+type gzipWriter struct {
+	http.ResponseWriter
+	Writer *gzip.Writer
+}
+
+func (w *gzipWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func (w *gzipWriter) Flush() {
+	w.Writer.Flush()
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// shouldCompress determines if a content type should be gzip compressed
+// Compresses text-based formats but not binary formats like images
+func shouldCompress(contentType string) bool {
+	compressiblePrefixes := []string{
+		"text/",
+		"application/json",
+		"application/javascript",
+		"image/svg",
+	}
+	for _, prefix := range compressiblePrefixes {
+		if strings.HasPrefix(contentType, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// responseWriter wraps http.ResponseWriter to handle conditional gzip compression
+type responseWriter struct {
+	http.ResponseWriter
+	gz            *gzip.Writer
+	wrappedWriter http.ResponseWriter
+	headerSent    bool
+}
+
+// WriteHeader checks content type and sets up compression if appropriate
+func (w *responseWriter) WriteHeader(statusCode int) {
+	if w.headerSent {
+		return
+	}
+	w.headerSent = true
+
+	contentType := w.Header().Get("Content-Type")
+	acceptGzip := strings.Contains(w.Header().Get("Accept-Encoding"), "gzip")
+
+	// Only compress if content type is compressible and client supports gzip
+	if contentType != "" && shouldCompress(contentType) && acceptGzip {
+		w.gz = gzip.NewWriter(w.wrappedWriter)
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length")
+	}
+
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Write writes to gzip writer if it exists, otherwise to original writer
+func (w *responseWriter) Write(b []byte) (int, error) {
+	if !w.headerSent {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	if w.gz != nil {
+		return w.gz.Write(b)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush flushes both gzip and response writer
+func (w *responseWriter) Flush() {
+	if w.gz != nil {
+		w.gz.Flush()
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Close closes the gzip writer if it exists
+func (w *responseWriter) Close() error {
+	if w.gz != nil {
+		return w.gz.Close()
+	}
+	return nil
+}
+
+// compress adds gzip compression to compressible responses
+func compress(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &responseWriter{
+			ResponseWriter: w,
+			wrappedWriter:  w,
+		}
+		defer wrapped.Close()
+
+		next.ServeHTTP(wrapped, r)
 	})
 }
 
@@ -651,9 +758,11 @@ func main() {
 	// Start WebSocket hub
 	go hub.run()
 
-	// Wrap handlers with logging if enabled
+	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
-		h := disableCaching(http.HandlerFunc(handler))
+		var h http.Handler = handler
+		h = compress(h)
+		h = disableCaching(h)
 		if appLogger != nil && appLogger.logRequests {
 			http.Handle(pattern, &LoggingHandler{Handler: h, Logger: appLogger})
 		} else {
@@ -669,7 +778,11 @@ func main() {
 	wrapHandler("/ws", handleWebSocket)
 	wrapHandler("/game/component", handleGameComponent)
 	wrapHandler("/game/character", handleCharacterInfo)
-	http.Handle("/static/", http.FileServer(http.FS(staticFS)))
+
+	// Serve static files with compression for text-based files (CSS, JS, SVG)
+	// Binary formats like images will be served without compression
+	staticHandler := compress(http.FileServer(http.FS(staticFS)))
+	http.Handle("/static/", staticHandler)
 
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
