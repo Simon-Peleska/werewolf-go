@@ -266,9 +266,42 @@ Use `--help` with any script for full usage details.
 ```
 
 ### Extending Agent Tools
-- If you find yourself doing a repetitive task, ask the user if you can add a script
 - When creating a new script, also create a corresponding skill in `.claude/commands/`
 - Keep scripts simple and focused on one task
+
+## File Organization
+
+### Principle: Organize by End-to-End Functionality
+Split code into files where each file contains a complete feature or subsystem. Keep code that runs together in the same file. The goal is to make it easy to understand a feature by reading one or a few files, rather than jumping across many files.
+
+**IMPORTANT: When you create or delete a file, update this section in CLAUDE.md to keep it accurate.**
+
+### Code Files (Backend Implementation)
+
+| Path | Purpose |
+|------|---------|
+| `./main.go` | Entry point, HTTP route handlers, GameData struct, game component dispatcher |
+| `./database.go` | Database models (Game, Player, Role, GameAction), all queries, schema initialization |
+| `./auth.go` | Session management, signup/login/logout handlers, player authentication |
+| `./hub.go` | WebSocket hub, Client connection management, message broadcasting to players |
+| `./toast.go` | Toast notification struct and rendering utilities for user feedback |
+| `./lobby.go` | Lobby display, player management, role configuration, game start initiation |
+| `./night.go` | Night phase: werewolf voting, seer investigation, doctor/guard protection, vote resolution |
+| `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
+| `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
+| `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
+
+### Test Files (Feature-Specific Tests)
+
+Test files are organized by feature and contain all tests and helpers for that feature:
+
+| Path | Purpose |
+|------|---------|
+| `./lobby_test.go` | Tests for lobby player management and game start (role assignment, player count) |
+| `./night_test.go` | Tests for night phase: werewolf voting, seer investigation, doctor/guard protection |
+| `./day_test.go` | Tests for day phase: voting, elimination, hunter revenge mechanics (largest test file) |
+| `./auth_test.go` | Tests for authentication and session management |
+| `./hub_test.go` | Tests for WebSocket connection and message handling |
 
 ## Architecture
 - The app should be a go backend with sqlite as a database and an htmx page as a frontend
