@@ -26,6 +26,8 @@ type NightData struct {
 	Werewolves           []Player
 	Votes                []WerewolfVote
 	CurrentVote          int64 // 0 means no vote
+	WolfCubDoubleKill    bool  // werewolves must kill two this night
+	CurrentVote2         int64 // this werewolf's second vote (0 = none)
 	NightNumber          int
 	IsSeer               bool
 	HasInvestigated      bool
@@ -40,9 +42,12 @@ type NightData struct {
 	IsWitch              bool
 	WitchVictim          string // Name of werewolf majority target (empty if no majority)
 	WitchVictimID        int64  // ID of victim (0 if none)
+	WitchVictim2         string // Name of Wolf Cub second kill target (empty if not set)
+	WitchVictimID2       int64  // ID of second kill target (0 if none)
 	HealPotionUsed       bool   // Used in ANY prior round (permanent)
 	PoisonPotionUsed     bool   // Used in ANY prior round (permanent)
 	WitchHealedThisNight bool
+	WitchHealedName      string // Name of who the witch healed this night
 	WitchKilledThisNight bool
 	WitchKilledTarget    string // Name of poison target if used tonight
 	WitchDoneThisNight   bool   // True after witch_pass submitted
@@ -118,6 +123,91 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	LogDBState("after werewolf vote")
 
 	// Check if all werewolves have voted and resolve if so
+	resolveWerewolfVotes(game)
+}
+
+func handleWSWerewolfVote2(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfVote2: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfVote2: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		return
+	}
+
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+
+	// Validate that Wolf Cub double kill is actually active this night
+	if game.NightNumber <= 1 {
+		sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		return
+	}
+	var wolfCubDeathCount int
+	db.Get(&wolfCubDeathCount, `
+		SELECT COUNT(*) FROM game_action ga
+		JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+		JOIN role r ON gp.role_id = r.rowid
+		WHERE ga.game_id = ? AND ga.round = ?
+		AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+		AND r.name = 'Wolf Cub'`,
+		game.ID, game.NightNumber-1)
+	if wolfCubDeathCount == 0 {
+		sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil {
+		sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	if !target.IsAlive {
+		sendErrorToast(client.playerID, "Cannot target a dead player")
+		return
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = ?`,
+		game.ID, game.NightNumber, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, targetID)
+	if err != nil {
+		logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
+		sendErrorToast(client.playerID, "Failed to record second vote")
+		return
+	}
+
+	log.Printf("Werewolf %d (%s) voted second kill: player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+	DebugLog("handleWSWerewolfVote2", "Werewolf '%s' second kill vote: '%s'", voter.Name, target.Name)
+	LogDBState("after werewolf vote2")
+
 	resolveWerewolfVotes(game)
 }
 
@@ -417,7 +507,20 @@ func handleWSWitchHeal(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Find werewolf majority victim
+	// Parse the target from the message
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	// Find werewolf majority victim1
 	type voteCount struct {
 		TargetPlayerID int64  `db:"target_player_id"`
 		TargetName     string `db:"target_name"`
@@ -450,10 +553,44 @@ func handleWSWitchHeal(client *Client, msg WSMessage) {
 		return
 	}
 
-	victimID := wvotes[0].TargetPlayerID
+	victim1ID := wvotes[0].TargetPlayerID
+
+	// Check for Wolf Cub second kill victim2 (if active this night)
+	var victim2ID int64
+	if game.NightNumber > 1 {
+		var wolfCubDeathCount int
+		db.Get(&wolfCubDeathCount, `
+			SELECT COUNT(*) FROM game_action ga
+			JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+			JOIN role r ON gp.role_id = r.rowid
+			WHERE ga.game_id = ? AND ga.round = ?
+			AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+			AND r.name = 'Wolf Cub'`,
+			game.ID, game.NightNumber-1)
+		if wolfCubDeathCount > 0 {
+			var wvotes2 []voteCount
+			db.Select(&wvotes2, `
+				SELECT ga.target_player_id, p.name as target_name, COUNT(*) as count
+				FROM game_action ga
+				JOIN player p ON ga.target_player_id = p.rowid
+				WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
+				GROUP BY ga.target_player_id
+				ORDER BY count DESC`,
+				game.ID, game.NightNumber, ActionWerewolfKill2)
+			if len(wvotes2) > 0 && wvotes2[0].Count >= majority {
+				victim2ID = wvotes2[0].TargetPlayerID
+			}
+		}
+	}
+
+	// Target must be victim1 or victim2
+	if targetID != victim1ID && (victim2ID == 0 || targetID != victim2ID) {
+		sendErrorToast(client.playerID, "Can only heal a werewolf target")
+		return
+	}
 
 	// Witch cannot heal themselves
-	if victimID == client.playerID {
+	if targetID == client.playerID {
 		sendErrorToast(client.playerID, "You cannot heal yourself")
 		return
 	}
@@ -461,15 +598,15 @@ func handleWSWitchHeal(client *Client, msg WSMessage) {
 	_, err = db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
 		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.NightNumber, client.playerID, ActionWitchHeal, victimID, VisibilityActor)
+		game.ID, game.NightNumber, client.playerID, ActionWitchHeal, targetID, VisibilityActor)
 	if err != nil {
 		logError("handleWSWitchHeal: db.Exec insert heal", err)
 		sendErrorToast(client.playerID, "Failed to record heal action")
 		return
 	}
 
-	log.Printf("Witch '%s' is healing target", witch.Name)
-	DebugLog("handleWSWitchHeal", "Witch '%s' healing victim", witch.Name)
+	log.Printf("Witch '%s' is healing %s", witch.Name, target.Name)
+	DebugLog("handleWSWitchHeal", "Witch '%s' healing '%s'", witch.Name, target.Name)
 	LogDBState("after witch heal")
 
 	broadcastGameUpdate()
@@ -681,6 +818,56 @@ func resolveWerewolfVotes(game *Game) {
 		return
 	}
 
+	// Check if Wolf Cub died last round → double kill required
+	wolfCubDoubleKill := false
+	var victim2 int64
+	if game.NightNumber > 1 {
+		var wolfCubDeathCount int
+		db.Get(&wolfCubDeathCount, `
+			SELECT COUNT(*) FROM game_action ga
+			JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+			JOIN role r ON gp.role_id = r.rowid
+			WHERE ga.game_id = ? AND ga.round = ?
+			AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+			AND r.name = 'Wolf Cub'`,
+			game.ID, game.NightNumber-1)
+		wolfCubDoubleKill = wolfCubDeathCount > 0
+	}
+
+	if wolfCubDoubleKill {
+		var votes2 []GameAction
+		db.Select(&votes2, `
+			SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+			FROM game_action
+			WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+			game.ID, game.NightNumber, ActionWerewolfKill2)
+
+		if len(votes2) < len(werewolves) {
+			log.Printf("Wolf Cub double kill: waiting for second votes (%d/%d)", len(votes2), len(werewolves))
+			broadcastGameUpdate()
+			return
+		}
+
+		voteCounts2 := make(map[int64]int)
+		for _, v := range votes2 {
+			if v.TargetPlayerID != nil {
+				voteCounts2[*v.TargetPlayerID]++
+			}
+		}
+		var maxVotes2 int
+		for targetID, count := range voteCounts2 {
+			if count > maxVotes2 {
+				maxVotes2 = count
+				victim2 = targetID
+			}
+		}
+		if maxVotes2 < majority {
+			log.Printf("Wolf Cub double kill: no majority for second victim yet (need %d, max is %d)", majority, maxVotes2)
+			broadcastGameUpdate()
+			return
+		}
+	}
+
 	// Check if all alive Seers have investigated before resolving the night
 	var aliveSeerCount int
 	db.Get(&aliveSeerCount, `
@@ -773,12 +960,12 @@ func resolveWerewolfVotes(game *Game) {
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
 		game.ID, game.NightNumber, ActionGuardProtect, victim)
 
-	// Check if the victim is healed by the Witch
+	// Check if the victim is healed by the Witch (target-specific)
 	var witchHealCount int
 	db.Get(&witchHealCount, `
 		SELECT COUNT(*) FROM game_action
-		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.NightNumber, ActionWitchHeal)
+		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
+		game.ID, game.NightNumber, ActionWitchHeal, victim)
 
 	if protectionCount > 0 || guardProtectionCount > 0 || witchHealCount > 0 {
 		var victimName string
@@ -835,6 +1022,30 @@ func resolveWerewolfVotes(game *Game) {
 		db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
 		log.Printf("Witch poisoned %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
 		DebugLog("resolveWerewolfVotes", "Witch poisoned '%s'", poisonVictimName)
+	}
+
+	// Apply Wolf Cub second kill
+	if wolfCubDoubleKill && victim2 != 0 && victim2 != victim {
+		// Doctor, Guard, and Witch heal can all save the second victim
+		var protect2Count int
+		db.Get(&protect2Count, `
+			SELECT COUNT(*) FROM game_action
+			WHERE game_id = ? AND round = ? AND phase = 'night'
+			AND action_type IN (?, ?, ?) AND target_player_id = ?`,
+			game.ID, game.NightNumber, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+		var victim2Name string
+		db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+		if protect2Count > 0 {
+			log.Printf("Protection saved %s (player ID %d) from Wolf Cub double kill", victim2Name, victim2)
+		} else {
+			_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim2)
+			if err != nil {
+				logError("resolveWerewolfVotes: kill victim2", err)
+			} else {
+				log.Printf("Wolf Cub double kill: werewolves killed %s (player ID %d)", victim2Name, victim2)
+				DebugLog("resolveWerewolfVotes", "Wolf Cub double kill: werewolves killed '%s'", victim2Name)
+			}
+		}
 	}
 
 	// Transition to day phase

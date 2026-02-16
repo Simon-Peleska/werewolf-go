@@ -36,6 +36,23 @@
         </ul>
         {{end}}
 
+        {{if .WolfCubDoubleKill}}
+        <h3>⚡ Wolf Cub's Revenge — Choose a Second Victim</h3>
+        <p><small>The Wolf Cub was slain. Choose a second player to kill tonight.</small></p>
+
+        {{$currentVote2 := .CurrentVote2}}
+        {{range .AliveTargets}}
+        <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="werewolf_vote_2">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="vote2-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote2 .PlayerID}} selected{{end}}">
+                {{.Name}}
+                {{if eq .Team "werewolf"}} 🐺{{end}}
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+
         {{else if .IsSeer}}
         <h3>🔮 Your Investigation</h3>
         {{if .HasInvestigated}}
@@ -98,18 +115,32 @@
         {{else if .IsWitch}}
         <h3>🧙 You are the Witch</h3>
         {{if .WitchVictim}}
+        {{if .WitchVictim2}}
+        <p>The werewolves are targeting <strong>{{.WitchVictim}}</strong> and <strong>{{.WitchVictim2}}</strong> tonight.</p>
+        {{else}}
         <p>The werewolves are targeting <strong>{{.WitchVictim}}</strong> tonight.</p>
+        {{end}}
 
         {{if not .HealPotionUsed}}
         {{if .WitchHealedThisNight}}
-        <p id="witch-heal-result">✓ You saved <strong>{{.WitchVictim}}</strong>!</p>
+        <p id="witch-heal-result">✓ You saved <strong>{{.WitchHealedName}}</strong>!</p>
         {{else if not .WitchDoneThisNight}}
-        <form ws-send id="witch-heal-form" class="vote-form">
+        <form ws-send id="witch-heal-form-{{.WitchVictimID}}" class="vote-form">
             <input type="hidden" name="action" value="witch_heal">
+            <input type="hidden" name="target_player_id" value="{{.WitchVictimID}}">
             <button type="submit" class="witch-heal-button">
                 🧪 Save {{.WitchVictim}}
             </button>
         </form>
+        {{if .WitchVictim2}}
+        <form ws-send id="witch-heal-form-{{.WitchVictimID2}}" class="vote-form">
+            <input type="hidden" name="action" value="witch_heal">
+            <input type="hidden" name="target_player_id" value="{{.WitchVictimID2}}">
+            <button type="submit" class="witch-heal-button">
+                🧪 Save {{.WitchVictim2}}
+            </button>
+        </form>
+        {{end}}
         {{end}}
         {{else}}
         <p><em>Your heal potion has been used.</em></p>

@@ -2,10 +2,11 @@
     <section>
         <h2>Day {{.NightNumber}}</h2>
 
-        {{if .LastNightVictim}}
+        {{if .NightVictims}}
         <div class="death-announcement" id="death-announcement">
-            <p><strong>{{.LastNightVictim}}</strong> was found dead this morning.</p>
-            <p>They were a <strong>{{.LastNightVictimRole}}</strong>.</p>
+            {{range .NightVictims}}
+            <p><strong>{{.Name}}</strong> was found dead this morning. They were a <strong>{{.Role}}</strong>.</p>
+            {{end}}
         </div>
         {{else}}
         <p id="no-death-message">The village awakens. No one died last night.</p>

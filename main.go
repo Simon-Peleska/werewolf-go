@@ -324,6 +324,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSStartGame(client)
 	case "werewolf_vote":
 		handleWSWerewolfVote(client, msg)
+	case "werewolf_vote_2":
+		handleWSWerewolfVote2(client, msg)
 	case "seer_investigate":
 		handleWSSeerInvestigate(client, msg)
 	case "doctor_protect":
@@ -547,6 +549,9 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		var witchKilledTarget string
 		var witchVictim string
 		var witchVictimID int64
+		var witchVictim2 string
+		var witchVictimID2 int64
+		var witchHealedName string
 
 		if isWitch {
 			// Permanent potion usage (across all rounds)
@@ -562,14 +567,19 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			healPotionUsed = healUsed > 0
 			poisonPotionUsed = poisonUsed > 0
 
-			// This-night actions
-			var healedCount int
-			db.Get(&healedCount, `
-				SELECT COUNT(*) FROM game_action
+			// This-night actions — get heal action to know who was healed
+			var healAction GameAction
+			if err := db.Get(&healAction, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionWitchHeal)
-			witchHealedThisNight = healedCount > 0
+				game.ID, game.NightNumber, playerID, ActionWitchHeal); err == nil {
+				witchHealedThisNight = true
+				if healAction.TargetPlayerID != nil {
+					db.Get(&witchHealedName, "SELECT name FROM player WHERE rowid = ?", *healAction.TargetPlayerID)
+				}
+			}
 
 			var killedAction GameAction
 			err := db.Get(&killedAction, `
@@ -591,7 +601,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				game.ID, game.NightNumber, playerID, ActionWitchPass)
 			witchDoneThisNight = doneCount > 0
 
-			// Find werewolf majority victim
+			// Find werewolf majority victim1
 			type voteCount struct {
 				TargetPlayerID int64  `db:"target_player_id"`
 				TargetName     string `db:"target_name"`
@@ -620,6 +630,35 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 					witchVictimID = wvotes[0].TargetPlayerID
 				}
 			}
+
+			// Find Wolf Cub second kill victim2 (if active this night)
+			if game.NightNumber > 1 && totalWerewolves > 0 {
+				var wolfCubDeathCount int
+				db.Get(&wolfCubDeathCount, `
+					SELECT COUNT(*) FROM game_action ga
+					JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+					JOIN role r ON gp.role_id = r.rowid
+					WHERE ga.game_id = ? AND ga.round = ?
+					AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+					AND r.name = 'Wolf Cub'`,
+					game.ID, game.NightNumber-1)
+				if wolfCubDeathCount > 0 {
+					var wvotes2 []voteCount
+					db.Select(&wvotes2, `
+						SELECT ga.target_player_id, p.name as target_name, COUNT(*) as count
+						FROM game_action ga
+						JOIN player p ON ga.target_player_id = p.rowid
+						WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
+						GROUP BY ga.target_player_id
+						ORDER BY count DESC`,
+						game.ID, game.NightNumber, ActionWerewolfKill2)
+					majority := totalWerewolves/2 + 1
+					if len(wvotes2) > 0 && wvotes2[0].Count >= majority {
+						witchVictim2 = wvotes2[0].TargetName
+						witchVictimID2 = wvotes2[0].TargetPlayerID
+					}
+				}
+			}
 		}
 
 		isMason := currentPlayer.RoleName == "Mason"
@@ -632,6 +671,35 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Check if Wolf Cub double kill is active this night
+		wolfCubDoubleKill := false
+		var currentVote2 int64
+		if isWerewolf && game.NightNumber > 1 {
+			var wolfCubDeathCount int
+			db.Get(&wolfCubDeathCount, `
+				SELECT COUNT(*) FROM game_action ga
+				JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+				JOIN role r ON gp.role_id = r.rowid
+				WHERE ga.game_id = ? AND ga.round = ?
+				AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+				AND r.name = 'Wolf Cub'`,
+				game.ID, game.NightNumber-1)
+			wolfCubDoubleKill = wolfCubDeathCount > 0
+
+			if wolfCubDoubleKill {
+				var vote2Action GameAction
+				err := db.Get(&vote2Action, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id = ? AND round = ? AND phase = 'night'
+					AND actor_player_id = ? AND action_type = ?`,
+					game.ID, game.NightNumber, playerID, ActionWerewolfKill2)
+				if err == nil && vote2Action.TargetPlayerID != nil {
+					currentVote2 = *vote2Action.TargetPlayerID
+				}
+			}
+		}
+
 		data := NightData{
 			Players:              players,
 			AliveTargets:         aliveTargets,
@@ -639,6 +707,8 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			Werewolves:           werewolves,
 			Votes:                votes,
 			CurrentVote:          currentVote,
+			WolfCubDoubleKill:    wolfCubDoubleKill,
+			CurrentVote2:         currentVote2,
 			NightNumber:          game.NightNumber,
 			IsSeer:               isSeer,
 			HasInvestigated:      hasInvestigated,
@@ -653,9 +723,12 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			IsWitch:              isWitch,
 			WitchVictim:          witchVictim,
 			WitchVictimID:        witchVictimID,
+			WitchVictim2:         witchVictim2,
+			WitchVictimID2:       witchVictimID2,
 			HealPotionUsed:       healPotionUsed,
 			PoisonPotionUsed:     poisonPotionUsed,
 			WitchHealedThisNight: witchHealedThisNight,
+			WitchHealedName:      witchHealedName,
 			WitchKilledThisNight: witchKilledThisNight,
 			WitchKilledTarget:    witchKilledTarget,
 			WitchDoneThisNight:   witchDoneThisNight,
@@ -675,23 +748,19 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			return nil, err
 		}
 
-		// Find who died last night
-		var lastVictim string
-		var lastVictimRole string
-		for _, p := range players {
-			if !p.IsAlive {
-				var count int
-				db.Get(&count, `
-					SELECT COUNT(*) FROM game_action
-					WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
-					game.ID, game.NightNumber, ActionWerewolfKill, p.PlayerID)
-				if count > 0 {
-					lastVictim = p.Name
-					lastVictimRole = p.RoleName
-					break
-				}
-			}
-		}
+		// Find all players killed last night (werewolf kill, Wolf Cub second kill, witch poison)
+		// Only includes players who are actually dead (protected players are excluded)
+		var nightVictims []NightVictim
+		db.Select(&nightVictims, `
+			SELECT DISTINCT p.name as name, r.name as role
+			FROM game_action ga
+			JOIN player p ON ga.target_player_id = p.rowid
+			JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+			JOIN role r ON gp.role_id = r.rowid
+			WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night'
+			AND ga.action_type IN (?, ?, ?)
+			AND gp.is_alive = 0`,
+			game.ID, game.NightNumber, ActionWerewolfKill, ActionWerewolfKill2, ActionWitchKill)
 
 		// Get alive players as targets
 		var aliveTargets []Player
@@ -774,8 +843,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			Players:             players,
 			AliveTargets:        aliveTargets,
 			NightNumber:         game.NightNumber,
-			LastNightVictim:     lastVictim,
-			LastNightVictimRole: lastVictimRole,
+			NightVictims:        nightVictims,
 			Votes:               votes,
 			CurrentVote:         currentVote,
 			IsAlive:             currentPlayer.IsAlive,

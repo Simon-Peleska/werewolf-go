@@ -11,13 +11,18 @@ type DayVote struct {
 	TargetName string
 }
 
+// NightVictim represents a player killed during the night
+type NightVictim struct {
+	Name string `db:"name"`
+	Role string `db:"role"`
+}
+
 // DayData holds all data needed to render the day phase
 type DayData struct {
 	Players             []Player
 	AliveTargets        []Player
 	NightNumber         int
-	LastNightVictim     string
-	LastNightVictimRole string
+	NightVictims        []NightVictim // All players killed last night
 	Votes               []DayVote
 	CurrentVote         int64 // 0 means no vote
 	IsAlive             bool

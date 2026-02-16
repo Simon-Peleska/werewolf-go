@@ -3,13 +3,11 @@
   - [x] Seer
   - [x] Doctor
   - [x] Guard
-  - [ ] Witch
+  - [x] Witch
   - [x] Hunter
   - [ ] Cupid
-  - [ ] Mason
-  - [ ] Wolf Cub
-- add compression
-- split code
+  - [x] Mason
+  - [x] Wolf Cub
 - styling
   - change layout
   - change color scheme
@@ -17,9 +15,9 @@
   - make colorscheme change during the night
   - add icons
 - add ai storyteller
+- deploy on host provider
+- create nix flake for setup build and testing 
+- add multigame support
 - add questions during the night
 - add i18n support
 - add different scenario support
-- add multigame support
-- create nix flake for setup build and testing 
-- deploy on host provider

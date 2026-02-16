@@ -156,6 +156,7 @@ const (
 	ActionWitchHeal       = "witch_heal"
 	ActionWitchKill       = "witch_kill"
 	ActionWitchPass       = "witch_pass"
+	ActionWerewolfKill2   = "werewolf_kill_2" // second kill on Wolf Cub death night
 )
 
 // Visibility types
