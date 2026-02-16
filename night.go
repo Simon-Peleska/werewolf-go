@@ -46,6 +46,8 @@ type NightData struct {
 	WitchKilledThisNight bool
 	WitchKilledTarget    string // Name of poison target if used tonight
 	WitchDoneThisNight   bool   // True after witch_pass submitted
+	IsMason              bool
+	Masons               []Player // Other alive Masons (excluding self)
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {

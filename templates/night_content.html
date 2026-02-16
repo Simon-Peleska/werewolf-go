@@ -95,6 +95,74 @@
         {{end}}
         {{end}}
 
+        {{else if .IsWitch}}
+        <h3>🧙 You are the Witch</h3>
+        {{if .WitchVictim}}
+        <p>The werewolves are targeting <strong>{{.WitchVictim}}</strong> tonight.</p>
+
+        {{if not .HealPotionUsed}}
+        {{if .WitchHealedThisNight}}
+        <p id="witch-heal-result">✓ You saved <strong>{{.WitchVictim}}</strong>!</p>
+        {{else if not .WitchDoneThisNight}}
+        <form ws-send id="witch-heal-form" class="vote-form">
+            <input type="hidden" name="action" value="witch_heal">
+            <button type="submit" class="witch-heal-button">
+                🧪 Save {{.WitchVictim}}
+            </button>
+        </form>
+        {{end}}
+        {{else}}
+        <p><em>Your heal potion has been used.</em></p>
+        {{end}}
+
+        {{else}}
+        <p><em>The werewolves have not chosen a target yet...</em></p>
+        {{end}}
+
+        {{if not .PoisonPotionUsed}}
+        <h4>☠️ Poison Potion</h4>
+        {{if .WitchKilledThisNight}}
+        <p id="witch-kill-result">✓ You poisoned <strong>{{.WitchKilledTarget}}</strong>.</p>
+        {{else if not .WitchDoneThisNight}}
+        <p><small>Choose a player to poison. You can choose any living player.</small></p>
+        {{range .AliveTargets}}
+        <form ws-send id="witch-kill-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="witch_kill">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" class="witch-kill-button">
+                Poison {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+        {{else}}
+        <p><em>Your poison potion has been used.</em></p>
+        {{end}}
+
+        {{if not .WitchDoneThisNight}}
+        <form ws-send id="witch-pass-form" class="vote-form">
+            <input type="hidden" name="action" value="witch_pass">
+            <button type="submit" class="witch-pass-button">
+                ✓ Done for tonight
+            </button>
+        </form>
+        {{else}}
+        <p><em>Waiting for the night to end...</em></p>
+        {{end}}
+
+        {{else if .IsMason}}
+        <h3>🧱 Your Fellow Masons</h3>
+        {{if .Masons}}
+        <p><small>You know these confirmed villagers:</small></p>
+        <ul class="player-list">
+            {{range .Masons}}
+            <li class="mason-player">🧱 {{.Name}}</li>
+            {{end}}
+        </ul>
+        {{else}}
+        <p><em>You are the only Mason.</em></p>
+        {{end}}
+
         {{else}}
         <p>The village sleeps...</p>
         <p>Close your eyes and wait for morning.</p>

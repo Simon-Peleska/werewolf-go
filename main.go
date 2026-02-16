@@ -622,6 +622,16 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		isMason := currentPlayer.RoleName == "Mason"
+		var masons []Player
+		if isMason {
+			for _, p := range players {
+				if p.RoleName == "Mason" && p.IsAlive && p.PlayerID != currentPlayer.PlayerID {
+					masons = append(masons, p)
+				}
+			}
+		}
+
 		data := NightData{
 			Players:              players,
 			AliveTargets:         aliveTargets,
@@ -649,6 +659,8 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			WitchKilledThisNight: witchKilledThisNight,
 			WitchKilledTarget:    witchKilledTarget,
 			WitchDoneThisNight:   witchDoneThisNight,
+			IsMason:              isMason,
+			Masons:               masons,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
