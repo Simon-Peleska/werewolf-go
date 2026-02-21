@@ -1,0 +1,17 @@
+<aside class="history-bar" id="history-bar">
+  <div class="rightbound">
+    <div>
+      <h1>History</h1>
+    </div>
+    <label class="nav-toggle-button" for="history-bar-nav-toggle" role="button"
+      aria-label="History Toggle navigation">
+      H
+    </label>
+  </div>
+  {{range .}}
+  <br>
+  <section>
+        {{.}}
+  </section>
+  {{end}}
+</aside>

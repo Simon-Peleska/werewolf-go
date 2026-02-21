@@ -5,9 +5,9 @@ import (
 )
 
 type Game struct {
-	ID          int64  `db:"id"`
-	Status      string `db:"status"` // lobby, night, day, finished
-	NightNumber int    `db:"night_number"`
+	ID     int64  `db:"id"`
+	Status string `db:"status"` // lobby, night, day, finished
+	Round  int    `db:"round"`
 }
 
 type GameRoleConfig struct {
@@ -156,7 +156,9 @@ const (
 	ActionWitchHeal       = "witch_heal"
 	ActionWitchKill       = "witch_kill"
 	ActionWitchPass       = "witch_pass"
-	ActionWerewolfKill2   = "werewolf_kill_2" // second kill on Wolf Cub death night
+	ActionWerewolfKill2   = "werewolf_kill_2"  // second kill on Wolf Cub death night
+	ActionCupidLink       = "cupid_link"       // tracks Cupid's step-1 lover choice (Night 1 only)
+	ActionLoverHeartbreak = "lover_heartbreak" // partner dies of heartbreak when their lover is killed
 )
 
 // Visibility types
@@ -235,13 +237,22 @@ func getVoteCounts(gameID int64, round int, phase string, actionType string) (ma
 	return voteCounts, len(actions), nil
 }
 
+// getLoverPartner returns the partner's player ID if playerID is one of the two lovers,
+// or 0 if they are not a lover (or Cupid hasn't linked anyone yet).
+// Both directions are stored in game_lovers, so this is a simple lookup.
+func getLoverPartner(gameID, playerID int64) int64 {
+	var partnerID int64
+	db.Get(&partnerID, `SELECT player2_id FROM game_lovers WHERE game_id = ? AND player1_id = ?`, gameID, playerID)
+	return partnerID
+}
+
 func initDB() error {
 	schema := `
 	PRAGMA journal_mode=WAL;
 
 	CREATE TABLE IF NOT EXISTS game (
 		status TEXT NOT NULL DEFAULT 'lobby',
-		night_number INTEGER NOT NULL DEFAULT 0
+		round INTEGER NOT NULL DEFAULT 0
 	);
 	CREATE TABLE IF NOT EXISTS player (
 		name TEXT UNIQUE NOT NULL,
@@ -274,6 +285,13 @@ func initDB() error {
 		token INTEGER PRIMARY KEY,
 		player_id INTEGER NOT NULL,
 		FOREIGN KEY (player_id) REFERENCES player(rowid)
+	);
+	CREATE TABLE IF NOT EXISTS game_lovers (
+		game_id INTEGER NOT NULL,
+		player1_id INTEGER NOT NULL,
+		player2_id INTEGER NOT NULL,
+		FOREIGN KEY (game_id) REFERENCES game(rowid),
+		UNIQUE(game_id, player1_id)
 	);
 	CREATE TABLE IF NOT EXISTS game_action (
 		game_id INTEGER NOT NULL,

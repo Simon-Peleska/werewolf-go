@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
-	"github.com/gorilla/websocket"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -376,7 +375,7 @@ func NewTestLogger(t *testing.T) *TestLogger {
 	// Open log files from env paths
 	if al.logRequests {
 		if path := os.Getenv("TEST_REQUEST_LOG"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err == nil {
 				al.requestLog = f
 			}
@@ -384,7 +383,7 @@ func NewTestLogger(t *testing.T) *TestLogger {
 	}
 	if al.logHTML {
 		if path := os.Getenv("TEST_HTML_LOG"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err == nil {
 				al.htmlLog = f
 			}
@@ -392,7 +391,7 @@ func NewTestLogger(t *testing.T) *TestLogger {
 	}
 	if al.logDB {
 		if path := os.Getenv("TEST_DB_LOG"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err == nil {
 				al.dbLog = f
 			}
@@ -400,7 +399,7 @@ func NewTestLogger(t *testing.T) *TestLogger {
 	}
 	if al.logWS {
 		if path := os.Getenv("TEST_WS_LOG"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err == nil {
 				al.wsLog = f
 			}
@@ -535,6 +534,9 @@ func CloseAppLogger() {
 // Test Helpers
 // ============================================================================
 
+// browserLaunchMutex serializes browser launches to avoid parallel launch issues
+var browserLaunchMutex sync.Mutex
+
 // Role IDs in the database (based on insert order in initDB)
 const (
 	RoleVillager = "1"
@@ -558,12 +560,15 @@ func getFreePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
-// TestContext holds test infrastructure including logger
+// TestContext holds test infrastructure including logger and isolated resources
 type TestContext struct {
 	t       *testing.T
 	logger  *TestLogger
 	baseURL string
 	cleanup func()
+	db      *sqlx.DB // Per-test database
+	hub     *Hub     // Per-test WebSocket hub
+	dbPath  string   // Database file path for cleanup
 }
 
 // newTestContext creates a test context with server and logger
@@ -575,45 +580,60 @@ func newTestContext(t *testing.T) *TestContext {
 		t.Fatalf("Failed to get free port: %v", err)
 	}
 
-	var dbErr error
-	// Use shared cache mode so all connections see the same in-memory database
-	db, dbErr = sqlx.Connect("sqlite3", "file::memory:?mode=memory&cache=shared")
+	// Create unique database file for this test to enable parallel execution
+	// Use port number in path to guarantee uniqueness even if tests start simultaneously
+	dbPath := fmt.Sprintf("/tmp/werewolf_test_%s_%d_%d.db",
+		strings.ReplaceAll(t.Name(), "/", "_"),
+		port,
+		time.Now().UnixNano())
+
+	testDB, dbErr := sqlx.Connect("sqlite3",
+		fmt.Sprintf("file:%s?_busy_timeout=5000&_synchronous=NORMAL&_txlock=deferred", dbPath))
 	if dbErr != nil {
 		t.Fatalf("Failed to connect to test database: %v", dbErr)
 	}
 
+	// Set globals temporarily for initDB
+	db = testDB
 	if err := initDB(); err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
 
 	logger.LogDB("after initDB")
-	logger.Debug("Database initialized on port %d", port)
+	logger.Debug("Database initialized on port %d, dbPath: %s", port, dbPath)
 
+	// Parse templates
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
 	}
-	var tmplErr error
-	templates, tmplErr = template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
+	testTemplates, tmplErr := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if tmplErr != nil {
 		t.Fatalf("Failed to parse templates: %v", tmplErr)
 	}
+	templates = testTemplates
 
-	hub = &Hub{
-		clients:    make(map[*websocket.Conn]*Client),
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *websocket.Conn),
-	}
-	go hub.run()
+	// Create test-specific WebSocket hub
+	testHub := newHub()
+	go testHub.run()
+	hub = testHub
 
 	// Create handlers with optional logging wrapper
 	mux := http.NewServeMux()
 
+	// Wrapper that sets test-specific db and hub before calling handler
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
+		wrappedHandler := func(w http.ResponseWriter, r *http.Request) {
+			// Set test-specific globals for this request
+			db = testDB
+			hub = testHub
+			templates = testTemplates
+			handler(w, r)
+		}
+
 		if logger.logRequests {
-			mux.Handle(pattern, &LoggingHandler{Handler: handler, Logger: logger.AppLogger})
+			mux.Handle(pattern, &LoggingHandler{Handler: http.HandlerFunc(wrappedHandler), Logger: logger.AppLogger})
 		} else {
-			mux.HandleFunc(pattern, handler)
+			mux.HandleFunc(pattern, wrappedHandler)
 		}
 	}
 
@@ -623,7 +643,8 @@ func newTestContext(t *testing.T) *TestContext {
 	wrapHandler("/game", handleGame)
 	wrapHandler("/ws", handleWebSocket)
 	wrapHandler("/game/component", handleGameComponent)
-	wrapHandler("/game/character", handleCharacterInfo)
+	wrapHandler("/game/sidebar", handleSidebarInfo)
+	wrapHandler("/game/history", handleGameHistory)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 
 	server := &http.Server{
@@ -632,22 +653,38 @@ func newTestContext(t *testing.T) *TestContext {
 	}
 
 	go server.ListenAndServe()
-	time.Sleep(20 * time.Millisecond)
 
+	var cleanupOnce sync.Once
 	cleanup := func() {
-		logger.LogDB("before cleanup")
-		logger.Debug("Cleaning up test server")
-		server.Close()
-		db.Close()
-		logger.Close()
+		cleanupOnce.Do(func() {
+			logger.LogDB("before cleanup")
+			logger.Debug("Cleaning up test server")
+			server.Close() // closes WebSocket connections; buffered unregister channel accepts them
+			testHub.stop() // hub goroutine processes remaining unregisters then exits
+			testDB.Close()
+			logger.Close()
+
+			// Delete the database file
+			if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+				t.Logf("Warning: failed to remove test database %s: %v", dbPath, err)
+			}
+		})
 	}
 
-	return &TestContext{
+	ctx := &TestContext{
 		t:       t,
 		logger:  logger,
 		baseURL: fmt.Sprintf("http://localhost:%d", port),
 		cleanup: cleanup,
+		db:      testDB,
+		hub:     testHub,
+		dbPath:  dbPath,
 	}
+
+	// Register cleanup to run automatically when test finishes
+	t.Cleanup(cleanup)
+
+	return ctx
 }
 
 // startTestServer starts a test server and returns the base URL and a cleanup function.
@@ -676,6 +713,16 @@ func newTestBrowser(t *testing.T) (*TestBrowser, func()) {
 
 // newTestBrowserWithLogger creates a test browser with a logger
 func newTestBrowserWithLogger(t *testing.T, logger *TestLogger) (*TestBrowser, func()) {
+	// Serialize browser launches to avoid parallel launch issues with Chrome/Chromium
+	if logger != nil {
+		logger.Debug("Waiting for browser launch mutex...")
+	}
+	browserLaunchMutex.Lock()
+	if logger != nil {
+		logger.Debug("Got browser launch mutex, launching browser...")
+	}
+	defer browserLaunchMutex.Unlock()
+
 	path, found := launcher.LookPath()
 	if !found {
 		t.Skip("Chrome/Chromium not found, skipping browser test")
@@ -697,9 +744,6 @@ func newTestBrowserWithLogger(t *testing.T, logger *TestLogger) (*TestBrowser, f
 
 	tb := &TestBrowser{browser: browser, t: t, logger: logger}
 	cleanup := func() {
-		if logger != nil {
-			logger.Debug("Closing browser")
-		}
 		browser.MustClose()
 	}
 
@@ -747,17 +791,22 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 	}
 
 	page := tb.newIncognitoPage(baseURL)
-	p := page.Timeout(browserTimeout)
-	p.MustElement("#signup-name").MustInput(name)
-	p.MustElement("#btn-signup").MustClick()
-	// Wait for HTMX redirect to /game
-	time.Sleep(20 * time.Millisecond)
 
 	player := &TestPlayer{
 		Name:   name,
 		Page:   page,
 		logger: tb.logger,
 	}
+
+	// Fill form and submit, wait for HTMX redirect
+	p := page.Timeout(browserTimeout)
+	p.MustElement("#signup-name").MustInput(name)
+	p.MustElement("#btn-signup").MustClick()
+
+	// Wait for sidebar content — confirms page loaded + HTMX sidebar request completed
+	// #secret-code-display is always present in the sidebar regardless of game state
+	p.MustElement("#secret-code-display")
+
 	player.logHTML("after signup")
 
 	if tb.logger != nil {
@@ -775,31 +824,236 @@ func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer 
 	}
 
 	page := tb.newIncognitoPage(baseURL)
-	p := page.Timeout(browserTimeout)
-	p.MustElement("#signup-name").MustInput(name)
-	p.MustElement("#btn-signup").MustClick()
-	time.Sleep(20 * time.Millisecond)
 
 	player := &TestPlayer{
 		Name:   name,
 		Page:   page,
 		logger: tb.logger,
 	}
+
+	// Fill form and submit, expecting failure
+	player.doWithHTMXSwap(func() {
+		p := page.Timeout(browserTimeout)
+		p.MustElement("#signup-name").MustInput(name)
+		p.MustElement("#btn-signup").MustClick()
+	})
 	player.logHTML("after failed signup attempt")
 
 	return player
-}
-
-// waitForGame waits for the game content to load
-func (tp *TestPlayer) waitForGame() {
-	time.Sleep(20 * time.Millisecond)
-	tp.logHTML("waitForGame")
 }
 
 // reload reloads the page and waits for it to load
 func (tp *TestPlayer) reload() {
 	tp.p().MustReload().MustWaitLoad()
 	tp.logHTML("after reload")
+}
+
+// doWithWSWait executes an action and waits for WebSocket response and DOM stabilization
+// This sets up listeners BEFORE the action, then performs it, then waits for updates
+func (tp *TestPlayer) doWithWSWait(action func()) {
+	tp.doWithWSWaitTimeout(action, 5*time.Second)
+}
+
+// doWithWSWaitTimeout executes an action with custom timeout
+func (tp *TestPlayer) doWithWSWaitTimeout(action func(), timeout time.Duration) {
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Setting up WebSocket listener before action", tp.Name)
+	}
+
+	// Set up the promise that will wait for htmx:wsAfterMessage
+	// WebSocket OOB swaps fire htmx:wsAfterMessage (not htmx:afterSettle/afterSwap)
+	_, err := tp.Page.Timeout(timeout).Eval(`() => {
+		window._wsUpdatePromise = new Promise((resolve, reject) => {
+			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
+			let timeoutId = setTimeout(() => {
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				reject(new Error('Timeout waiting for WS update'));
+			}, timeoutMs);
+
+			const handler = (event) => {
+				clearTimeout(timeoutId);
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				// Small delay to let all DOM updates from this message settle
+				setTimeout(resolve, 50);
+			};
+
+			document.addEventListener('htmx:wsAfterMessage', handler);
+		});
+	}`)
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] Error setting up WS listener: %v", tp.Name, err)
+	}
+
+	// Now perform the action
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Executing action", tp.Name)
+	}
+	action()
+
+	// Wait for the promise to resolve
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Waiting for WebSocket response and DOM update", tp.Name)
+	}
+	_, err = tp.Page.Timeout(timeout).Eval(`() => window._wsUpdatePromise`)
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] WS wait completed with error: %v", tp.Name, err)
+	}
+
+	// Clean up
+	_, _ = tp.Page.Eval(`() => delete window._wsUpdatePromise`)
+
+	tp.logHTML("after doWithWSWait")
+}
+
+// clickAndWait clicks an element and waits for WebSocket response
+// This performs the entire operation atomically in JavaScript to avoid stale element issues
+func (tp *TestPlayer) clickAndWait(selector string) {
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Click and wait for selector: %s", tp.Name, selector)
+	}
+
+	timeout := 5 * time.Second
+
+	// Perform the entire operation in JavaScript atomically
+	// Listen for htmx:wsAfterMessage which fires when WS messages are processed
+	_, err := tp.Page.Timeout(timeout).Eval(`() => {
+		return new Promise((resolve, reject) => {
+			const selector = ` + "`" + selector + "`" + `;
+			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
+			let timeoutId = setTimeout(() => {
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				reject(new Error('Timeout waiting for WS message after click'));
+			}, timeoutMs);
+
+			const handler = (event) => {
+				clearTimeout(timeoutId);
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				// Give DOM a moment to finish any final rendering
+				setTimeout(resolve, 30);
+			};
+
+			// Set up listener for WebSocket messages
+			document.addEventListener('htmx:wsAfterMessage', handler);
+
+			// Now click the element
+			const element = document.querySelector(selector);
+			if (!element) {
+				clearTimeout(timeoutId);
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				reject(new Error('Element not found: ' + selector));
+				return;
+			}
+			element.click();
+		});
+	}`)
+
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] Click and wait error: %v", tp.Name, err)
+	}
+
+	tp.logHTML("after clickAndWait")
+}
+
+// clickElementAndWait clicks a rod.Element and waits for WebSocket response
+func (tp *TestPlayer) clickElementAndWait(element *rod.Element) {
+	tp.doWithWSWait(func() {
+		element.MustClick()
+	})
+}
+
+// waitUntilCondition waits for a DOM condition to become true by listening to WebSocket messages
+// This handles cases where multiple WebSocket messages arrive (e.g., vote confirmation + phase transition)
+func (tp *TestPlayer) waitUntilCondition(checkJS string, description string) error {
+	timeout := 10 * time.Second
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Waiting for condition: %s", tp.Name, description)
+	}
+
+	// JavaScript that listens to htmx:wsAfterMessage and checks condition after each message
+	script := `() => {
+		return new Promise((resolve, reject) => {
+			const checkCondition = ` + checkJS + `;
+			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
+
+			// Check if already true
+			if (checkCondition()) {
+				resolve();
+				return;
+			}
+
+			let timeoutId = setTimeout(() => {
+				document.removeEventListener('htmx:wsAfterMessage', handler);
+				reject(new Error('Timeout waiting for condition: ` + description + `'));
+			}, timeoutMs);
+
+			const handler = (event) => {
+				// After each WebSocket message, check the condition
+				setTimeout(() => {
+					if (checkCondition()) {
+						clearTimeout(timeoutId);
+						document.removeEventListener('htmx:wsAfterMessage', handler);
+						resolve();
+					}
+				}, 50);
+			};
+
+			document.addEventListener('htmx:wsAfterMessage', handler);
+		});
+	}`
+
+	_, err := tp.Page.Timeout(timeout).Eval(script)
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] Condition wait completed with error: %v", tp.Name, err)
+	}
+	if err == nil && tp.logger != nil {
+		tp.logger.Debug("[%s] Condition met: %s", tp.Name, description)
+	}
+
+	return err
+}
+
+// doWithHTMXSwap executes an action and waits for HTMX afterSwap event
+// This is for regular HTMX requests (hx-post, hx-get), not WebSocket (ws-send)
+func (tp *TestPlayer) doWithHTMXSwap(action func()) {
+	timeout := 5 * time.Second
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Setting up HTMX swap listener", tp.Name)
+	}
+
+	// Set up listener first
+	_, err := tp.Page.Timeout(timeout).Eval(`
+		window._htmxSwapPromise = new Promise((resolve) => {
+			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
+			let timeoutId = setTimeout(() => {
+				document.removeEventListener('htmx:afterSwap', handler);
+				resolve();
+			}, timeoutMs);
+
+			const handler = (event) => {
+				clearTimeout(timeoutId);
+				document.removeEventListener('htmx:afterSwap', handler);
+				setTimeout(resolve, 30);
+			};
+
+			document.addEventListener('htmx:afterSwap', handler);
+		});
+	`)
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] Error setting up HTMX listener: %v", tp.Name, err)
+	}
+
+	// Perform the action
+	action()
+
+	// Wait for the swap
+	_, err = tp.Page.Timeout(timeout).Eval(`window._htmxSwapPromise`)
+	if err != nil && tp.logger != nil {
+		tp.logger.Debug("[%s] HTMX swap wait error: %v", tp.Name, err)
+	}
+
+	// Clean up
+	_, _ = tp.Page.Eval(`delete window._htmxSwapPromise`)
+	tp.logHTML("after doWithHTMXSwap")
 }
 
 // getSecretCode reads the secret code from the game page
@@ -834,9 +1088,8 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 		tp.logger.Debug("[%s] Adding role ID: %s", tp.Name, roleID)
 		tp.logger.LogWebSocket("OUT", tp.Name, fmt.Sprintf(`{"action":"update_role","role_id":"%s","delta":"1"}`, roleID))
 	}
-	tp.p().MustElement("#btn-add-" + roleID).MustClick()
-	// Wait for WebSocket round-trip and UI update
-	time.Sleep(20 * time.Millisecond)
+	// Click and wait for WebSocket response
+	tp.clickAndWait("#btn-add-" + roleID)
 	tp.logHTML(fmt.Sprintf("after adding role %s", roleID))
 }
 
@@ -868,8 +1121,8 @@ func (tp *TestPlayer) startGame() {
 		tp.logger.LogWebSocket("OUT", tp.Name, `{"action":"start_game"}`)
 		tp.logger.LogDB("before game start")
 	}
-	tp.p().MustElement("#btn-start").MustClick()
-	time.Sleep(20 * time.Millisecond)
+	// Click and wait for WebSocket response
+	tp.clickAndWait("#btn-start")
 	tp.logHTML("after starting game")
 	if tp.logger != nil {
 		tp.logger.LogDB("after game start")
@@ -878,26 +1131,8 @@ func (tp *TestPlayer) startGame() {
 
 // getRole returns the player's assigned role from character-info
 func (tp *TestPlayer) getRole() string {
-	tp.reload()
-	time.Sleep(20 * time.Millisecond)
-
-	el, err := tp.p().Element("#character-info")
-	if err != nil {
-		return ""
-	}
-	text := el.MustText()
-	// Parse "Role: Villager" from the text
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Role:") {
-			role := strings.TrimSpace(strings.TrimPrefix(line, "Role:"))
-			if tp.logger != nil {
-				tp.logger.Debug("[%s] Assigned role: %s", tp.Name, role)
-			}
-			return role
-		}
-	}
-	return ""
+	el := tp.p().MustElement("#role")
+	return el.MustText()
 }
 
 // disconnect closes the player's page/connection
@@ -915,11 +1150,6 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 	}
 
 	page := tb.newIncognitoPage(baseURL)
-	p := page.Timeout(browserTimeout)
-	p.MustElement("#login-name").MustInput(name)
-	p.MustElement("#secret-code").MustInput(secretCode)
-	p.MustElement("#btn-login").MustClick()
-	time.Sleep(20 * time.Millisecond)
 
 	player := &TestPlayer{
 		Name:       name,
@@ -927,6 +1157,16 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 		Page:       page,
 		logger:     tb.logger,
 	}
+
+	// Fill form and submit, wait for redirect
+	p := page.Timeout(browserTimeout)
+	p.MustElement("#login-name").MustInput(name)
+	p.MustElement("#secret-code").MustInput(secretCode)
+	p.MustElement("#btn-login").MustClick()
+
+	// Wait for sidebar to load — confirms page loaded + HTMX sidebar request completed
+	p.MustElement("#secret-code-display")
+
 	player.logHTML("after login")
 
 	return player
@@ -940,11 +1180,6 @@ func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *
 	}
 
 	page := tb.newIncognitoPage(baseURL)
-	p := page.Timeout(browserTimeout)
-	p.MustElement("#login-name").MustInput(name)
-	p.MustElement("#secret-code").MustInput(secretCode)
-	p.MustElement("#btn-login").MustClick()
-	time.Sleep(20 * time.Millisecond)
 
 	player := &TestPlayer{
 		Name:       name,
@@ -952,6 +1187,14 @@ func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *
 		Page:       page,
 		logger:     tb.logger,
 	}
+
+	// Fill form and submit, expecting failure
+	player.doWithHTMXSwap(func() {
+		p := page.Timeout(browserTimeout)
+		p.MustElement("#login-name").MustInput(name)
+		p.MustElement("#secret-code").MustInput(secretCode)
+		p.MustElement("#btn-login").MustClick()
+	})
 	player.logHTML("after failed login attempt")
 
 	return player

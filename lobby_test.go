@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 	"testing/quick"
-	"time"
 )
 
 // ============================================================================
@@ -32,16 +31,8 @@ func TestLobbyPlayerCount(t *testing.T) {
 		for i := 0; i < count; i++ {
 			name := fmt.Sprintf("P%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
-
-		// Wait for WebSocket updates
-		time.Sleep(20 * time.Millisecond)
-
-		// Check player count on first player's page
-		players[0].reload()
-		time.Sleep(20 * time.Millisecond)
 
 		playerList := players[0].getPlayerList()
 		actualCount := 0
@@ -87,12 +78,10 @@ func TestLobbyPlayersLeave(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("L%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
 
 		ctx.logger.LogDB("all players joined")
-		time.Sleep(20 * time.Millisecond)
 
 		// Some players leave
 		for i := 0; i < leavingPlayers; i++ {
@@ -100,12 +89,9 @@ func TestLobbyPlayersLeave(t *testing.T) {
 		}
 
 		ctx.logger.LogDB("after players left")
-		time.Sleep(20 * time.Millisecond)
 
-		// Check remaining count
+		// Check remaining count - wait for disconnect to propagate
 		remainingPlayer := players[leavingPlayers]
-		remainingPlayer.reload()
-		time.Sleep(20 * time.Millisecond)
 
 		playerList := remainingPlayer.getPlayerList()
 		expectedRemaining := totalPlayers - leavingPlayers
@@ -154,14 +140,12 @@ func TestLobbyPlayersLeaveAndRejoin(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("R%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			// Get secret code for rejoining
 			player.SecretCode = player.getSecretCode()
 			players = append(players, player)
 		}
 
 		ctx.logger.LogDB("all players joined with secret codes")
-		time.Sleep(20 * time.Millisecond)
 
 		// Some players leave
 		for i := 0; i < leavingPlayers; i++ {
@@ -169,21 +153,17 @@ func TestLobbyPlayersLeaveAndRejoin(t *testing.T) {
 		}
 
 		ctx.logger.LogDB("after players left")
-		time.Sleep(20 * time.Millisecond)
 
 		// Players rejoin via login
 		for i := 0; i < leavingPlayers; i++ {
 			name := fmt.Sprintf("R%d", i+1)
 			rejoined := browser.loginPlayer(ctx.baseURL, name, players[i].SecretCode)
-			rejoined.waitForGame()
 			players[i] = rejoined
 		}
 
 		ctx.logger.LogDB("after players rejoined")
-		time.Sleep(20 * time.Millisecond)
 
-		// Check that all players are back
-		players[leavingPlayers].reload()
+		// Check that all players are back - wait for rejoin to propagate
 		playerList := players[leavingPlayers].getPlayerList()
 
 		for i := 0; i < totalPlayers; i++ {
@@ -228,11 +208,8 @@ func TestLobbyCanStartWithMatchingRoles(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("S%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
-
-		time.Sleep(20 * time.Millisecond)
 
 		// Add roles (first player adds them)
 		for i := 0; i < v; i++ {
@@ -243,8 +220,6 @@ func TestLobbyCanStartWithMatchingRoles(t *testing.T) {
 		}
 
 		ctx.logger.LogDB("after adding roles")
-		time.Sleep(20 * time.Millisecond)
-		players[0].reload()
 
 		// Check if can start
 		canStart := players[0].canStartGame()
@@ -292,11 +267,8 @@ func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("M%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
-
-		time.Sleep(20 * time.Millisecond)
 
 		// Add roles (more than players)
 		for i := 0; i < v; i++ {
@@ -310,8 +282,6 @@ func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
 		}
 
 		ctx.logger.LogDB("after adding mismatched roles")
-		time.Sleep(20 * time.Millisecond)
-		players[0].reload()
 
 		// Check that start is disabled
 		canStart := players[0].canStartGame()
@@ -351,11 +321,8 @@ func TestGameStartAssignsCorrectRoles(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("G%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
-
-		time.Sleep(20 * time.Millisecond)
 
 		// Add roles
 		for i := 0; i < v; i++ {
@@ -365,12 +332,8 @@ func TestGameStartAssignsCorrectRoles(t *testing.T) {
 			players[0].addRoleByID(RoleWerewolf)
 		}
 
-		time.Sleep(20 * time.Millisecond)
-		players[0].reload()
-
 		// Start the game
 		players[0].startGame()
-		time.Sleep(20 * time.Millisecond)
 
 		// Count assigned roles
 		roleCount := make(map[string]int)
@@ -438,11 +401,8 @@ func TestGameStartWithMixedRoles(t *testing.T) {
 		for i := 0; i < totalPlayers; i++ {
 			name := fmt.Sprintf("X%d", i+1)
 			player := browser.signupPlayer(ctx.baseURL, name)
-			player.waitForGame()
 			players = append(players, player)
 		}
-
-		time.Sleep(20 * time.Millisecond)
 
 		// Add all roles
 		for i := 0; i < config.Villager; i++ {
@@ -459,12 +419,9 @@ func TestGameStartWithMixedRoles(t *testing.T) {
 		}
 
 		ctx.logger.LogDB("after adding mixed roles")
-		time.Sleep(20 * time.Millisecond)
-		players[0].reload()
 
 		// Start the game
 		players[0].startGame()
-		time.Sleep(20 * time.Millisecond)
 
 		// Count assigned roles
 		roleCount := make(map[string]int)

@@ -1,0 +1,39 @@
+<aside id="sidebar" class="sidebar" hx-swap-oob="true">
+  <div class="leftbound">
+    <div>
+      <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Toggle navigation">
+        ☰
+      </label>
+    </div>
+    <div>
+      <h1>Werewolf</h1>
+    </div>
+  </div>
+  <section>
+    <p><strong>Player: </strong>{{.Player.Name}} <small>(Secret: <code
+          id="secret-code-display">{{.Player.SecretCode}}</code>)</small>
+    </p>
+  </section>
+  <hr>
+  {{if ne .Game.Status "lobby" }}
+  <section>
+    <h3>Character</h3>
+    <p><strong>Role:</strong> <span id="role">{{.Player.RoleName}}</span></p>
+    <p>{{.Player.RoleDescription}}</p>
+    <p><strong>Team:</strong> {{.Player.Team}}</p>
+    <p><strong>Status:</strong> {{if .Player.IsAlive}}Alive{{else}}Dead{{end}}</p>
+  </section>
+  <hr>
+  {{end}}
+  <section>
+    <h3>All Players</h3>
+    <ul id="player-list" class="player-list">
+      {{range .Players}}
+      <li class="{{if not .IsAlive}}dead-player{{end}}">
+        {{.Name}}
+        {{if not .IsAlive}}💀{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </section>
+</aside>

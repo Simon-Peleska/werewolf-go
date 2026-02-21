@@ -9,9 +9,7 @@
   - [x] Mason
   - [x] Wolf Cub
 - styling
-  - change layout
   - change color scheme
-  - change fonts
   - make colorscheme change during the night
   - add icons
 - add ai storyteller

@@ -22,7 +22,6 @@ func TestSignupWithName(t *testing.T) {
 		ctx.logger.Debug("=== Testing signup with name: %s ===", name)
 
 		player := browser.signupPlayer(ctx.baseURL, name)
-		player.waitForGame()
 
 		if !player.isOnGamePage() {
 			ctx.logger.LogDB("FAIL: player not on game page")
@@ -63,7 +62,6 @@ func TestSignupDuplicateNameFails(t *testing.T) {
 
 		// First signup should succeed
 		player1 := browser.signupPlayer(ctx.baseURL, name)
-		player1.waitForGame()
 
 		if !player1.isOnGamePage() {
 			ctx.logger.LogDB("FAIL: first player not on game page")
@@ -116,7 +114,6 @@ func TestLoginWithCorrectSecret(t *testing.T) {
 
 		// Signup first
 		player1 := browser.signupPlayer(ctx.baseURL, name)
-		player1.waitForGame()
 
 		// Get secret code
 		secretCode := player1.getSecretCode()
@@ -159,8 +156,7 @@ func TestLoginWithWrongSecret(t *testing.T) {
 		ctx.logger.Debug("=== Testing login with wrong secret for: %s ===", name)
 
 		// Signup first
-		player1 := browser.signupPlayer(ctx.baseURL, name)
-		player1.waitForGame()
+		_ = browser.signupPlayer(ctx.baseURL, name)
 
 		// Try to login with wrong secret
 		player2 := browser.loginPlayerNoRedirect(ctx.baseURL, name, "wrongsecret")

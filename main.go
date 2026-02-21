@@ -2,19 +2,18 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"strings"
-
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed templates/*
@@ -34,6 +33,72 @@ func logError(context string, err error) {
 		rows, _ := db.Query(".dump")
 		log.Printf("DB dump: %v", rows)
 	}
+}
+
+// broadcastGameUpdate sends the current game state to all connected clients
+func broadcastGameUpdate() {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
+		return
+	}
+
+	players, err := getPlayersByGameId(game.ID)
+	if err != nil {
+		logError("broadcastGameUpdate: getPlayersByGameId", err)
+		return
+	}
+
+	DebugLog("broadcastGameUpdate", "Broadcasting to %d players in game %d (status: %s)", len(players), game.ID, game.Status)
+
+	for _, p := range players {
+		// Send game component
+		buf, err := getGameComponent(p.PlayerID, game)
+		if err != nil {
+			logError("broadcastGameUpdate: getGameComponent", err)
+			continue
+		}
+		hub.sendToPlayer(p.PlayerID, buf.Bytes())
+
+		// Send character info
+		var charBuf bytes.Buffer
+
+		data := SidebarData{
+			Player:  &p,
+			Players: players,
+			Game:    game,
+		}
+
+		templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
+		hub.sendToPlayer(p.PlayerID, charBuf.Bytes())
+
+		historyBuf, err := getGameHistory(p.PlayerID, game)
+		if err != nil {
+			logError("broadcastGameHistory: getGameHistory", err)
+			continue
+		}
+		hub.sendToPlayer(p.PlayerID, historyBuf.Bytes())
+	}
+}
+
+// getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
+func getOrCreateCurrentGame() (*Game, error) {
+	var game Game
+	err := db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
+	if err == sql.ErrNoRows {
+		result, err := db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
+		if err != nil {
+			return nil, err
+		}
+		gameID, _ := result.LastInsertId()
+		game = Game{ID: gameID, Status: "lobby", Round: 0}
+		log.Printf("Created new game: id=%d, status='lobby'", gameID)
+		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
+		LogDBState("after new game created")
+	} else if err != nil {
+		return nil, err
+	}
+	return &game, nil
 }
 
 type GameData struct {
@@ -135,27 +200,51 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 	templates.ExecuteTemplate(w, "game.html", data)
 }
 
-func handleCharacterInfo(w http.ResponseWriter, r *http.Request) {
+type SidebarData struct {
+	Player  *Player
+	Players []Player
+	Game    *Game
+}
+
+func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	playerID, err := getPlayerIdFromSession(r)
 	if err != nil {
+		DebugLog("handleGame", "Redirecting anonymous visitor to index")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
-		logError("handleCharacterInfo: getOrCreateCurrentGame", err)
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		logError("handleGame: getOrCreateCurrentGame", err)
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
 
-	player, err := getPlayerInGame(game.ID, playerID)
+	// Get player info from player table
+	var player Player
+	err = db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
 	if err != nil {
-		// Player not in game yet, return empty
+		logError("handleGame: db.Get player", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	player.PlayerID = playerID
+	DebugLog("handleGame", "Player '%s' (ID: %d) accessing game page, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
 
-	templates.ExecuteTemplate(w, "character_info.html", player)
+	// Get all players in the game
+	players, err := getPlayersByGameId(game.ID)
+	if err != nil {
+		logError("handleGame: getPlayersByGameId", err)
+	}
+
+	data := SidebarData{
+		Player:  &player,
+		Players: players,
+		Game:    game,
+	}
+
+	templates.ExecuteTemplate(w, "sidebar.html", data)
 }
 
 func handleGameComponent(w http.ResponseWriter, r *http.Request) {
@@ -182,116 +271,119 @@ func handleGameComponent(w http.ResponseWriter, r *http.Request) {
 	buf.WriteTo(w)
 }
 
+func handleGameHistory(w http.ResponseWriter, r *http.Request) {
+	playerID, err := getPlayerIdFromSession(r)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleGameComponent: getOrCreateCurrentGame", err)
+		w.Write([]byte(renderToast("error", "Something went wrong")))
+		return
+	}
+
+	buf, err := getGameHistory(playerID, game)
+	if err != nil {
+		logError("handleGameHistory: getGameHistory", err)
+		w.Write([]byte(renderToast("error", "Something went wrong")))
+		return
+	}
+
+	buf.WriteTo(w)
+}
+
+type HistoryGameAction struct {
+	ID           int64  `db:"id"`
+	Round        int    `db:"round"`
+	Phase        string `db:"phase"` // "night" or "day"
+	ActionType   string `db:"action_type"`
+	ActorPlayer  string `db:"actor_player"`
+	TargetPlayer string `db:"target_player"`
+}
+
+func getGameHistory(playerID int64, game *Game) (*bytes.Buffer, error) {
+	var actions []HistoryGameAction
+	db.Select(&actions, `
+		SELECT
+			a.rowid as id,
+			a.round as round,
+			a.phase as phase,
+			a.action_type as action_type,
+			ap.name as actor_player,
+			tp.name as target_player
+		FROM game_action a
+			JOIN game g on g.rowid = a.game_id
+			JOIN game_player gp on gp.game_id = g.rowid
+			JOIN player p on gp.player_id = p.rowid  
+			JOIN role pr on gp.role_id = pr.rowid
+			LEFT JOIN player ap on a.target_player_id = ap.rowid  
+			LEFT JOIN player tp on a.actor_player_id = tp.rowid  
+		WHERE g.rowid = ?
+			AND p.rowid = ?
+			AND (
+				a.action_type = "public"
+				OR a.action_type = 'team:' || pr.team
+				OR a.actor_player_id = p.rowid
+				OR (
+					a.action_type = "resolved"
+					AND (
+						a.phase = "day"
+						OR g.round > a.round)
+					)
+				)
+`,
+		game.ID, playerID)
+
+	var action_descs = []string{}
+
+	for _, action := range actions {
+		switch action_type := action.ActionType; action_type {
+		case "werewolf_kill":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Werewolf %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "day_vote":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "elimination":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s was eliminated by the village", action.Phase, action.Round, action.TargetPlayer))
+		case "seer_investigate":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Seer %s investigated %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "doctor_protect":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Doctor %s protected %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "guard_protect":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Guard %s protected %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "hunter_revenge":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Hunter %s shot %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "witch_heal":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s healed %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "witch_kill":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s poisoned %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "witch_pass":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s passed", action.Phase, action.Round, action.ActorPlayer))
+		case "werewolf_kill_2":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Werewolf %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "cupid_link":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: Cupid %s gave %s a love potion", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		case "lover_heartbreak":
+			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s died of heartbreak, because %s died", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+		}
+	}
+
+	var buf bytes.Buffer
+
+	if err := templates.ExecuteTemplate(&buf, "history.html", action_descs); err != nil {
+		return nil, err
+	}
+
+	return &buf, nil
+}
+
 func disableCaching(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Cache-Control", "no-cache")
 
 		next.ServeHTTP(w, r)
-	})
-}
-
-// gzipWriter wraps http.ResponseWriter to compress output
-type gzipWriter struct {
-	http.ResponseWriter
-	Writer *gzip.Writer
-}
-
-func (w *gzipWriter) Write(b []byte) (int, error) {
-	return w.Writer.Write(b)
-}
-
-func (w *gzipWriter) Flush() {
-	w.Writer.Flush()
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// shouldCompress determines if a content type should be gzip compressed
-// Compresses text-based formats but not binary formats like images
-func shouldCompress(contentType string) bool {
-	compressiblePrefixes := []string{
-		"text/",
-		"application/json",
-		"application/javascript",
-		"image/svg",
-	}
-	for _, prefix := range compressiblePrefixes {
-		if strings.HasPrefix(contentType, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-// responseWriter wraps http.ResponseWriter to handle conditional gzip compression
-type responseWriter struct {
-	http.ResponseWriter
-	gz            *gzip.Writer
-	wrappedWriter http.ResponseWriter
-	headerSent    bool
-}
-
-// WriteHeader checks content type and sets up compression if appropriate
-func (w *responseWriter) WriteHeader(statusCode int) {
-	if w.headerSent {
-		return
-	}
-	w.headerSent = true
-
-	contentType := w.Header().Get("Content-Type")
-	acceptGzip := strings.Contains(w.Header().Get("Accept-Encoding"), "gzip")
-
-	// Only compress if content type is compressible and client supports gzip
-	if contentType != "" && shouldCompress(contentType) && acceptGzip {
-		w.gz = gzip.NewWriter(w.wrappedWriter)
-		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Del("Content-Length")
-	}
-
-	w.ResponseWriter.WriteHeader(statusCode)
-}
-
-// Write writes to gzip writer if it exists, otherwise to original writer
-func (w *responseWriter) Write(b []byte) (int, error) {
-	if !w.headerSent {
-		w.WriteHeader(http.StatusOK)
-	}
-
-	if w.gz != nil {
-		return w.gz.Write(b)
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-// Flush flushes both gzip and response writer
-func (w *responseWriter) Flush() {
-	if w.gz != nil {
-		w.gz.Flush()
-	}
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// Close closes the gzip writer if it exists
-func (w *responseWriter) Close() error {
-	if w.gz != nil {
-		return w.gz.Close()
-	}
-	return nil
-}
-
-// compress adds gzip compression to compressible responses
-func compress(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &responseWriter{
-			ResponseWriter: w,
-			wrappedWriter:  w,
-		}
-		defer wrapped.Close()
-
-		next.ServeHTTP(wrapped, r)
 	})
 }
 
@@ -342,6 +434,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSWitchKill(client, msg)
 	case "witch_pass":
 		handleWSWitchPass(client, msg)
+	case "cupid_choose":
+		handleWSCupidChoose(client, msg)
 	default:
 		log.Printf("Unknown action: %s for player %d (%s) in game %d (status: %s)", msg.Action, client.playerID, playerName, game.ID, game.Status)
 	}
@@ -437,7 +531,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-				game.ID, game.NightNumber, ActionWerewolfKill)
+				game.ID, game.Round, ActionWerewolfKill)
 
 			for _, action := range actions {
 				var voterName, targetName string
@@ -464,7 +558,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionSeerInvestigate)
+				game.ID, game.Round, playerID, ActionSeerInvestigate)
 			if err == nil && action.TargetPlayerID != nil {
 				hasInvestigated = true
 				var targetName string
@@ -493,7 +587,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionDoctorProtect)
+				game.ID, game.Round, playerID, ActionDoctorProtect)
 			if err == nil && action.TargetPlayerID != nil {
 				hasProtected = true
 				db.Get(&doctorProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
@@ -512,7 +606,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionGuardProtect)
+				game.ID, game.Round, playerID, ActionGuardProtect)
 			if err == nil && action.TargetPlayerID != nil {
 				guardHasProtected = true
 				db.Get(&guardProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
@@ -520,13 +614,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 
 			// Build guard targets: alive players excluding self and last night's target
 			var lastProtectedID int64
-			if game.NightNumber > 1 {
+			if game.Round > 1 {
 				var lastAction GameAction
 				err := db.Get(&lastAction, `
 					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 					FROM game_action
 					WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-					game.ID, game.NightNumber-1, playerID, ActionGuardProtect)
+					game.ID, game.Round-1, playerID, ActionGuardProtect)
 				if err == nil && lastAction.TargetPlayerID != nil {
 					lastProtectedID = *lastAction.TargetPlayerID
 				}
@@ -574,7 +668,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionWitchHeal); err == nil {
+				game.ID, game.Round, playerID, ActionWitchHeal); err == nil {
 				witchHealedThisNight = true
 				if healAction.TargetPlayerID != nil {
 					db.Get(&witchHealedName, "SELECT name FROM player WHERE rowid = ?", *healAction.TargetPlayerID)
@@ -587,7 +681,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionWitchKill)
+				game.ID, game.Round, playerID, ActionWitchKill)
 			if err == nil && killedAction.TargetPlayerID != nil {
 				witchKilledThisNight = true
 				db.Get(&witchKilledTarget, "SELECT name FROM player WHERE rowid = ?", *killedAction.TargetPlayerID)
@@ -598,7 +692,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				SELECT COUNT(*) FROM game_action
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.NightNumber, playerID, ActionWitchPass)
+				game.ID, game.Round, playerID, ActionWitchPass)
 			witchDoneThisNight = doneCount > 0
 
 			// Find werewolf majority victim1
@@ -615,7 +709,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
 				GROUP BY ga.target_player_id
 				ORDER BY count DESC`,
-				game.ID, game.NightNumber, ActionWerewolfKill)
+				game.ID, game.Round, ActionWerewolfKill)
 
 			var totalWerewolves int
 			db.Get(&totalWerewolves, `
@@ -632,7 +726,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 
 			// Find Wolf Cub second kill victim2 (if active this night)
-			if game.NightNumber > 1 && totalWerewolves > 0 {
+			if game.Round > 1 && totalWerewolves > 0 {
 				var wolfCubDeathCount int
 				db.Get(&wolfCubDeathCount, `
 					SELECT COUNT(*) FROM game_action ga
@@ -641,7 +735,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 					WHERE ga.game_id = ? AND ga.round = ?
 					AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
 					AND r.name = 'Wolf Cub'`,
-					game.ID, game.NightNumber-1)
+					game.ID, game.Round-1)
 				if wolfCubDeathCount > 0 {
 					var wvotes2 []voteCount
 					db.Select(&wvotes2, `
@@ -651,7 +745,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 						WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
 						GROUP BY ga.target_player_id
 						ORDER BY count DESC`,
-						game.ID, game.NightNumber, ActionWerewolfKill2)
+						game.ID, game.Round, ActionWerewolfKill2)
 					majority := totalWerewolves/2 + 1
 					if len(wvotes2) > 0 && wvotes2[0].Count >= majority {
 						witchVictim2 = wvotes2[0].TargetName
@@ -671,10 +765,42 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate Cupid-specific data
+		isCupid := currentPlayer.RoleName == "Cupid" && game.Round == 1
+		var cupidChosen1ID int64
+		var cupidChosen1, cupidChosen2 string
+		var cupidChosen2ID int64
+		if isCupid {
+			var finalized int
+			db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
+			if finalized > 0 {
+				// Both chosen — read from game_lovers
+				db.Get(&cupidChosen1ID, `SELECT player1_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
+				db.Get(&cupidChosen2ID, `SELECT player2_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
+				db.Get(&cupidChosen1, "SELECT name FROM player WHERE rowid = ?", cupidChosen1ID)
+				db.Get(&cupidChosen2, "SELECT name FROM player WHERE rowid = ?", cupidChosen2ID)
+			} else {
+				// Check if step 1 is done (stored in game_action)
+				db.Get(&cupidChosen1ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+					game.ID, playerID, ActionCupidLink)
+				if cupidChosen1ID != 0 {
+					db.Get(&cupidChosen1, "SELECT name FROM player WHERE rowid = ?", cupidChosen1ID)
+				}
+			}
+		}
+
+		// Lover info: any player who is in a finalized lover pair sees their partner
+		loverPartnerID := getLoverPartner(game.ID, currentPlayer.PlayerID)
+		isLover := loverPartnerID != 0
+		var loverName string
+		if isLover {
+			db.Get(&loverName, "SELECT name FROM player WHERE rowid = ?", loverPartnerID)
+		}
+
 		// Check if Wolf Cub double kill is active this night
 		wolfCubDoubleKill := false
 		var currentVote2 int64
-		if isWerewolf && game.NightNumber > 1 {
+		if isWerewolf && game.Round > 1 {
 			var wolfCubDeathCount int
 			db.Get(&wolfCubDeathCount, `
 				SELECT COUNT(*) FROM game_action ga
@@ -683,7 +809,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				WHERE ga.game_id = ? AND ga.round = ?
 				AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
 				AND r.name = 'Wolf Cub'`,
-				game.ID, game.NightNumber-1)
+				game.ID, game.Round-1)
 			wolfCubDoubleKill = wolfCubDeathCount > 0
 
 			if wolfCubDoubleKill {
@@ -693,7 +819,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 					FROM game_action
 					WHERE game_id = ? AND round = ? AND phase = 'night'
 					AND actor_player_id = ? AND action_type = ?`,
-					game.ID, game.NightNumber, playerID, ActionWerewolfKill2)
+					game.ID, game.Round, playerID, ActionWerewolfKill2)
 				if err == nil && vote2Action.TargetPlayerID != nil {
 					currentVote2 = *vote2Action.TargetPlayerID
 				}
@@ -709,7 +835,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			CurrentVote:          currentVote,
 			WolfCubDoubleKill:    wolfCubDoubleKill,
 			CurrentVote2:         currentVote2,
-			NightNumber:          game.NightNumber,
+			NightNumber:          game.Round,
 			IsSeer:               isSeer,
 			HasInvestigated:      hasInvestigated,
 			SeerResults:          seerResults,
@@ -734,6 +860,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			WitchDoneThisNight:   witchDoneThisNight,
 			IsMason:              isMason,
 			Masons:               masons,
+			IsCupid:              isCupid,
+			CupidChosen1ID:       cupidChosen1ID,
+			CupidChosen1:         cupidChosen1,
+			CupidChosen2ID:       cupidChosen2ID,
+			CupidChosen2:         cupidChosen2,
+			IsLover:              isLover,
+			LoverName:            loverName,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
@@ -748,7 +881,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			return nil, err
 		}
 
-		// Find all players killed last night (werewolf kill, Wolf Cub second kill, witch poison)
+		// Find all players killed last night (werewolf kill, Wolf Cub second kill, witch poison, heartbreak)
 		// Only includes players who are actually dead (protected players are excluded)
 		var nightVictims []NightVictim
 		db.Select(&nightVictims, `
@@ -758,9 +891,9 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 			JOIN role r ON gp.role_id = r.rowid
 			WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night'
-			AND ga.action_type IN (?, ?, ?)
+			AND ga.action_type IN (?, ?, ?, ?)
 			AND gp.is_alive = 0`,
-			game.ID, game.NightNumber, ActionWerewolfKill, ActionWerewolfKill2, ActionWitchKill)
+			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, ActionWitchKill, ActionLoverHeartbreak)
 
 		// Get alive players as targets
 		var aliveTargets []Player
@@ -803,7 +936,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND action_type = ?
 				ORDER BY rowid DESC LIMIT 1`,
-				game.ID, game.NightNumber, ActionHunterRevenge)
+				game.ID, game.Round, ActionHunterRevenge)
 			if err == nil && revengeAction.TargetPlayerID != nil {
 				hunterRevengeNeeded = true
 				hunterRevengeDone = true
@@ -825,7 +958,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 			FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-			game.ID, game.NightNumber, ActionDayVote)
+			game.ID, game.Round, ActionDayVote)
 
 		for _, action := range actions {
 			var voterName, targetName string
@@ -839,10 +972,17 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			votes = append(votes, DayVote{VoterName: voterName, TargetName: targetName})
 		}
 
+		dayLoverPartnerID := getLoverPartner(game.ID, currentPlayer.PlayerID)
+		isDayLover := dayLoverPartnerID != 0
+		var dayLoverName string
+		if isDayLover {
+			db.Get(&dayLoverName, "SELECT name FROM player WHERE rowid = ?", dayLoverPartnerID)
+		}
+
 		data := DayData{
 			Players:             players,
 			AliveTargets:        aliveTargets,
-			NightNumber:         game.NightNumber,
+			NightNumber:         game.Round,
 			NightVictims:        nightVictims,
 			Votes:               votes,
 			CurrentVote:         currentVote,
@@ -854,6 +994,8 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			HunterVictimRole:    hunterVictimRole,
 			IsTheHunter:         isTheHunter,
 			HunterTargets:       hunterTargets,
+			IsLover:             isDayLover,
+			LoverName:           dayLoverName,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
@@ -861,7 +1003,8 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			return nil, err
 		}
 	} else if game.Status == "finished" {
-		// Determine winner
+		// Determine winner from game_action log (endGame stores the winner via status only,
+		// so we infer from alive players — or "lovers" if a lover pair is the last two)
 		var werewolfCount int
 		db.Get(&werewolfCount, `
 			SELECT COUNT(*) FROM game_player g
@@ -870,7 +1013,14 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 
 		winner := "villagers"
 		if werewolfCount > 0 {
-			winner = "werewolves"
+			// Check if the alive players are a lover pair (lovers win)
+			var alivePlayers []Player
+			db.Select(&alivePlayers, `SELECT g.player_id as player_id FROM game_player g WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
+			if len(alivePlayers) == 2 && getLoverPartner(game.ID, alivePlayers[0].PlayerID) == alivePlayers[1].PlayerID {
+				winner = "lovers"
+			} else {
+				winner = "werewolves"
+			}
 		}
 
 		data := FinishedData{
@@ -938,7 +1088,7 @@ func main() {
 	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
 		var h http.Handler = handler
-		h = compress(h)
+		// h = compress(h)
 		h = disableCaching(h)
 		if appLogger != nil && appLogger.logRequests {
 			http.Handle(pattern, &LoggingHandler{Handler: h, Logger: appLogger})
@@ -954,11 +1104,12 @@ func main() {
 	wrapHandler("/game", handleGame)
 	wrapHandler("/ws", handleWebSocket)
 	wrapHandler("/game/component", handleGameComponent)
-	wrapHandler("/game/character", handleCharacterInfo)
+	wrapHandler("/game/history", handleGameHistory)
+	wrapHandler("/game/sidebar", handleSidebarInfo)
 
 	// Serve static files with compression for text-based files (CSS, JS, SVG)
 	// Binary formats like images will be served without compression
-	staticHandler := compress(http.FileServer(http.FS(staticFS)))
+	staticHandler := http.FileServer(http.FS(staticFS))
 	http.Handle("/static/", staticHandler)
 
 	log.Println("Server starting on :8080")

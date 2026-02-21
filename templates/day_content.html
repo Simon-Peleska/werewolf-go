@@ -1,6 +1,6 @@
-<div id="game-content" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap-oob="true">
     <section>
-        <h2>Day {{.NightNumber}}</h2>
+        <h2 id="phase-heading"><span id="day">Day</span> {{.NightNumber}}</h2>
 
         {{if .NightVictims}}
         <div class="death-announcement" id="death-announcement">
@@ -80,4 +80,10 @@
             {{end}}
         </ul>
     </section>
+
+    {{if .IsLover}}
+    <section id="lover-info" class="lover-info">
+        <p>💞 Your lover is <strong>{{.LoverName}}</strong>.</p>
+    </section>
+    {{end}}
 </div>

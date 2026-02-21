@@ -33,6 +33,48 @@ type DayData struct {
 	HunterVictimRole    string   // Role of Hunter's target
 	IsTheHunter         bool     // Is this player the dead Hunter needing to shoot?
 	HunterTargets       []Player // Alive targets for the Hunter to pick from
+	IsLover             bool     // Is this player one of the two lovers?
+	LoverName           string   // Name of their partner
+}
+
+// applyHeartbreaks checks if any of the given killed players have a living lover.
+// Kills any living lovers and records public heartbreak actions, then recurses for chains
+// (multiple Cupids can create chained heartbreaks across multiple lover pairs).
+// Returns all player IDs killed by heartbreak in this chain.
+func applyHeartbreaks(game *Game, phase string, killedIDs []int64) []int64 {
+	var allHeartbroken []int64
+	toProcess := killedIDs
+	for len(toProcess) > 0 {
+		var nextRound []int64
+		for _, killed := range toProcess {
+			partnerID := getLoverPartner(game.ID, killed)
+			if partnerID == 0 {
+				continue
+			}
+			var isAlive bool
+			db.Get(&isAlive, `SELECT is_alive FROM game_player WHERE game_id = ? AND player_id = ?`, game.ID, partnerID)
+			if !isAlive {
+				continue
+			}
+			_, err := db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, partnerID)
+			if err != nil {
+				logError("applyHeartbreaks: kill partner", err)
+				continue
+			}
+			// Record public heartbreak action: actor=trigger person, target=heartbreak victim
+			_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				game.ID, game.Round, phase, killed, ActionLoverHeartbreak, partnerID, VisibilityPublic)
+			var killedName, partnerName string
+			db.Get(&killedName, "SELECT name FROM player WHERE rowid = ?", killed)
+			db.Get(&partnerName, "SELECT name FROM player WHERE rowid = ?", partnerID)
+			log.Printf("Heartbreak: '%s' died after their lover '%s' was killed", partnerName, killedName)
+			DebugLog("applyHeartbreaks", "'%s' died from heartbreak (lover '%s' was killed)", partnerName, killedName)
+			nextRound = append(nextRound, partnerID)
+			allHeartbroken = append(allHeartbroken, partnerID)
+		}
+		toProcess = nextRound
+	}
+	return allHeartbroken
 }
 
 func handleWSDayVote(client *Client, msg WSMessage) {
@@ -86,7 +128,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		VALUES (?, ?, 'day', ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 		DO UPDATE SET target_player_id = ?`,
-		game.ID, game.NightNumber, client.playerID, ActionDayVote, targetID, VisibilityPublic, targetID)
+		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, targetID)
 	if err != nil {
 		logError("handleWSDayVote: db.Exec insert vote", err)
 		sendErrorToast(client.playerID, "Failed to record vote")
@@ -116,7 +158,7 @@ func resolveDayVotes(game *Game) {
 	}
 
 	// Get all day votes for this round
-	voteCounts, totalVotes, err := getVoteCounts(game.ID, game.NightNumber, "day", ActionDayVote)
+	voteCounts, totalVotes, err := getVoteCounts(game.ID, game.Round, "day", ActionDayVote)
 	if err != nil {
 		logError("resolveDayVotes: getVoteCounts", err)
 		return
@@ -165,7 +207,7 @@ func resolveDayVotes(game *Game) {
 	_, err = db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
 		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
-		game.ID, game.NightNumber, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic)
+		game.ID, game.Round, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic)
 	if err != nil {
 		logError("resolveDayVotes: record elimination", err)
 	}
@@ -175,16 +217,21 @@ func resolveDayVotes(game *Game) {
 	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
 
-	// Check if eliminated player is a Hunter — they get a revenge shot before game continues
-	var eliminatedRole string
-	db.Get(&eliminatedRole, `
-		SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid
-		WHERE g.game_id = ? AND g.player_id = ?`, game.ID, eliminatedID)
-	if eliminatedRole == "Hunter" {
-		log.Printf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", eliminatedName)
-		LogDBState("after hunter elimination - waiting for revenge")
-		broadcastGameUpdate()
-		return
+	// Apply heartbreak from day elimination — chains across multiple lover pairs
+	heartbroken := applyHeartbreaks(game, "day", []int64{eliminatedID})
+
+	// Check if any of the dead (eliminated + heartbroken) are Hunters needing revenge
+	for _, deadID := range append([]int64{eliminatedID}, heartbroken...) {
+		var deadRole string
+		db.Get(&deadRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, deadID)
+		if deadRole == "Hunter" {
+			var deadName string
+			db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
+			log.Printf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", deadName)
+			LogDBState("after hunter elimination - waiting for revenge")
+			broadcastGameUpdate()
+			return
+		}
 	}
 
 	// Check win conditions
@@ -231,7 +278,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	db.Get(&revengeCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.NightNumber, client.playerID, ActionHunterRevenge)
+		game.ID, game.Round, client.playerID, ActionHunterRevenge)
 	if revengeCount > 0 {
 		sendErrorToast(client.playerID, "You have already taken your revenge shot")
 		return
@@ -266,7 +313,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	_, err = db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
 		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
-		game.ID, game.NightNumber, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic)
+		game.ID, game.Round, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic)
 	if err != nil {
 		logError("handleWSHunterRevenge: record action", err)
 	}
@@ -275,11 +322,20 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	DebugLog("handleWSHunterRevenge", "Hunter '%s' shot '%s'", hunter.Name, target.Name)
 	LogDBState("after hunter revenge")
 
-	// Check if the target is also a Hunter — they get to take their shot too
-	if target.RoleName == "Hunter" {
-		log.Printf("Hunter '%s' was killed by another Hunter's revenge — entering chained revenge", target.Name)
-		broadcastGameUpdate()
-		return
+	// Apply heartbreak from Hunter's shot — chains across multiple lover pairs
+	heartbroken := applyHeartbreaks(game, "day", []int64{targetID})
+
+	// Check if the target (or any heartbreak victim) is also a Hunter
+	for _, deadID := range append([]int64{targetID}, heartbroken...) {
+		var deadRole string
+		db.Get(&deadRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, deadID)
+		if deadRole == "Hunter" {
+			var deadName string
+			db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
+			log.Printf("Hunter '%s' was killed — entering chained revenge", deadName)
+			broadcastGameUpdate()
+			return
+		}
 	}
 
 	// Check win conditions
@@ -292,7 +348,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	db.Get(&dayEliminationCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-		game.ID, game.NightNumber, ActionElimination)
+		game.ID, game.Round, ActionElimination)
 
 	if dayEliminationCount > 0 {
 		// Chain started from day elimination — transition to night

@@ -1,6 +1,6 @@
-<div id="game-content" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap-oob="true">
     <section>
-        <h2>Night {{.NightNumber}}</h2>
+        <h2 id="phase-heading"><span id="night">Night</span> {{.NightNumber}}</h2>
 
         {{if .IsWerewolf}}
         <p>The werewolves awaken...</p>
@@ -173,7 +173,7 @@
         {{if not .WitchDoneThisNight}}
         <form ws-send id="witch-pass-form" class="vote-form">
             <input type="hidden" name="action" value="witch_pass">
-            <button type="submit" class="witch-pass-button">
+            <button type="submit" id="witch-pass-button" class="witch-pass-button">
                 ✓ Done for tonight
             </button>
         </form>
@@ -194,21 +194,44 @@
         <p><em>You are the only Mason.</em></p>
         {{end}}
 
+        {{else if .IsCupid}}
+        <h3>💘 Link Two Lovers</h3>
+        {{if .CupidChosen2}}
+        <p id="cupid-result"><em>You have linked <strong>{{.CupidChosen1}}</strong> and <strong>{{.CupidChosen2}}</strong> as lovers.</em></p>
+        {{else if .CupidChosen1}}
+        <p><strong>First lover:</strong> {{.CupidChosen1}}</p>
+        <p><small>Now choose the second lover.</small></p>
+        {{range .AliveTargets}}
+        <form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="cupid_choose">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{else}}
+        <p><small>Choose two players to become lovers. They will know each other's identities.</small></p>
+        {{range .AliveTargets}}
+        <form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form">
+            <input type="hidden" name="action" value="cupid_choose">
+            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">
+                {{.Name}}
+            </button>
+        </form>
+        {{end}}
+        {{end}}
+
         {{else}}
         <p>The village sleeps...</p>
         <p>Close your eyes and wait for morning.</p>
         {{end}}
-    </section>
 
-    <section>
-        <h3>All Players</h3>
-        <ul class="player-list">
-            {{range .Players}}
-            <li class="{{if not .IsAlive}}dead-player{{end}}">
-                {{.Name}}
-                {{if not .IsAlive}}💀{{end}}
-            </li>
-            {{end}}
-        </ul>
+        {{if .IsLover}}
+        <div id="lover-info" class="lover-info">
+            <p>💞 Your lover is <strong>{{.LoverName}}</strong>.</p>
+        </div>
+        {{end}}
     </section>
 </div>

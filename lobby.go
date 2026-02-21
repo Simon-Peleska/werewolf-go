@@ -85,58 +85,6 @@ func removePlayerFromLobby(playerID int64) {
 	broadcastGameUpdate()
 }
 
-// broadcastGameUpdate sends the current game state to all connected clients
-func broadcastGameUpdate() {
-	game, err := getOrCreateCurrentGame()
-	if err != nil {
-		logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
-		return
-	}
-
-	players, err := getPlayersByGameId(game.ID)
-	if err != nil {
-		logError("broadcastGameUpdate: getPlayersByGameId", err)
-		return
-	}
-
-	DebugLog("broadcastGameUpdate", "Broadcasting to %d players in game %d (status: %s)", len(players), game.ID, game.Status)
-
-	for _, p := range players {
-		// Send game component
-		buf, err := getGameComponent(p.PlayerID, game)
-		if err != nil {
-			logError("broadcastGameUpdate: getGameComponent", err)
-			continue
-		}
-		hub.sendToPlayer(p.PlayerID, buf.Bytes())
-
-		// Send character info
-		var charBuf bytes.Buffer
-		templates.ExecuteTemplate(&charBuf, "character_info.html", p)
-		hub.sendToPlayer(p.PlayerID, charBuf.Bytes())
-	}
-}
-
-// getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
-func getOrCreateCurrentGame() (*Game, error) {
-	var game Game
-	err := db.Get(&game, "SELECT rowid as id, status, night_number FROM game ORDER BY id DESC LIMIT 1")
-	if err == sql.ErrNoRows {
-		result, err := db.Exec("INSERT INTO game (status, night_number) VALUES ('lobby', 0)")
-		if err != nil {
-			return nil, err
-		}
-		gameID, _ := result.LastInsertId()
-		game = Game{ID: gameID, Status: "lobby", NightNumber: 0}
-		log.Printf("Created new game: id=%d, status='lobby'", gameID)
-		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
-		LogDBState("after new game created")
-	} else if err != nil {
-		return nil, err
-	}
-	return &game, nil
-}
-
 func handleWSUpdateRole(client *Client, msg WSMessage) {
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
@@ -250,7 +198,7 @@ func handleWSStartGame(client *Client) {
 	log.Printf("Roles assigned, updating game status...")
 
 	// Update game status and set night 1
-	_, err = db.Exec("UPDATE game SET status = 'night', night_number = 1 WHERE rowid = ?", game.ID)
+	_, err = db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
 		logError("handleWSStartGame: db.Exec update game status", err)
 		sendErrorToast(client.playerID, "Failed to start game")

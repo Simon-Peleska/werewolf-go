@@ -12,15 +12,15 @@ type FinishedData struct {
 
 // transitionToNight moves the game to the next night phase
 func transitionToNight(game *Game) {
-	newRound := game.NightNumber + 1
-	_, err := db.Exec("UPDATE game SET status = 'night', night_number = ? WHERE rowid = ?", newRound, game.ID)
+	newRound := game.Round + 1
+	_, err := db.Exec("UPDATE game SET status = 'night', round = ? WHERE rowid = ?", newRound, game.ID)
 	if err != nil {
 		logError("transitionToNight: update game", err)
 		return
 	}
 
-	log.Printf("Day %d ended, transitioning to night %d", game.NightNumber, newRound)
-	DebugLog("transitionToNight", "Day %d ended, transitioning to night %d", game.NightNumber, newRound)
+	log.Printf("Day %d ended, transitioning to night %d", game.Round, newRound)
+	DebugLog("transitionToNight", "Day %d ended, transitioning to night %d", game.Round, newRound)
 	LogDBState("after day resolution")
 
 	broadcastGameUpdate()
@@ -48,6 +48,22 @@ func checkWinConditions(game *Game) bool {
 	}
 
 	log.Printf("Win check: %d werewolves, %d villagers alive", werewolfCount, villagerCount)
+
+	// Lovers win condition: if only 2 players alive and they are a linked lover pair,
+	// they win together regardless of team (overrides normal win conditions).
+	if werewolfCount+villagerCount == 2 {
+		var alivePlayers []Player
+		db.Select(&alivePlayers, `
+			SELECT g.player_id as player_id FROM game_player g
+			WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
+		if len(alivePlayers) == 2 {
+			if getLoverPartner(game.ID, alivePlayers[0].PlayerID) == alivePlayers[1].PlayerID {
+				log.Printf("LOVERS WIN - last two alive are the lovers")
+				endGame(game, "lovers")
+				return true
+			}
+		}
+	}
 
 	// Villagers win if all werewolves are dead
 	if werewolfCount == 0 {

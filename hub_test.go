@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestWebSocketSync(t *testing.T) {
@@ -17,20 +16,16 @@ func TestWebSocketSync(t *testing.T) {
 
 	// Player 1 signs up
 	player1 := browser.signupPlayer(ctx.baseURL, "Alice")
-	player1.waitForGame()
 	ctx.logger.Debug("Player 1 (Alice) in game")
 
 	// Player 2 signs up
 	player2 := browser.signupPlayer(ctx.baseURL, "Bob")
-	player2.waitForGame()
 	ctx.logger.Debug("Player 2 (Bob) in game")
 
 	// Wait for WebSocket connections
 	ctx.logger.LogDB("both players connected")
-	time.Sleep(20 * time.Millisecond)
 
 	// Verify both players see each other
-	player1.reload()
 	playerList := player1.getPlayerList()
 	if !strings.Contains(playerList, "Alice") || !strings.Contains(playerList, "Bob") {
 		ctx.logger.LogDB("FAIL: players don't see each other")
@@ -39,7 +34,6 @@ func TestWebSocketSync(t *testing.T) {
 
 	// Player 1 adds a Werewolf role
 	player1.addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 
 	// Check if player 2 sees the update
 	count2 := player2.getRoleCountByID(RoleWerewolf)
@@ -50,7 +44,6 @@ func TestWebSocketSync(t *testing.T) {
 
 	// Add villager
 	player1.addRoleByID(RoleVillager)
-	time.Sleep(20 * time.Millisecond)
 
 	// Check status on both pages
 	status1 := player1.getStatusMessage()

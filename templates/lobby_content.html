@@ -1,4 +1,4 @@
-<div id="game-content" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap-oob="true">
     <div id="status-bar" class="status-bar">
         <span><strong>Players:</strong> {{.PlayerCount}}</span>
         <span><strong>Roles:</strong> {{.TotalRoles}}</span>
@@ -16,22 +16,7 @@
     </div>
 
     <section>
-        <h2>Players ({{.PlayerCount}})</h2>
-        {{if .Players}}
-        <ul id="player-list" class="player-list">
-            {{range .Players}}
-            <li>{{.Name}}</li>
-            {{end}}
-        </ul>
-        {{else}}
-        <p id="player-list">No players have joined yet.</p>
-        {{end}}
-    </section>
-
-    <hr>
-
-    <section>
-        <h2>Role Configuration</h2>
+        <h2>Roles</h2>
         <p><small>Select which roles and how many of each to include in the game.</small></p>
 
         {{range .RoleConfigs}}

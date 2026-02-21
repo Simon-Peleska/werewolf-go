@@ -1,0 +1,34 @@
+@import url("../static/pico.css");
+
+@font-face {
+  font-family: "Metal Mania";
+  src: url("/static/fonts/MetalMania-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "IM Fell Great Primer";
+  src: url("/static/fonts/IMFellGreatPrimer-Regular.ttf") format("truetype");
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "IM Fell Great Primer";
+  src: url("/static/fonts/IMFellGreatPrimer-Italic.ttf") format("truetype");
+  font-style: italic;
+}
+
+:root {
+  --pico-font-family: "IM Fell Great Primer",
+    var(--pico-font-family-emoji);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  --pico-font-family: "Metal Mania",
+    var(--pico-font-family-emoji);
+  font-weight: 200;
+}

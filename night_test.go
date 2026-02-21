@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 )
 
 // ============================================================================
@@ -13,8 +12,9 @@ import (
 
 // isInNightPhase checks if the player sees the night phase UI
 func (tp *TestPlayer) isInNightPhase() bool {
-	html, _ := tp.Page.HTML()
-	isNight := strings.Contains(html, "Night 1") || strings.Contains(html, "Night 2")
+	// Check the #phase-heading element for "Night" prefix
+	result, _, err := tp.Page.Has("#night")
+	isNight := err == nil && result
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Is in night phase: %v", tp.Name, isNight)
 	}
@@ -23,12 +23,31 @@ func (tp *TestPlayer) isInNightPhase() bool {
 
 // isInDayPhase checks if the player sees the day phase UI
 func (tp *TestPlayer) isInDayPhase() bool {
-	html, _ := tp.Page.HTML()
-	isDay := strings.Contains(html, "Day 1") || strings.Contains(html, "Day 2")
+	// Check the #phase-heading element for "Day" prefix
+	result, _, err := tp.Page.Has("#day")
+	isDay := err == nil && result
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Is in day phase: %v", tp.Name, isDay)
 	}
 	return isDay
+}
+
+// waitForDayPhase waits for the player to transition to day phase by listening to WebSocket messages
+func (tp *TestPlayer) waitForDayPhase() error {
+	checkJS := `(() => {
+		const heading = document.querySelector('#phase-heading');
+		return heading && heading.textContent.trim().startsWith('Day');
+	})`
+	return tp.waitUntilCondition(checkJS, "day phase")
+}
+
+// waitForNightPhase waits for the player to transition to night phase by listening to WebSocket messages
+func (tp *TestPlayer) waitForNightPhase() error {
+	checkJS := `(() => {
+		const heading = document.querySelector('#phase-heading');
+		return heading && heading.textContent.trim().startsWith('Night');
+	})`
+	return tp.waitUntilCondition(checkJS, "night phase")
 }
 
 // canSeeWerewolfVotes checks if the player can see the werewolf voting UI
@@ -53,8 +72,6 @@ func (tp *TestPlayer) canSeeWerewolfPack() bool {
 
 // getVoteButtons returns the names of players that can be voted for
 func (tp *TestPlayer) getVoteButtons() []string {
-	tp.reload()
-	time.Sleep(20 * time.Millisecond)
 
 	var names []string
 	elements, err := tp.p().Elements(".vote-button")
@@ -95,8 +112,8 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 	for _, btn := range buttons {
 		text := strings.TrimSpace(btn.MustText())
 		if strings.Contains(text, targetName) {
-			btn.MustClick()
-			time.Sleep(20 * time.Millisecond)
+			// Click and wait for WebSocket response
+			tp.clickElementAndWait(btn)
 			tp.logHTML("after voting for " + targetName)
 			return
 		}
@@ -109,12 +126,10 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 
 // getCurrentVoteTarget returns who this player has currently voted for (from UI)
 func (tp *TestPlayer) getCurrentVoteTarget() string {
-	tp.reload()
-	time.Sleep(20 * time.Millisecond)
 
-	// Look for a selected button
-	el, err := tp.p().Element(".vote-button.selected")
-	if err != nil {
+	// Look for a selected button (non-blocking check)
+	found, el, err := tp.p().Has(".vote-button.selected")
+	if err != nil || !found {
 		return ""
 	}
 	text := strings.TrimSpace(el.MustText())
@@ -129,8 +144,8 @@ func (tp *TestPlayer) getCurrentVoteTarget() string {
 
 // getDeathAnnouncement returns the death announcement text if any
 func (tp *TestPlayer) getDeathAnnouncement() string {
-	el, err := tp.p().Element(".death-announcement")
-	if err != nil {
+	found, el, err := tp.p().Has(".death-announcement")
+	if err != nil || !found {
 		return ""
 	}
 	text := el.MustText()
@@ -158,11 +173,8 @@ func setupNightPhaseGame(ctx *TestContext, browser *TestBrowser, numVillagers, n
 	for i := 0; i < totalPlayers; i++ {
 		name := fmt.Sprintf("N%d", i+1)
 		player := browser.signupPlayer(ctx.baseURL, name)
-		player.waitForGame()
 		players = append(players, player)
 	}
-
-	time.Sleep(20 * time.Millisecond)
 
 	// Add roles
 	for i := 0; i < numVillagers; i++ {
@@ -172,12 +184,16 @@ func setupNightPhaseGame(ctx *TestContext, browser *TestBrowser, numVillagers, n
 		players[0].addRoleByID(RoleWerewolf)
 	}
 
-	time.Sleep(20 * time.Millisecond)
-	players[0].reload()
-
 	// Start the game
 	players[0].startGame()
-	time.Sleep(20 * time.Millisecond)
+
+	// Wait for transition to night phase on all players (to ensure all have received the update)
+	for _, p := range players {
+		err := p.waitForNightPhase()
+		if err != nil {
+			ctx.logger.Debug("Warning: timeout waiting for night phase on %s: %v", p.Name, err)
+		}
+	}
 
 	ctx.logger.LogDB("after game start")
 
@@ -222,8 +238,6 @@ func TestVillagerCannotSeeWerewolfVotes(t *testing.T) {
 		werewolves[0].Name, villagers[0].Name, villagers[1].Name)
 
 	// Check villager cannot see voting UI
-	villagers[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	if villagers[0].canSeeWerewolfVotes() {
 		ctx.logger.LogDB("FAIL: villager can see werewolf votes")
@@ -236,8 +250,6 @@ func TestVillagerCannotSeeWerewolfVotes(t *testing.T) {
 	}
 
 	// Check werewolf CAN see voting UI
-	werewolves[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	if !werewolves[0].canSeeWerewolfVotes() {
 		ctx.logger.LogDB("FAIL: werewolf cannot see votes")
@@ -342,7 +354,7 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 	ctx.logger.Debug("=== Testing day transition on majority vote ===")
 
 	// Setup: 1 villager, 1 werewolf (simplest case - 1 werewolf = automatic majority)
-	players := setupNightPhaseGame(ctx, browser, 1, 1)
+	players := setupNightPhaseGame(ctx, browser, 2, 1)
 	werewolves, villagers := findPlayersByRole(players)
 
 	if len(werewolves) == 0 || len(villagers) == 0 {
@@ -352,7 +364,6 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 	ctx.logger.Debug("Werewolf: %s, Villager: %s", werewolves[0].Name, villagers[0].Name)
 
 	// Verify we're in night phase
-	werewolves[0].reload()
 	if !werewolves[0].isInNightPhase() {
 		ctx.logger.LogDB("FAIL: not in night phase")
 		t.Fatal("Should start in night phase")
@@ -361,13 +372,16 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 	// Werewolf votes for villager
 	targetName := villagers[0].Name
 	werewolves[0].voteForPlayer(targetName)
-	time.Sleep(50 * time.Millisecond) // Wait for vote resolution
+
+	// Wait for phase transition to day (second WebSocket message after vote)
+	err := werewolves[0].waitForDayPhase()
+	if err != nil {
+		ctx.logger.Debug("Warning: timeout waiting for day phase after vote: %v", err)
+	}
 
 	ctx.logger.LogDB("after werewolf vote")
 
 	// Check transition to day
-	werewolves[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	if !werewolves[0].isInDayPhase() {
 		content := werewolves[0].getGameContent()
@@ -401,13 +415,10 @@ func TestStayInNightWithoutMajority(t *testing.T) {
 	// Only first werewolf votes
 	targetName := villagers[0].Name
 	werewolves[0].voteForPlayer(targetName)
-	time.Sleep(50 * time.Millisecond)
 
 	ctx.logger.LogDB("after first werewolf vote")
 
 	// Should still be in night phase (need both werewolves to vote)
-	werewolves[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	if werewolves[0].isInDayPhase() {
 		ctx.logger.LogDB("FAIL: transitioned to day too early")
@@ -445,13 +456,10 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 
 	// Werewolf votes
 	werewolves[0].voteForPlayer(targetName)
-	time.Sleep(50 * time.Millisecond)
 
 	ctx.logger.LogDB("after werewolf vote")
 
 	// Check death announcement
-	werewolves[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	announcement := werewolves[0].getDeathAnnouncement()
 	if !strings.Contains(announcement, targetName) {
@@ -492,15 +500,11 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 
 	// Werewolves vote for different targets
 	werewolves[0].voteForPlayer(villagers[0].Name)
-	time.Sleep(20 * time.Millisecond)
 	werewolves[1].voteForPlayer(villagers[1].Name)
-	time.Sleep(50 * time.Millisecond)
 
 	ctx.logger.LogDB("after split vote")
 
 	// Should still be in night (no majority for either target)
-	werewolves[0].reload()
-	time.Sleep(20 * time.Millisecond)
 
 	if werewolves[0].isInDayPhase() {
 		ctx.logger.LogDB("FAIL: transitioned to day on split vote")
@@ -521,10 +525,8 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
 	players[0].addRoleByID(RoleVillager)
@@ -533,9 +535,7 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	players[0].addRoleByID(RoleWitch)
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
@@ -562,10 +562,7 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	}
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
-	time.Sleep(50 * time.Millisecond)
 
-	// Witch waits for majority then heals
-	witch.reload()
 	// Witch should see the victim name
 	gameContent := witch.getGameContent()
 	if !strings.Contains(gameContent, targetVillager.Name) {
@@ -573,16 +570,12 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	}
 
 	// Send heal action — click the first heal button
-	witch.p().MustElement(".witch-heal-button").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	witch.clickAndWait(".witch-heal-button")
 
 	// Witch passes to end night
-	witch.reload()
-	witch.p().MustElement("#witch-pass-form").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	witch.clickAndWait("#witch-pass-button")
 
 	// Check day phase - victim should be alive
-	targetVillager.reload()
 	if !targetVillager.isInDayPhase() {
 		content := targetVillager.getGameContent()
 		ctx.logger.LogDB("FAIL: not in day phase")
@@ -609,10 +602,8 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
 	players[0].addRoleByID(RoleVillager)
@@ -621,9 +612,15 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	players[0].addRoleByID(RoleWitch)
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
+
+	// Wait for all players to reach night phase
+	for _, p := range players {
+		err := p.waitForNightPhase()
+		if err != nil {
+			ctx.logger.Debug("Warning: timeout waiting for night phase on %s: %v", p.Name, err)
+		}
+	}
 
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
@@ -651,10 +648,7 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	}
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
-	time.Sleep(50 * time.Millisecond)
 
-	// Witch poisons a different player (not the target)
-	witch.reload()
 	// Find poison button for otherVillager
 	buttons, err := witch.p().Elements(".witch-kill-button")
 	if err != nil {
@@ -663,28 +657,30 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	for _, btn := range buttons {
 		text := btn.MustText()
 		if strings.Contains(text, otherVillager.Name) {
-			btn.MustClick()
+			witch.clickElementAndWait(btn)
 			break
 		}
 	}
-	time.Sleep(50 * time.Millisecond)
 
-	// Witch passes
-	witch.reload()
-	witch.p().MustElement("#witch-pass-form").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	// Witch passes - click the button by id
+	witch.clickAndWait("#witch-pass-button")
+
+	// Wait for phase transition to day (use a living player, not the poisoned one)
+	err = witch.waitForDayPhase()
+	if err != nil {
+		ctx.logger.Debug("Warning: timeout waiting for day phase: %v", err)
+	}
 
 	// Check results in day phase
-	otherVillager.reload()
-	if !otherVillager.isInDayPhase() {
-		content := otherVillager.getGameContent()
+	if !witch.isInDayPhase() {
+		content := witch.getGameContent()
 		t.Errorf("Should be in day phase after night. Content: %s", content)
 	}
 
 	// Verify poison target is dead (appears in death announcement with victim and poison target)
-	announcement := otherVillager.getDeathAnnouncement()
+	announcement := witch.getDeathAnnouncement()
 	if !strings.Contains(announcement, otherVillager.Name) {
-		content := otherVillager.getGameContent()
+		content := witch.getGameContent()
 		t.Errorf("Poisoned player %s should be in death announcement. Announcement: %s, Content: %s",
 			otherVillager.Name, announcement, content)
 	}
@@ -703,10 +699,8 @@ func TestWitchPassEndNight(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"W1", "W2", "W3", "W4", "W5", "W6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	// Add roles: 3 villagers, 1 witch, 2 werewolves = 6 roles for 6 players
 	players[0].addRoleByID(RoleVillager)
@@ -715,9 +709,15 @@ func TestWitchPassEndNight(t *testing.T) {
 	players[0].addRoleByID(RoleWitch)
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
+
+	// Wait for all players to reach night phase
+	for _, p := range players {
+		err := p.waitForNightPhase()
+		if err != nil {
+			ctx.logger.Debug("Warning: timeout waiting for night phase on %s: %v", p.Name, err)
+		}
+	}
 
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
@@ -743,15 +743,17 @@ func TestWitchPassEndNight(t *testing.T) {
 	}
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
-	time.Sleep(50 * time.Millisecond)
 
 	// Witch just passes without using potions
-	witch.reload()
-	witch.p().MustElement("#witch-pass-form").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	witch.clickAndWait("#witch-pass-button")
+
+	// Wait for phase transition to day
+	err := witch.waitForDayPhase()
+	if err != nil {
+		ctx.logger.Debug("Warning: timeout waiting for day phase: %v", err)
+	}
 
 	// Should transition to day
-	witch.reload()
 	if !witch.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day phase after witch pass")
 		t.Error("Should transition to day after witch passes")
@@ -800,10 +802,8 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"M1", "M2", "M3", "M4", "M5", "M6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	players[0].addRoleByID(RoleMason)
 	players[0].addRoleByID(RoleMason)
@@ -811,9 +811,7 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	werewolves, villagers, masons := findPlayersByRoleWithMason(players)
 	ctx.logger.Debug("=== Test: Masons know each other ===")
@@ -828,8 +826,6 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	mason2 := masons[1]
 
 	// Mason1 should see mason2's name
-	mason1.reload()
-	time.Sleep(20 * time.Millisecond)
 	content1 := mason1.getGameContent()
 	if !strings.Contains(content1, mason2.Name) {
 		ctx.logger.LogDB("FAIL: mason1 cannot see mason2")
@@ -840,8 +836,6 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	}
 
 	// Mason2 should see mason1's name
-	mason2.reload()
-	time.Sleep(20 * time.Millisecond)
 	content2 := mason2.getGameContent()
 	if !strings.Contains(content2, mason1.Name) {
 		ctx.logger.LogDB("FAIL: mason2 cannot see mason1")
@@ -850,8 +844,6 @@ func TestMasonsKnowEachOther(t *testing.T) {
 
 	// A regular villager should NOT see mason list
 	if len(villagers) > 0 {
-		villagers[0].reload()
-		time.Sleep(20 * time.Millisecond)
 		if villagers[0].canSeeMasonList() {
 			t.Errorf("Villager '%s' should not see mason list", villagers[0].Name)
 		}
@@ -871,10 +863,8 @@ func TestSingleMasonSeesNoOthers(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"M1", "M2", "M3", "M4", "M5", "M6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	players[0].addRoleByID(RoleMason)
 	players[0].addRoleByID(RoleVillager)
@@ -882,9 +872,7 @@ func TestSingleMasonSeesNoOthers(t *testing.T) {
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].addRoleByID(RoleWerewolf)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	_, _, masons := findPlayersByRoleWithMason(players)
 	ctx.logger.Debug("=== Test: Single mason sees no others ===")
@@ -895,8 +883,6 @@ func TestSingleMasonSeesNoOthers(t *testing.T) {
 	mason := masons[0]
 
 	// Mason should see the "only Mason" message
-	mason.reload()
-	time.Sleep(20 * time.Millisecond)
 	content := mason.getGameContent()
 	if !strings.Contains(content, "only Mason") {
 		ctx.logger.LogDB("FAIL: single mason does not see 'only Mason' message")
@@ -953,10 +939,8 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"C1", "C2", "C3", "C4", "C5", "C6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	players[0].addRoleByID(RoleWolfCub)
 	players[0].addRoleByID(RoleWerewolf)
@@ -964,9 +948,7 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	werewolves, villagers, wolfCubs := findPlayersByRoleWithWolfCub(players)
 	ctx.logger.Debug("Werewolves: %v, Villagers: %v, WolfCubs: %v",
@@ -982,13 +964,9 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	// Night 1: Both wolf-team members kill the Wolf Cub
 	// Wolf Cub is also on the werewolf team, so it can vote too
 	wolfCub.voteForPlayer(wolfCub.Name)
-	time.Sleep(20 * time.Millisecond)
 	werewolf.voteForPlayer(wolfCub.Name)
-	time.Sleep(100 * time.Millisecond)
 
 	// Should now be in day phase
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day phase after wolf cub kill")
 		t.Fatal("Should be in day phase after night 1")
@@ -1007,25 +985,18 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	aliveWerewolfTeam := []*TestPlayer{werewolf}
 	for _, v := range villagers {
 		v.dayVoteForPlayer(targetVillager.Name)
-		time.Sleep(20 * time.Millisecond)
 	}
 	for _, w := range aliveWerewolfTeam {
 		w.dayVoteForPlayer(targetVillager.Name)
-		time.Sleep(20 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond)
 
 	// Should be in night 2
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInNightPhase() {
 		ctx.logger.LogDB("FAIL: not in night 2")
 		t.Fatal("Should be in night 2 after day vote")
 	}
 
 	// Werewolf should see the double kill section
-	werewolf.reload()
-	time.Sleep(50 * time.Millisecond)
 	if !werewolf.canSeeDoubleKillSection() {
 		ctx.logger.LogDB("FAIL: no double kill section shown")
 		t.Error("Werewolf should see Wolf Cub double kill section in night 2")
@@ -1037,7 +1008,6 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 
 	// First kill vote
 	werewolf.voteForPlayer(victim1.Name)
-	time.Sleep(50 * time.Millisecond)
 
 	// Second kill vote — click vote2 button
 	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
@@ -1048,16 +1018,12 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	for _, btn := range vote2Buttons {
 		text := strings.TrimSpace(btn.MustText())
 		if strings.Contains(text, victim2.Name) {
-			btn.MustClick()
-			time.Sleep(20 * time.Millisecond)
+			werewolf.clickElementAndWait(btn)
 			break
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
 
 	// Should transition to day 2 with 2 victims
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day 2")
 		t.Fatal("Should be in day 2 after both kills")
@@ -1087,10 +1053,8 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"WK1", "WK2", "WK3", "WK4", "WK5", "WK6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	players[0].addRoleByID(RoleWolfCub)
 	players[0].addRoleByID(RoleWerewolf)
@@ -1098,9 +1062,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	werewolves, villagers, wolfCubs := findPlayersByRoleWithWolfCub(players)
 	var witch *TestPlayer
@@ -1125,30 +1087,19 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 
 	// Night 1: Both wolf-team members kill the Wolf Cub (triggers double kill next night)
 	wolfCub.voteForPlayer(wolfCub.Name)
-	time.Sleep(20 * time.Millisecond)
 	werewolf.voteForPlayer(wolfCub.Name)
-	time.Sleep(20 * time.Millisecond)
 	// Witch passes to end the night
-	witch.reload()
-	time.Sleep(20 * time.Millisecond)
-	witch.p().MustElement("#witch-pass-form").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	witch.clickAndWait("#witch-pass-button")
 
 	// Day 1: all alive players vote out a villager to advance to night 2
 	advanceTarget := pureVillagers[0]
 	for _, p := range players {
-		p.reload()
-		time.Sleep(10 * time.Millisecond)
 		if p.isInDayPhase() {
 			p.dayVoteForPlayer(advanceTarget.Name)
-			time.Sleep(20 * time.Millisecond)
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
 
 	// Should be in night 2
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInNightPhase() {
 		ctx.logger.LogDB("FAIL: not in night 2")
 		t.Fatal("Should be in night 2")
@@ -1159,7 +1110,6 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	victim2 := pureVillagers[2]
 
 	werewolf.voteForPlayer(victim1.Name)
-	time.Sleep(50 * time.Millisecond)
 
 	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
 	if err != nil || len(vote2Buttons) == 0 {
@@ -1168,16 +1118,12 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	}
 	for _, btn := range vote2Buttons {
 		if strings.Contains(strings.TrimSpace(btn.MustText()), victim2.Name) {
-			btn.MustClick()
-			time.Sleep(20 * time.Millisecond)
+			werewolf.clickElementAndWait(btn)
 			break
 		}
 	}
-	time.Sleep(50 * time.Millisecond)
 
-	// Witch reloads and should see both victims listed
-	witch.reload()
-	time.Sleep(50 * time.Millisecond)
+	// Witch should see both victims listed
 	witchContent := witch.getGameContent()
 	if !strings.Contains(witchContent, victim1.Name) {
 		ctx.logger.LogDB("FAIL: witch cannot see victim1")
@@ -1197,25 +1143,19 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	savedVictim2 := false
 	for _, btn := range healButtons {
 		if strings.Contains(strings.TrimSpace(btn.MustText()), victim2.Name) {
-			btn.MustClick()
+			witch.clickElementAndWait(btn)
 			savedVictim2 = true
-			time.Sleep(20 * time.Millisecond)
 			break
 		}
 	}
 	if !savedVictim2 {
 		t.Fatalf("Could not find heal button for victim2 '%s'", victim2.Name)
 	}
-	time.Sleep(50 * time.Millisecond)
 
 	// Witch passes to end the night
-	witch.reload()
-	witch.p().MustElement("#witch-pass-form").MustClick()
-	time.Sleep(100 * time.Millisecond)
+	witch.clickAndWait("#witch-pass-button")
 
 	// Day 2: victim1 should be dead, victim2 should be alive
-	witch.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !witch.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day 2")
 		t.Fatal("Should be in day 2 after night resolves")
@@ -1245,10 +1185,8 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	var players []*TestPlayer
 	for _, name := range []string{"E1", "E2", "E3", "E4", "E5", "E6"} {
 		p := browser.signupPlayer(ctx.baseURL, name)
-		p.waitForGame()
 		players = append(players, p)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	players[0].addRoleByID(RoleWolfCub)
 	players[0].addRoleByID(RoleWerewolf)
@@ -1256,9 +1194,7 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
 	players[0].addRoleByID(RoleVillager)
-	time.Sleep(20 * time.Millisecond)
 	players[0].startGame()
-	time.Sleep(50 * time.Millisecond)
 
 	werewolves, villagers, wolfCubs := findPlayersByRoleWithWolfCub(players)
 	ctx.logger.Debug("Werewolves: %v, Villagers: %v, WolfCubs: %v",
@@ -1274,31 +1210,22 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	// Night 1: Werewolves kill a regular villager (not the wolf cub)
 	killTarget := villagers[0]
 	wolfCub.voteForPlayer(killTarget.Name)
-	time.Sleep(20 * time.Millisecond)
 	werewolf.voteForPlayer(killTarget.Name)
-	time.Sleep(100 * time.Millisecond)
 
 	// Day 1: All alive players vote to eliminate Wolf Cub
 	for _, v := range villagers[1:] {
 		v.dayVoteForPlayer(wolfCub.Name)
-		time.Sleep(20 * time.Millisecond)
 	}
 	werewolf.dayVoteForPlayer(wolfCub.Name)
-	time.Sleep(20 * time.Millisecond)
 	wolfCub.dayVoteForPlayer(wolfCub.Name)
-	time.Sleep(100 * time.Millisecond)
 
 	// Should be in night 2
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInNightPhase() {
 		ctx.logger.LogDB("FAIL: not in night 2 after wolf cub elimination")
 		t.Fatal("Should be in night 2 after Wolf Cub is eliminated day 1")
 	}
 
 	// Werewolf should see the double kill section
-	werewolf.reload()
-	time.Sleep(50 * time.Millisecond)
 	if !werewolf.canSeeDoubleKillSection() {
 		ctx.logger.LogDB("FAIL: no double kill section shown")
 		t.Error("Werewolf should see Wolf Cub double kill section in night 2")
@@ -1309,7 +1236,6 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	victim2 := villagers[2]
 
 	werewolf.voteForPlayer(victim1.Name)
-	time.Sleep(50 * time.Millisecond)
 
 	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
 	if err != nil || len(vote2Buttons) == 0 {
@@ -1319,16 +1245,12 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	for _, btn := range vote2Buttons {
 		text := strings.TrimSpace(btn.MustText())
 		if strings.Contains(text, victim2.Name) {
-			btn.MustClick()
-			time.Sleep(20 * time.Millisecond)
+			werewolf.clickElementAndWait(btn)
 			break
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
 
 	// Day 2: two victims announced
-	werewolf.reload()
-	time.Sleep(20 * time.Millisecond)
 	if !werewolf.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day 2")
 		t.Fatal("Should be in day 2 after both kills")
@@ -1343,4 +1265,287 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
+}
+
+// ============================================================================
+// Cupid Test Helpers
+// ============================================================================
+
+func findPlayersByRoleWithCupid(players []*TestPlayer) (werewolves, villagers, cupids []*TestPlayer) {
+	for _, p := range players {
+		role := p.getRole()
+		switch role {
+		case "Werewolf":
+			werewolves = append(werewolves, p)
+		case "Cupid":
+			cupids = append(cupids, p)
+		default:
+			villagers = append(villagers, p)
+		}
+	}
+	return
+}
+
+// canSeeCupidUI checks if the player sees the Cupid lover-linking UI
+func (tp *TestPlayer) canSeeCupidUI() bool {
+	html, _ := tp.Page.HTML()
+	return strings.Contains(html, "Link Two Lovers")
+}
+
+// canSeeLoverInfo checks if the player can see their lover info
+func (tp *TestPlayer) canSeeLoverInfo() bool {
+	found, _, err := tp.p().Has("#lover-info")
+	return err == nil && found
+}
+
+// getLoverInfo returns the lover info text
+func (tp *TestPlayer) getLoverInfo() string {
+	el, err := tp.p().Element("#lover-info")
+	if err != nil {
+		return ""
+	}
+	return el.MustText()
+}
+
+// cupidPickLover clicks the cupid button to pick a lover
+func (tp *TestPlayer) cupidPickLover(targetName string) {
+	elements, err := tp.p().Elements(".cupid-button")
+	if err != nil {
+		return
+	}
+	for _, el := range elements {
+		text := strings.TrimSpace(el.MustText())
+		if text == targetName {
+			tp.clickElementAndWait(el)
+			tp.logHTML(fmt.Sprintf("after cupid pick: %s", targetName))
+			return
+		}
+	}
+}
+
+// ============================================================================
+// Cupid Tests
+// ============================================================================
+
+// TestCupidLinksLovers verifies Cupid can link two players, night resolves only after Cupid acts,
+// and both lovers can see each other's identity.
+func TestCupidLinksLovers(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 1 Cupid + 2 Villagers + 2 Werewolves = 5 players
+	var players []*TestPlayer
+	for _, name := range []string{"C1", "C2", "C3", "C4", "C5"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		players = append(players, p)
+	}
+
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	werewolves, villagers, cupids := findPlayersByRoleWithCupid(players)
+	ctx.logger.Debug("Cupids: %v, Werewolves: %v, Villagers: %v",
+		playerNames(cupids), playerNames(werewolves), playerNames(villagers))
+
+	if len(cupids) == 0 || len(werewolves) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+
+	cupid := cupids[0]
+
+	// Cupid should see the linking UI
+	if !cupid.canSeeCupidUI() {
+		ctx.logger.LogDB("FAIL: cupid UI not visible")
+		t.Fatal("Cupid should see the link lovers UI")
+	}
+
+	// Werewolves vote to kill a villager
+	victim := villagers[0]
+	for _, w := range werewolves {
+		w.voteForPlayer(victim.Name)
+	}
+
+	// Night should NOT resolve yet — Cupid hasn't linked lovers
+	if werewolves[0].isInDayPhase() {
+		t.Fatal("Night should not resolve until Cupid links lovers")
+	}
+
+	// Cupid picks two lovers (the two villagers)
+	lover1 := villagers[0]
+	lover2 := villagers[1]
+	cupid.cupidPickLover(lover1.Name)
+
+	// After first pick, night still shouldn't resolve
+	if werewolves[0].isInDayPhase() {
+		t.Fatal("Night should not resolve after only first lover is picked")
+	}
+
+	// Cupid picks second lover
+	cupid.cupidPickLover(lover2.Name)
+
+	// Night should now resolve (werewolves already voted, Cupid done)
+	if !werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: not in day after Cupid links")
+		t.Fatal("Night should resolve after Cupid links lovers")
+	}
+
+	// Both lovers should see each other's identity on the day page
+	if !lover1.canSeeLoverInfo() {
+		t.Errorf("Lover1 (%s) should see lover info", lover1.Name)
+	}
+	if !lover2.canSeeLoverInfo() {
+		t.Errorf("Lover2 (%s) should see lover info", lover2.Name)
+	}
+	if !strings.Contains(lover1.getLoverInfo(), lover2.Name) {
+		t.Errorf("Lover1 should see Lover2's name, got: %s", lover1.getLoverInfo())
+	}
+	if !strings.Contains(lover2.getLoverInfo(), lover1.Name) {
+		t.Errorf("Lover2 should see Lover1's name, got: %s", lover2.getLoverInfo())
+	}
+
+	// Non-lovers should NOT see lover info
+	for _, w := range werewolves {
+		if w.canSeeLoverInfo() {
+			t.Errorf("Non-lover werewolf (%s) should not see lover info", w.Name)
+		}
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestHeartbreakOnNightKill verifies that when a lover is killed at night,
+// their partner dies from heartbreak and both deaths appear in the morning.
+func TestHeartbreakOnNightKill(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 1 Cupid + 2 Villagers + 2 Werewolves
+	var players []*TestPlayer
+	for _, name := range []string{"H1", "H2", "H3", "H4", "H5"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		players = append(players, p)
+	}
+
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	werewolves, villagers, cupids := findPlayersByRoleWithCupid(players)
+	if len(cupids) == 0 || len(werewolves) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+
+	cupid := cupids[0]
+	lover1 := villagers[0]
+	lover2 := villagers[1]
+
+	// Cupid links the two villagers as lovers
+	cupid.cupidPickLover(lover1.Name)
+	cupid.cupidPickLover(lover2.Name)
+
+	// Werewolves kill lover1
+	for _, w := range werewolves {
+		w.voteForPlayer(lover1.Name)
+	}
+
+	// Day should begin
+	if !werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: not in day phase")
+		t.Fatal("Should be in day phase")
+	}
+
+	// Both lover1 AND lover2 should appear in the death announcement
+	announcement := werewolves[0].getDeathAnnouncement()
+	ctx.logger.Debug("Death announcement: %s", announcement)
+	if !strings.Contains(announcement, lover1.Name) {
+		t.Errorf("Announcement should mention lover1 (%s) killed by werewolves", lover1.Name)
+	}
+	if !strings.Contains(announcement, lover2.Name) {
+		t.Errorf("Announcement should mention lover2 (%s) dying from heartbreak", lover2.Name)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestLoversWinCondition verifies that when only the two lovers remain alive,
+// they win together (even if on opposite teams).
+func TestLoversWinCondition(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Setup: 1 Cupid + 1 Villager + 1 Werewolf = 3 players
+	// Cupid links the villager and werewolf, then is killed. Only the two lovers remain.
+	var players []*TestPlayer
+	for _, name := range []string{"L1", "L2", "L3"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		players = append(players, p)
+	}
+
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	werewolves, villagers, cupids := findPlayersByRoleWithCupid(players)
+	if len(cupids) == 0 || len(werewolves) == 0 || len(villagers) == 0 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+
+	cupid := cupids[0]
+	villager := villagers[0]
+	werewolf := werewolves[0]
+
+	// Cupid links the villager and the werewolf as lovers
+	cupid.cupidPickLover(villager.Name)
+	cupid.cupidPickLover(werewolf.Name)
+
+	// Werewolf kills Cupid (the non-lover)
+	werewolf.voteForPlayer(cupid.Name)
+
+	// With only 2 players alive (villager + werewolf lovers), lovers win immediately
+	// after win conditions are checked during the day phase
+
+	html, _ := villager.Page.HTML()
+	ctx.logger.Debug("Villager page after night: %s", html[:minInt(len(html), 500)])
+
+	// The game might transition to day, then immediately end due to lovers win.
+	// Try voting if still in day phase.
+	if !strings.Contains(html, "lovers") && !strings.Contains(html, "Lovers") {
+		if villager.isInDayPhase() {
+			// Tie vote → no elimination → transition to night → win check should trigger
+			villager.dayVoteForPlayer(werewolf.Name)
+			werewolf.dayVoteForPlayer(villager.Name)
+			html, _ = villager.Page.HTML()
+		}
+	}
+
+	if !strings.Contains(html, "lovers") && !strings.Contains(html, "Lovers") {
+		ctx.logger.LogDB("FAIL: lovers win condition not triggered")
+		t.Errorf("Expected lovers win, got page: %s", html[:minInt(len(html), 500)])
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

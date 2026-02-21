@@ -1,4 +1,4 @@
-<div id="game-content" hx-swap-oob="true">
+<div  class="game-content" id="game-content" hx-swap-oob="true">
     <section>
         <h2>Game Over</h2>
 
@@ -6,6 +6,9 @@
             {{if eq .Winner "villagers"}}
             <h3>The Villagers Win!</h3>
             <p>All werewolves have been eliminated. The village is safe.</p>
+            {{else if eq .Winner "lovers"}}
+            <h3>💞 The Lovers Win!</h3>
+            <p>Only the two lovers remain. Love conquers all.</p>
             {{else}}
             <h3>The Werewolves Win!</h3>
             <p>The werewolves have devoured the village.</p>

@@ -1,266 +1,484 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Werewolf - Lobby</title>
-    <link rel="stylesheet" href="/static/pico.css">
-    <script src="/static/htmx.js"></script>
-    <script src="/static/htmx-ws.js"></script>
-    <style>
-        .role-counter {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .role-counter button {
-            width: 2.5rem;
-            height: 2.5rem;
-            padding: 0;
-            margin: 0;
-        }
-        .role-count {
-            min-width: 2rem;
-            text-align: center;
-            font-weight: bold;
-        }
-        .role-name {
-            flex: 1;
-        }
-        .role-team-villager {
-            border-left: 3px solid var(--pico-primary);
-            padding-left: 0.5rem;
-        }
-        .role-team-werewolf {
-            border-left: 3px solid var(--pico-del-color);
-            padding-left: 0.5rem;
-        }
-        .player-list {
-            list-style: none;
-            padding: 0;
-        }
-        .player-list li {
-            padding: 0.5rem;
-            background: var(--pico-card-background-color);
-            margin-bottom: 0.25rem;
-            border-radius: var(--pico-border-radius);
-        }
-        .status-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem;
-            background: var(--pico-card-background-color);
-            border-radius: var(--pico-border-radius);
-            margin-bottom: 1rem;
-        }
-        .role-reveal {
-            text-align: center;
-            padding: 2rem;
-            background: var(--pico-card-background-color);
-            border-radius: var(--pico-border-radius);
-        }
-        .role-reveal h2 {
-            color: var(--pico-primary);
-        }
-        /* Night phase voting styles */
-        .vote-form {
-            display: inline-block;
-            margin: 0.25rem;
-        }
-        .vote-button {
-            min-width: 120px;
-        }
-        .vote-button.selected {
-            background-color: var(--pico-del-color);
-            border-color: var(--pico-del-color);
-        }
-        .vote-list {
-            list-style: none;
-            padding: 0;
-        }
-        .vote-list li {
-            padding: 0.5rem;
-            background: var(--pico-card-background-color);
-            margin-bottom: 0.25rem;
-            border-radius: var(--pico-border-radius);
-        }
-        .werewolf-player {
-            color: var(--pico-del-color);
-            font-weight: bold;
-        }
-        .dead-player {
-            opacity: 0.6;
-            text-decoration: line-through;
-        }
-        /* Day phase styles */
-        .death-announcement {
-            padding: 1rem;
-            background: var(--pico-del-color);
-            color: white;
-            border-radius: var(--pico-border-radius);
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-        .death-announcement p {
-            margin: 0.5rem 0;
-        }
-        /* Finished game styles */
-        .winner-announcement {
-            padding: 2rem;
-            border-radius: var(--pico-border-radius);
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-        .winner-villagers {
-            background: var(--pico-ins-color);
-            color: white;
-        }
-        .winner-werewolves {
-            background: var(--pico-del-color);
-            color: white;
-        }
-        .winner-announcement h3 {
-            margin: 0 0 0.5rem 0;
-            color: white;
-        }
-        .winner-announcement p {
-            margin: 0;
-        }
-        .team-werewolf {
-            border-left: 3px solid var(--pico-del-color);
-            padding-left: 0.5rem;
-        }
-        .team-villager {
-            border-left: 3px solid var(--pico-ins-color);
-            padding-left: 0.5rem;
-        }
-        .survivor {
-            font-weight: bold;
-        }
-        /* Toast notifications */
-        #toast-container {
-            position: fixed;
-            top: 1rem;
-            right: 1rem;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            max-width: 400px;
-        }
-        .toast-wrapper {
-            transition: all 0.3s ease-out;
-        }
-        .toast {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 1rem;
-            border-radius: var(--pico-border-radius);
-            background: var(--pico-card-background-color);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            animation: toast-in 0.3s ease-out;
-        }
-        .toast-error {
-            border-left: 4px solid var(--pico-del-color);
-        }
-        .toast-success {
-            border-left: 4px solid var(--pico-ins-color);
-        }
-        .toast-warning {
-            border-left: 4px solid #f0ad4e;
-        }
-        .toast-info {
-            border-left: 4px solid var(--pico-primary);
-        }
-        .toast-message {
-            flex: 1;
-            margin-right: 1rem;
-        }
-        .toast-close {
-            background: none;
-            border: none;
-            font-size: 1.25rem;
-            cursor: pointer;
-            padding: 0;
-            width: auto;
-            color: var(--pico-muted-color);
-        }
-        .toast-close:hover {
-            color: var(--pico-color);
-        }
-        @keyframes toast-in {
-            from { opacity: 0; transform: translateX(100%); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes toast-out {
-            from { opacity: 1; transform: translateX(0); }
-            to { opacity: 0; transform: translateX(100%); }
-        }
-        .toast.removing {
-            animation: toast-out 0.3s ease-in forwards;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Werewolf - Lobby</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.js"></script>
+  <script src="/static/htmx-ws.js"></script>
+  <style>
+    body {
+      height: 100vh;
+    }
+
+    .role-counter {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .role-counter button {
+      width: 2.5rem;
+      height: 2.5rem;
+      padding: 0;
+      margin: 0;
+    }
+
+    .role-count {
+      min-width: 2rem;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .role-name {
+      flex: 1;
+    }
+
+    .role-team-villager {
+      border-left: 3px solid var(--pico-primary);
+      padding-left: 0.5rem;
+    }
+
+    .role-team-werewolf {
+      border-left: 3px solid var(--pico-del-color);
+      padding-left: 0.5rem;
+    }
+
+    .player-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .player-list li {
+      padding: 0.5rem;
+      background: var(--pico-card-background-color);
+      margin-bottom: 0.25rem;
+      border-radius: var(--pico-border-radius);
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: var(--pico-card-background-color);
+      border-radius: var(--pico-border-radius);
+      margin-bottom: 1rem;
+    }
+
+
+    /* Night phase voting styles */
+    .vote-form {
+      display: inline-block;
+      margin: 0.25rem;
+    }
+
+    .vote-button {
+      min-width: 120px;
+    }
+
+    .vote-button.selected {
+      background-color: var(--pico-del-color);
+      border-color: var(--pico-del-color);
+    }
+
+    .vote-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .vote-list li {
+      padding: 0.5rem;
+      background: var(--pico-card-background-color);
+      margin-bottom: 0.25rem;
+      border-radius: var(--pico-border-radius);
+    }
+
+    .werewolf-player {
+      color: var(--pico-del-color);
+      font-weight: bold;
+    }
+
+    .dead-player {
+      opacity: 0.6;
+      text-decoration: line-through;
+    }
+
+    /* Day phase styles */
+    .death-announcement {
+      padding: 1rem;
+      background: var(--pico-del-color);
+      color: white;
+      border-radius: var(--pico-border-radius);
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .death-announcement p {
+      margin: 0.5rem 0;
+    }
+
+    /* Finished game styles */
+    .winner-announcement {
+      padding: 2rem;
+      border-radius: var(--pico-border-radius);
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .winner-villagers {
+      background: var(--pico-ins-color);
+      color: white;
+    }
+
+    .winner-werewolves {
+      background: var(--pico-del-color);
+      color: white;
+    }
+
+    .winner-announcement h3 {
+      margin: 0 0 0.5rem 0;
+      color: white;
+    }
+
+    .winner-announcement p {
+      margin: 0;
+    }
+
+    .team-werewolf {
+      border-left: 3px solid var(--pico-del-color);
+      padding-left: 0.5rem;
+    }
+
+    .team-villager {
+      border-left: 3px solid var(--pico-ins-color);
+      padding-left: 0.5rem;
+    }
+
+    .survivor {
+      font-weight: bold;
+    }
+
+    /* Toast notifications */
+    #toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-width: 400px;
+    }
+
+    .toast-wrapper {
+      transition: all 0.3s ease-out;
+    }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem;
+      border-radius: var(--pico-border-radius);
+      background: var(--pico-card-background-color);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      animation: toast-in 0.3s ease-out;
+    }
+
+    .toast-error {
+      border-left: 4px solid var(--pico-del-color);
+    }
+
+    .toast-success {
+      border-left: 4px solid var(--pico-ins-color);
+    }
+
+    .toast-warning {
+      border-left: 4px solid #f0ad4e;
+    }
+
+    .toast-info {
+      border-left: 4px solid var(--pico-primary);
+    }
+
+    .toast-message {
+      flex: 1;
+      margin-right: 1rem;
+    }
+
+    .toast-close {
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0;
+      width: auto;
+      color: var(--pico-muted-color);
+    }
+
+    .toast-close:hover {
+      color: var(--pico-color);
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes toast-out {
+      from {
+        opacity: 1;
+        transform: translateX(0);
+      }
+
+      to {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+    }
+
+    .toast.removing {
+      animation: toast-out 0.3s ease-in forwards;
+    }
+
+    /* Desktop layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 16rem 1fr 16rem;
+      grid-template-rows: min-content 1fr;
+      gap: 0 0;
+      grid-template-areas:
+        "topbar topbar topbar"
+        "sidebar container history-bar";
+      height: 100vh;
+      padding: 0;
+    }
+
+    .sidebar {
+      border-right: var(--pico-border-width) solid var(--pico-muted-border-color);
+      padding: var(--pico-spacing);
+      background: var(--pico-card-background-color);
+      border-radius: 0;
+      overflow: auto;
+
+      grid-area: sidebar;
+    }
+
+    .history-bar {
+      border-left: var(--pico-border-width) solid var(--pico-muted-border-color);
+      padding: var(--pico-spacing);
+      background: var(--pico-card-background-color);
+      border-radius: 0;
+      overflow: auto;
+
+      grid-area: history-bar;
+    }
+
+    .leftbound {
+      display: grid;
+      grid-template-columns: min-content 1fr;
+      grid-template-rows: 1fr;
+      gap: 0;
+      align-items: center;
+      grid-template-areas: ". .";
+    }
+
+    .sidebar .leftbound {
+      margin-bottom: var(--pico-spacing);
+    }
+
+    .sidebar .leftbound {
+      margin-bottom: var(--pico-spacing);
+    }
+
+    .rightbound {
+      display: grid;
+      grid-template-columns: 1fr min-content;
+      grid-template-rows: 1fr;
+      gap: 0;
+      align-items: center;
+      grid-template-areas: ". .";
+    }
+
+    .history-bar .rightbound {
+      margin-bottom: var(--pico-spacing);
+    }
+
+    .history-bar .rightbound {
+      margin-bottom: var(--pico-spacing);
+    }
+
+    .leftbound h1,
+    .topbar h1,
+    .rightbound h1 {
+      margin: 0;
+    }
+
+    .container {
+      padding: var(--pico-spacing);
+      overflow: auto;
+      grid-area: container;
+    }
+
+    /* Top bar (mobile only) */
+    .topbar {
+      display: none;
+      align-items: center;
+      gap: 1rem;
+      padding: var(--pico-spacing);
+      border-bottom: var(--pico-border-width) solid var(--pico-muted-border-color);
+    }
+
+    .nav-toggle-button {
+      display: none;
+      margin: 0;
+    }
+
+    .game-content {
+      padding-top: var(--pico-spacing);
+    }
+
+    /* Mobile behavior */
+    @media (max-width: 1280px) {
+
+      .layout {
+        grid-template-areas:
+          "topbar topbar topbar"
+          "container container contaner";
+      }
+
+      .topbar {
+        grid-area: topbar;
+        display: grid;
+        grid-template-columns: min-content 1fr min-content;
+        grid-template-rows: 1fr;
+        gap: val(--pico-spacing);
+        align-items: center;
+        grid-template-areas: ". . .";
+      }
+
+      .nav-toggle-button {
+        display: flex;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .leftbound {
+        gap: var(--pico-spacing);
+      }
+
+      .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 16rem;
+        background: var(--pico-background-color);
+        transform: translateX(-100%);
+        transition: transform 0.2s ease-in-out;
+        z-index: 1001;
+      }
+
+      .history-bar {
+        position: fixed;
+        inset: 0 0 0 auto;
+        width: 16rem;
+        background: var(--pico-background-color);
+        transform: translateX(100%);
+        transition: transform 0.2s ease-in-out;
+        z-index: 1000;
+      }
+
+      #sidebar-nav-toggle:checked~.layout .sidebar {
+        transform: translateX(0);
+      }
+
+      #history-bar-nav-toggle:checked~.layout .history-bar {
+        transform: translateX(0);
+      }
+    }
+  </style>
 </head>
+
 <body hx-ext="ws" ws-connect="/ws">
-    <div id="toast-container"></div>
-    <main class="container">
-        <article>
-            <header>
-                <h1>Werewolf</h1>
-                <p>Welcome, <strong>{{.Player.Name}}</strong>
-                    <small>(Secret: <code id="secret-code-display">{{.Player.SecretCode}}</code>)</small>
-                </p>
-            </header>
-                <div id="character-info" hx-get="/game/character" hx-trigger="load">
-            </div>
-                <div id="game-content" hx-get="/game/component" hx-trigger="load">
-                </div>
-        </article>
-    </main>
-    <script>
-        // Auto-dismiss toasts after 10 seconds unless hovered
-        function initToast(toast) {
-            let timeout;
-            let remaining = 10000;
-            let startTime;
+  <div id="toast-container"></div>
+  <input type="checkbox" id="sidebar-nav-toggle" hidden>
+  <input type="checkbox" id="history-bar-nav-toggle" hidden>
+  <main class="layout">
+    <header class="topbar">
+      <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">
+        ☰
+      </label>
+      <div>
+        <h1>Werewolf</h1>
+      </div>
+      <label class="nav-toggle-button" for="history-bar-nav-toggle" role="button"
+        aria-label="History Toggle navigation">
+        H
+      </label>
+    </header>
+    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load">
+    </aside>
+    <section class="container">
+      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load">
+      </div>
+    </section>
+    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load">
+    </aside>
+  </main>
+  <script>
+    // Auto-dismiss toasts after 10 seconds unless hovered
+    function initToast(toast) {
+      let timeout;
+      let remaining = 10000;
+      let startTime;
 
-            function startTimer() {
-                startTime = Date.now();
-                timeout = setTimeout(function() {
-                    toast.classList.add('removing');
-                    setTimeout(function() { toast.remove(); }, 300);
-                }, remaining);
+      function startTimer() {
+        startTime = Date.now();
+        timeout = setTimeout(function () {
+          toast.classList.add('removing');
+          setTimeout(function () {toast.remove();}, 300);
+        }, remaining);
+      }
+
+      function pauseTimer() {
+        clearTimeout(timeout);
+        remaining -= Date.now() - startTime;
+      }
+
+      toast.addEventListener('mouseenter', pauseTimer);
+      toast.addEventListener('mouseleave', startTimer);
+      startTimer();
+    }
+
+    // Initialize existing toasts and watch for new ones
+    document.querySelectorAll('[data-toast]').forEach(initToast);
+
+    const observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(function (node) {
+          if (node.nodeType === 1) {
+            if (node.hasAttribute('data-toast')) {
+              initToast(node);
             }
-
-            function pauseTimer() {
-                clearTimeout(timeout);
-                remaining -= Date.now() - startTime;
-            }
-
-            toast.addEventListener('mouseenter', pauseTimer);
-            toast.addEventListener('mouseleave', startTimer);
-            startTimer();
-        }
-
-        // Initialize existing toasts and watch for new ones
-        document.querySelectorAll('[data-toast]').forEach(initToast);
-
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1) {
-                        if (node.hasAttribute('data-toast')) {
-                            initToast(node);
-                        }
-                        node.querySelectorAll('[data-toast]').forEach(initToast);
-                    }
-                });
-            });
+            node.querySelectorAll('[data-toast]').forEach(initToast);
+          }
         });
-        observer.observe(document.getElementById('toast-container'), { childList: true, subtree: true });
-    </script>
+      });
+    });
+    observer.observe(document.getElementById('toast-container'), {childList: true, subtree: true});
+  </script>
 </body>
+
 </html>
