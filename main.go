@@ -63,10 +63,11 @@ func broadcastGameUpdate() {
 		var charBuf bytes.Buffer
 
 		data := SidebarData{
-			Player:         &p,
-			Players:        players,
-			Game:           game,
-			LoverPartnerID: getLoverPartner(game.ID, p.PlayerID),
+			Player:              &p,
+			Players:             players,
+			Game:                game,
+			LoverPartnerID:      getLoverPartner(game.ID, p.PlayerID),
+			SeerFoundWerewolves: getSeerFoundWerewolves(game.ID, p.PlayerID),
 		}
 
 		templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
@@ -201,10 +202,29 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 }
 
 type SidebarData struct {
-	Player         *Player
-	Players        []Player
-	Game           *Game
-	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
+	Player              *Player
+	Players             []Player
+	Game                *Game
+	LoverPartnerID      int64          // player_id of the viewer's lover, 0 if not a lover
+	SeerFoundWerewolves map[int64]bool // player_ids the seer has confirmed as werewolves
+}
+
+// getSeerFoundWerewolves returns the set of player IDs that playerID (as Seer) has
+// investigated and confirmed to be werewolves. Returns an empty map for non-seers.
+func getSeerFoundWerewolves(gameID, playerID int64) map[int64]bool {
+	found := map[int64]bool{}
+	var targets []int64
+	db.Select(&targets, `
+		SELECT ga.target_player_id
+		FROM game_action ga
+		JOIN game_player gp ON gp.game_id = ga.game_id AND gp.player_id = ga.target_player_id
+		JOIN role r ON r.rowid = gp.role_id
+		WHERE ga.game_id = ? AND ga.actor_player_id = ? AND ga.action_type = ? AND r.team = 'werewolf'`,
+		gameID, playerID, ActionSeerInvestigate)
+	for _, t := range targets {
+		found[t] = true
+	}
+	return found
 }
 
 func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
@@ -240,10 +260,11 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := SidebarData{
-		Player:         &player,
-		Players:        players,
-		Game:           game,
-		LoverPartnerID: getLoverPartner(game.ID, playerID),
+		Player:              &player,
+		Players:             players,
+		Game:                game,
+		LoverPartnerID:      getLoverPartner(game.ID, playerID),
+		SeerFoundWerewolves: getSeerFoundWerewolves(game.ID, playerID),
 	}
 
 	templates.ExecuteTemplate(w, "sidebar.html", data)

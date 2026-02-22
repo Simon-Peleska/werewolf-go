@@ -295,6 +295,12 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 		return
 	}
 
+	toastMsg := fmt.Sprintf("🔮 %s is not a werewolf.", target.Name)
+	if target.Team == "werewolf" {
+		toastMsg = fmt.Sprintf("🔮 %s is a werewolf!", target.Name)
+	}
+	hub.sendToPlayer(client.playerID, []byte(renderToast("info", toastMsg)))
+
 	log.Printf("Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
 	DebugLog("handleWSSeerInvestigate", "Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
 	LogDBState("after seer investigation")

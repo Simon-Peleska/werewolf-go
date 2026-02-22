@@ -481,6 +481,25 @@ func TestSeerCanInvestigateVillager(t *testing.T) {
 		t.Errorf("Seer result should mention target name %s, got: %s", villager.Name, result)
 	}
 
+	// Seer should receive a toast confirming the target is not a werewolf
+	if !seer.hasToastWithText(villager.Name + " is not a werewolf") {
+		ctx.logger.LogDB("FAIL: seer did not receive villager investigation toast")
+		t.Errorf("Seer should see a toast confirming %s is not a werewolf", villager.Name)
+	}
+
+	// Sidebar: investigated villager should NOT get the wolf indicator
+	villagerID := villager.getPlayerID()
+	if seer.isShownAsWerewolf(villagerID) {
+		ctx.logger.LogDB("FAIL: seer sees wolf indicator for investigated villager")
+		t.Errorf("Seer should not see 🐺 next to %s (villager)", villager.Name)
+	}
+	// Actual werewolf should also not be flagged (not yet investigated)
+	werewolfID := werewolves[0].getPlayerID()
+	if seer.isShownAsWerewolf(werewolfID) {
+		ctx.logger.LogDB("FAIL: seer sees wolf indicator for uninvestigated werewolf")
+		t.Errorf("Seer should not see 🐺 next to %s before investigating them", werewolves[0].Name)
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -525,6 +544,24 @@ func TestSeerCanInvestigateWerewolf(t *testing.T) {
 	}
 	if !strings.Contains(result, werewolf.Name) {
 		t.Errorf("Seer result should mention target name %s, got: %s", werewolf.Name, result)
+	}
+
+	// Seer should receive a toast with the investigation result
+	if !seer.hasToastWithText(werewolf.Name + " is a werewolf") {
+		ctx.logger.LogDB("FAIL: seer did not receive werewolf investigation toast")
+		t.Errorf("Seer should see a toast identifying %s as a werewolf", werewolf.Name)
+	}
+
+	// Sidebar: seer should see the wolf indicator for the investigated werewolf
+	werewolfID := werewolf.getPlayerID()
+	if !seer.isShownAsWerewolf(werewolfID) {
+		ctx.logger.LogDB("FAIL: seer does not see wolf indicator for investigated werewolf")
+		t.Errorf("Seer should see 🐺 next to %s after investigation", werewolf.Name)
+	}
+	// Other players should not see the wolf indicator (no investigation, not a werewolf themselves)
+	if len(villagers) > 0 && villagers[0].isShownAsWerewolf(werewolfID) {
+		ctx.logger.LogDB("FAIL: villager sees wolf indicator without investigation")
+		t.Errorf("Villager should not see 🐺 next to %s", werewolf.Name)
 	}
 
 	// History: seer investigation is actor-only — seer sees it, others do not

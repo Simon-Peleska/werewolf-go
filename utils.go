@@ -1082,6 +1082,13 @@ func (tp *TestPlayer) getPlayerList() string {
 	return list
 }
 
+// isShownAsWerewolf returns true if the player with the given playerID is shown with the
+// wolf indicator (🐺) in the viewer's sidebar. Uses the stable #wolf-indicator-{playerID} span.
+func (tp *TestPlayer) isShownAsWerewolf(playerID string) bool {
+	found, _, _ := tp.p().Has("#wolf-indicator-" + playerID)
+	return found
+}
+
 // getPlayerID returns the database ID of the player viewing this page.
 func (tp *TestPlayer) getPlayerID() string {
 	el, err := tp.p().Element("#player-id")
@@ -1207,6 +1214,15 @@ func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *
 	player.logHTML("after failed login attempt")
 
 	return player
+}
+
+// hasToastWithText returns true if any visible toast in the container contains the given text.
+func (tp *TestPlayer) hasToastWithText(text string) bool {
+	found, el, _ := tp.p().Has("#toast-container")
+	if !found {
+		return false
+	}
+	return strings.Contains(el.MustText(), text)
 }
 
 // hasErrorToast checks if an error toast appeared
