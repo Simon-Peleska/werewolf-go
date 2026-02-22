@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.js"></script>
   <script src="/static/htmx-ws.js"></script>
+  <script src="/static/idiomorph-ext.js"></script>
   <style>
     body {
       height: 100vh;
@@ -411,11 +412,11 @@
   </style>
 </head>
 
-<body hx-ext="ws" ws-connect="/ws">
+<body hx-ext="ws,morph" ws-connect="/ws">
   <div id="toast-container"></div>
   <input type="checkbox" id="sidebar-nav-toggle" hidden>
   <input type="checkbox" id="history-bar-nav-toggle" hidden>
-  <main class="layout">
+  <main class="layout" >
     <header class="topbar">
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">
         ☰
@@ -428,13 +429,13 @@
         H
       </label>
     </header>
-    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load">
+    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="morph">
     </aside>
     <section class="container">
-      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load">
+      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="morph">
       </div>
     </section>
-    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load">
+    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="morph">
     </aside>
   </main>
   <script>

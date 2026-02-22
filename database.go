@@ -142,6 +142,7 @@ type GameAction struct {
 	ActionType     string `db:"action_type"`
 	TargetPlayerID *int64 `db:"target_player_id"`
 	Visibility     string `db:"visibility"`
+	Description    string `db:"description"` // human-readable history entry; empty = hidden
 }
 
 // Action types
@@ -301,6 +302,7 @@ func initDB() error {
 		action_type TEXT NOT NULL,
 		target_player_id INTEGER,
 		visibility TEXT NOT NULL DEFAULT 'public',
+		description TEXT NOT NULL DEFAULT '',
 		FOREIGN KEY (game_id) REFERENCES game(rowid),
 		FOREIGN KEY (actor_player_id) REFERENCES player(rowid),
 		FOREIGN KEY (target_player_id) REFERENCES player(rowid),

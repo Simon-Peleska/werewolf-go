@@ -1,4 +1,4 @@
-<aside id="sidebar" class="sidebar" hx-swap-oob="true">
+<aside id="sidebar" class="sidebar"  hx-swap="morph" hx-swap-oob="true">
   <div class="leftbound">
     <div>
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Toggle navigation">
@@ -13,6 +13,7 @@
     <p><strong>Player: </strong>{{.Player.Name}} <small>(Secret: <code
           id="secret-code-display">{{.Player.SecretCode}}</code>)</small>
     </p>
+    <span id="player-id" hidden>{{.Player.ID}}</span>
   </section>
   <hr>
   {{if ne .Game.Status "lobby" }}
@@ -25,13 +26,17 @@
   </section>
   <hr>
   {{end}}
+
+  {{ $self := .Player }}
   <section>
     <h3>All Players</h3>
     <ul id="player-list" class="player-list">
       {{range .Players}}
       <li class="{{if not .IsAlive}}dead-player{{end}}">
-        {{.Name}}
-        {{if not .IsAlive}}💀{{end}}
+        <span class="player-db-id" hidden>{{.ID}}</span>
+        {{if
+        and (eq .Team "werewolf") (or (eq $self.Team "werewolf") (not .IsAlive))
+        }}🐺 {{end}}{{.Name}}{{if not .IsAlive}} <span id="is-dead-{{.ID}}">💀</span> ({{.RoleName}}){{end}}
       </li>
       {{end}}
     </ul>

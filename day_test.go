@@ -145,6 +145,21 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 		t.Error("Vote should be visible in the vote list")
 	}
 
+	// History: day votes are public — all alive players see them
+	voteEntry := "voted to eliminate " + werewolves[0].Name
+	if !villagers[1].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: voter cannot see own vote in history")
+		t.Errorf("Voter should see their own vote in history, got: %s", villagers[1].getHistoryText())
+	}
+	if !werewolves[0].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: vote target cannot see vote in history")
+		t.Errorf("Vote target should see the vote in history (public action)")
+	}
+	if !villagers[2].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: bystander cannot see vote in history")
+		t.Errorf("Other alive player should see the vote in history (public action)")
+	}
+
 	ctx.logger.Debug("Players: %d", len(players))
 	ctx.logger.Debug("=== Test passed ===")
 }
@@ -217,6 +232,17 @@ func TestVillagersWinByEliminatingWerewolf(t *testing.T) {
 	if winner != "villagers" {
 		ctx.logger.LogDB("FAIL: wrong winner")
 		t.Errorf("Villagers should win, got: %s", winner)
+	}
+
+	// History: elimination is public — everyone sees it
+	eliminationEntry := werewolves[0].Name + " (Werewolf) was eliminated by the village"
+	if !villagers[1].historyContains(eliminationEntry) {
+		ctx.logger.LogDB("FAIL: villager cannot see elimination in history")
+		t.Errorf("Villager should see elimination in history, got: %s", villagers[1].getHistoryText())
+	}
+	if !werewolves[0].historyContains(eliminationEntry) {
+		ctx.logger.LogDB("FAIL: eliminated werewolf cannot see their own elimination in history")
+		t.Errorf("Eliminated player should see their elimination in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -479,7 +505,7 @@ func TestSeerCanInvestigateWerewolf(t *testing.T) {
 	players[0].addRoleByID(RoleSeer)
 	players[0].startGame()
 
-	werewolves, _, seers := findPlayersByRoleExtended(players)
+	werewolves, villagers, seers := findPlayersByRoleExtended(players)
 	if len(seers) == 0 || len(werewolves) == 0 {
 		t.Fatal("Missing seer or werewolf")
 	}
@@ -499,6 +525,21 @@ func TestSeerCanInvestigateWerewolf(t *testing.T) {
 	}
 	if !strings.Contains(result, werewolf.Name) {
 		t.Errorf("Seer result should mention target name %s, got: %s", werewolf.Name, result)
+	}
+
+	// History: seer investigation is actor-only — seer sees it, others do not
+	investigateEntry := "You investigated " + werewolf.Name
+	if !seer.historyContains(investigateEntry) {
+		ctx.logger.LogDB("FAIL: seer cannot see own investigation in history")
+		t.Errorf("Seer should see their investigation in history, got: %s", seer.getHistoryText())
+	}
+	if werewolf.historyContains(investigateEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see seer investigation in history")
+		t.Errorf("Werewolf should not see seer investigation in history")
+	}
+	if len(villagers) > 0 && villagers[0].historyContains(investigateEntry) {
+		ctx.logger.LogDB("FAIL: villager can see seer investigation in history")
+		t.Errorf("Villager should not see seer investigation in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -818,6 +859,21 @@ func TestDoctorCanProtect(t *testing.T) {
 	if !strings.Contains(result, villager.Name) {
 		ctx.logger.LogDB("FAIL: doctor protection confirmation missing")
 		t.Errorf("Doctor should see protection confirmation with target name %s, got: %s", villager.Name, result)
+	}
+
+	// History: doctor protection is actor-only — only the doctor sees it
+	protectEntry := "You protected " + villager.Name
+	if !doctor.historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: doctor cannot see own protection in history")
+		t.Errorf("Doctor should see their protection in history, got: %s", doctor.getHistoryText())
+	}
+	if werewolves[0].historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see doctor protection in history")
+		t.Errorf("Werewolf should not see doctor protection in history")
+	}
+	if villagers[0].historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: protected player can see doctor protection in history")
+		t.Errorf("Protected player should not see doctor protection in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1242,6 +1298,21 @@ func TestGuardCanProtect(t *testing.T) {
 	if !strings.Contains(result, villager.Name) {
 		ctx.logger.LogDB("FAIL: guard protection confirmation missing")
 		t.Errorf("Guard should see protection confirmation with target name %s, got: %s", villager.Name, result)
+	}
+
+	// History: guard protection is actor-only — only the guard sees it
+	protectEntry := "You protected " + villager.Name
+	if !guard.historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: guard cannot see own protection in history")
+		t.Errorf("Guard should see their protection in history, got: %s", guard.getHistoryText())
+	}
+	if werewolves[0].historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see guard protection in history")
+		t.Errorf("Werewolf should not see guard protection in history")
+	}
+	if villagers[0].historyContains(protectEntry) {
+		ctx.logger.LogDB("FAIL: protected player can see guard protection in history")
+		t.Errorf("Protected player should not see guard protection in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1876,6 +1947,17 @@ func TestHunterDeathShotOnDayElimination(t *testing.T) {
 		content := villagers[2].getGameContent()
 		ctx.logger.LogDB("FAIL: not in night phase after day elimination revenge")
 		t.Fatalf("Should transition to night after day elimination revenge. Content: %s", content)
+	}
+
+	// History: hunter revenge is public — surviving players see it
+	hunterEntry := "Hunter " + hunter.Name + " shot " + villagers[1].Name
+	if !villagers[2].historyContains(hunterEntry) {
+		ctx.logger.LogDB("FAIL: survivor cannot see hunter revenge in history")
+		t.Errorf("Surviving villager should see hunter revenge in history, got: %s", villagers[2].getHistoryText())
+	}
+	if !werewolves[0].historyContains(hunterEntry) {
+		ctx.logger.LogDB("FAIL: werewolf cannot see hunter revenge in history")
+		t.Errorf("Werewolf should see hunter revenge in history (public action)")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

@@ -1,4 +1,4 @@
-<div class="game-content" id="game-content" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap="morph" hx-swap-oob="true">
     <section>
         <h2 id="phase-heading"><span id="day">Day</span> {{.NightNumber}}</h2>
 
@@ -68,19 +68,6 @@
         {{end}}
     </section>
     {{end}}
-
-    <section>
-        <h3>All Players</h3>
-        <ul id="day-player-list" class="player-list">
-            {{range .Players}}
-            <li id="day-player-{{.PlayerID}}" class="{{if not .IsAlive}}dead-player{{end}}">
-                {{.Name}}
-                {{if not .IsAlive}} 💀 ({{.RoleName}}){{end}}
-            </li>
-            {{end}}
-        </ul>
-    </section>
-
     {{if .IsLover}}
     <section id="lover-info" class="lover-info">
         <p>💞 Your lover is <strong>{{.LoverName}}</strong>.</p>

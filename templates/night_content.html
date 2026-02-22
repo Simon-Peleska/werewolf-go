@@ -1,16 +1,11 @@
-<div class="game-content" id="game-content" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap="morph" hx-swap-oob="true">
     <section>
         <h2 id="phase-heading"><span id="night">Night</span> {{.NightNumber}}</h2>
-
+        {{if not .IsAlive}}
+        <p><em>You are dead.</em></p>
+        {{else}}
         {{if .IsWerewolf}}
         <p>The werewolves awaken...</p>
-
-        <h3>Your Pack</h3>
-        <ul class="player-list">
-            {{range .Werewolves}}
-            <li class="werewolf-player">🐺 {{.Name}}</li>
-            {{end}}
-        </ul>
 
         <h3>Choose a Victim</h3>
         <p><small>Select a player to kill. All werewolves must vote.</small></p>
@@ -232,6 +227,7 @@
         <div id="lover-info" class="lover-info">
             <p>💞 Your lover is <strong>{{.LoverName}}</strong>.</p>
         </div>
+        {{end}}
         {{end}}
     </section>
 </div>

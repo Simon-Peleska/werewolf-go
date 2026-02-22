@@ -239,6 +239,18 @@ if [[ $TEST_EXIT_CODE -eq 0 ]]; then
 else
     echo "TESTS FAILED (exit code: $TEST_EXIT_CODE)" | tee -a "$SUMMARY_LOG"
     echo "" | tee -a "$SUMMARY_LOG"
+
+    # Print failed test names
+    FAILED_TESTS=$(grep "^--- FAIL:" "$TEST_LOG" | sed 's/--- FAIL: \([^ ]*\).*/\1/' || true)
+    if [[ -n "$FAILED_TESTS" ]]; then
+        echo "Failed tests:" | tee -a "$SUMMARY_LOG"
+        echo "------------------------------" | tee -a "$SUMMARY_LOG"
+        while IFS= read -r test; do
+            echo "  FAIL: $test" | tee -a "$SUMMARY_LOG"
+        done <<< "$FAILED_TESTS"
+        echo "" | tee -a "$SUMMARY_LOG"
+    fi
+
     echo "Log files preserved in: $RUN_DIR" | tee -a "$SUMMARY_LOG"
 
     # List available log files

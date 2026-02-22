@@ -298,6 +298,21 @@ func TestWerewolfCanVote(t *testing.T) {
 		t.Errorf("Expected vote for %s, got %s", targetName, currentTarget)
 	}
 
+	// History: werewolf vote is team-visible — werewolves see it, villagers do not
+	voteEntry := "voted to kill " + targetName
+	if !werewolves[0].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: voting werewolf cannot see own vote in history")
+		t.Errorf("Voting werewolf should see their vote in history")
+	}
+	if !werewolves[1].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: non-voting werewolf cannot see team vote in history")
+		t.Errorf("Non-voting werewolf should see team vote in history")
+	}
+	if villagers[0].historyContains(voteEntry) {
+		ctx.logger.LogDB("FAIL: villager can see werewolf vote in history")
+		t.Errorf("Villager should not see werewolf vote in history")
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -451,28 +466,32 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 	}
 
 	// Choose specific target
-	targetName := villagers[0].Name
-	ctx.logger.Debug("Target for kill: %s", targetName)
+	target := villagers[0]
+	targetID := target.getPlayerID()
+	ctx.logger.Debug("Target for kill: %s (ID: %s)", target.Name, targetID)
 
 	// Werewolf votes
-	werewolves[0].voteForPlayer(targetName)
+	werewolves[0].voteForPlayer(target.Name)
 
 	ctx.logger.LogDB("after werewolf vote")
 
 	// Check death announcement
-
 	announcement := werewolves[0].getDeathAnnouncement()
-	if !strings.Contains(announcement, targetName) {
+	if !strings.Contains(announcement, target.Name) {
 		ctx.logger.LogDB("FAIL: wrong player killed")
-		t.Errorf("Death announcement should mention %s, got: %s", targetName, announcement)
+		t.Errorf("Death announcement should mention %s, got: %s", target.Name, announcement)
 	}
 
-	// Check that the target shows as dead
-	content := werewolves[0].getGameContent()
-	// The dead player should have 💀 next to their name
-	if !strings.Contains(content, targetName) || !strings.Contains(content, "💀") {
-		ctx.logger.LogDB("FAIL: victim not marked as dead")
-		t.Errorf("Victim %s should be marked as dead in player list", targetName)
+	// Check that the target shows as dead in the sidebar using #is-dead-{playerID}
+	if targetID == "" {
+		t.Error("Could not determine target player ID")
+	} else {
+		deadSelector := "#is-dead-" + targetID
+		has, _, _ := werewolves[0].p().Has(deadSelector)
+		if !has {
+			ctx.logger.LogDB("FAIL: victim not marked as dead in sidebar")
+			t.Errorf("Victim %s should have death indicator in sidebar (%s)", target.Name, deadSelector)
+		}
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -588,6 +607,17 @@ func TestWitchHealSavesVictim(t *testing.T) {
 		t.Errorf("Victim should not be in death announcement: %s", announcement)
 	}
 
+	// History: witch heal is actor-only — only the witch sees it
+	healEntry := "You saved " + targetVillager.Name + " with your heal potion"
+	if !witch.historyContains(healEntry) {
+		ctx.logger.LogDB("FAIL: witch cannot see own heal in history")
+		t.Errorf("Witch should see their heal in history, got: %s", witch.getHistoryText())
+	}
+	if werewolves[0].historyContains(healEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see witch heal in history")
+		t.Errorf("Werewolf should not see witch heal in history")
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -685,6 +715,17 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 			otherVillager.Name, announcement, content)
 	}
 
+	// History: witch poison is actor-only — only the witch sees it
+	poisonEntry := "You poisoned " + otherVillager.Name
+	if !witch.historyContains(poisonEntry) {
+		ctx.logger.LogDB("FAIL: witch cannot see own poison in history")
+		t.Errorf("Witch should see their poison in history, got: %s", witch.getHistoryText())
+	}
+	if werewolves[0].historyContains(poisonEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see witch poison in history")
+		t.Errorf("Werewolf should not see witch poison in history")
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -757,6 +798,17 @@ func TestWitchPassEndNight(t *testing.T) {
 	if !witch.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day phase after witch pass")
 		t.Error("Should transition to day after witch passes")
+	}
+
+	// History: witch pass is actor-only — only the witch sees it
+	passEntry := "Witch " + witch.Name + " passed"
+	if !witch.historyContains(passEntry) {
+		ctx.logger.LogDB("FAIL: witch cannot see own pass in history")
+		t.Errorf("Witch should see their pass in history, got: %s", witch.getHistoryText())
+	}
+	if werewolves[0].historyContains(passEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see witch pass in history")
+		t.Errorf("Werewolf should not see witch pass in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1035,6 +1087,18 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	}
 	if !strings.Contains(announcement2, victim2.Name) {
 		t.Errorf("Day 2 announcement should mention victim2 '%s', got: %s", victim2.Name, announcement2)
+	}
+
+	// History: Wolf Cub double kill (second victim) is team:werewolf — werewolf sees it, villagers don't
+	kill2Entry := "voted to kill " + victim2.Name + " (Wolf Cub revenge)"
+	if !werewolf.historyContains(kill2Entry) {
+		ctx.logger.LogDB("FAIL: werewolf cannot see wolf cub double kill in history")
+		t.Errorf("Werewolf should see wolf cub double kill in history, got: %s", werewolf.getHistoryText())
+	}
+	// villagers[3] is alive in day 2 (victims 0-2 are dead from prior rounds)
+	if len(villagers) > 3 && villagers[3].historyContains(kill2Entry) {
+		ctx.logger.LogDB("FAIL: villager can see wolf cub double kill in history")
+		t.Errorf("Villager should not see wolf cub double kill in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1417,6 +1481,23 @@ func TestCupidLinksLovers(t *testing.T) {
 		}
 	}
 
+	// History: lover notifications are actor-only — each lover sees their own, others don't
+	lover1Entry := "Your lover is " + lover2.Name
+	if !lover1.historyContains(lover1Entry) {
+		ctx.logger.LogDB("FAIL: lover1 cannot see their lover notification in history")
+		t.Errorf("Lover1 should see their lover notification in history, got: %s", lover1.getHistoryText())
+	}
+	lover2Entry := "Your lover is " + lover1.Name
+	if !lover2.historyContains(lover2Entry) {
+		ctx.logger.LogDB("FAIL: lover2 cannot see their lover notification in history")
+		t.Errorf("Lover2 should see their lover notification in history, got: %s", lover2.getHistoryText())
+	}
+	for _, w := range werewolves {
+		if w.historyContains(lover1Entry) || w.historyContains(lover2Entry) {
+			t.Errorf("Werewolf (%s) should not see lover notifications in history", w.Name)
+		}
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -1475,6 +1556,17 @@ func TestHeartbreakOnNightKill(t *testing.T) {
 	}
 	if !strings.Contains(announcement, lover2.Name) {
 		t.Errorf("Announcement should mention lover2 (%s) dying from heartbreak", lover2.Name)
+	}
+
+	// History: heartbreak is public — all players see it
+	heartbreakEntry := "died of heartbreak after their lover " + lover1.Name + " was killed"
+	if !werewolves[0].historyContains(heartbreakEntry) {
+		ctx.logger.LogDB("FAIL: werewolf cannot see heartbreak in history")
+		t.Errorf("Werewolf should see heartbreak in history (public action), got: %s", werewolves[0].getHistoryText())
+	}
+	if !cupid.historyContains(heartbreakEntry) {
+		ctx.logger.LogDB("FAIL: cupid cannot see heartbreak in history")
+		t.Errorf("Cupid should see heartbreak in history (public action), got: %s", cupid.getHistoryText())
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

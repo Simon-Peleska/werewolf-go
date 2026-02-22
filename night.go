@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 )
@@ -20,6 +21,7 @@ type SeerResult struct {
 
 // NightData holds all data needed to render the night phase
 type NightData struct {
+	IsAlive              bool
 	Players              []Player
 	AliveTargets         []Player
 	IsWerewolf           bool
@@ -113,12 +115,13 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	}
 
 	// Record or update the vote
+	description := fmt.Sprintf("Night %d: %s voted to kill %s", game.Round, voter.Name, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-		DO UPDATE SET target_player_id = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, targetID)
+		DO UPDATE SET target_player_id = ?, description = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, targetID, description)
 	if err != nil {
 		logError("handleWSWerewolfVote: db.Exec insert vote", err)
 		sendErrorToast(client.playerID, "Failed to record vote")
@@ -199,12 +202,13 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 		return
 	}
 
+	description2 := fmt.Sprintf("Night %d: %s voted to kill %s (Wolf Cub revenge)", game.Round, voter.Name, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-		DO UPDATE SET target_player_id = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, targetID)
+		DO UPDATE SET target_player_id = ?, description = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, targetID, description2)
 	if err != nil {
 		logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
 		sendErrorToast(client.playerID, "Failed to record second vote")
@@ -276,10 +280,15 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 		return
 	}
 
+	result := "not a werewolf"
+	if target.Team == "werewolf" {
+		result = "a werewolf"
+	}
+	seerDesc := fmt.Sprintf("Night %d: You investigated %s — they are %s", game.Round, target.Name, result)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc)
 	if err != nil {
 		logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
 		sendErrorToast(client.playerID, "Failed to record investigation")
@@ -351,10 +360,11 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 		return
 	}
 
+	doctorDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionDoctorProtect, targetID, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionDoctorProtect, targetID, VisibilityActor, doctorDesc)
 	if err != nil {
 		logError("handleWSDoctorProtect: db.Exec insert protection", err)
 		sendErrorToast(client.playerID, "Failed to record protection")
@@ -445,10 +455,11 @@ func handleWSGuardProtect(client *Client, msg WSMessage) {
 		}
 	}
 
+	guardDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionGuardProtect, targetID, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionGuardProtect, targetID, VisibilityActor, guardDesc)
 	if err != nil {
 		logError("handleWSGuardProtect: db.Exec insert protection", err)
 		sendErrorToast(client.playerID, "Failed to record protection")
@@ -515,12 +526,12 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		game.ID, client.playerID, ActionCupidLink)
 
 	if firstLoverID == 0 {
-		// Step 1: record first lover choice (replaceable until finalized)
+		// Step 1: record first lover choice (replaceable until finalized); empty description = not shown in history
 		_, err = db.Exec(`
-			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-			VALUES (?, 1, 'night', ?, ?, ?, ?)
+			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+			VALUES (?, 1, 'night', ?, ?, ?, ?, '')
 			ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-			DO UPDATE SET target_player_id = ?`,
+			DO UPDATE SET target_player_id = ?, description = ''`,
 			game.ID, client.playerID, ActionCupidLink, targetID, VisibilityActor, targetID)
 		if err != nil {
 			logError("handleWSCupidChoose: insert step1", err)
@@ -551,13 +562,15 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 			return
 		}
 		// Record cupid_link game_actions for each lover so they know their partner
-		_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility) VALUES (?, 1, 'night', ?, ?, ?, ?)`,
-			game.ID, firstLoverID, ActionCupidLink, targetID, VisibilityActor)
-		_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility) VALUES (?, 1, 'night', ?, ?, ?, ?)`,
-			game.ID, targetID, ActionCupidLink, firstLoverID, VisibilityActor)
-
 		var firstLoverName string
 		db.Get(&firstLoverName, "SELECT name FROM player WHERE rowid = ?", firstLoverID)
+		desc1 := fmt.Sprintf("Night 1: Your lover is %s", target.Name)
+		desc2 := fmt.Sprintf("Night 1: Your lover is %s", firstLoverName)
+		_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
+			game.ID, firstLoverID, ActionCupidLink, targetID, VisibilityActor, desc1)
+		_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
+			game.ID, targetID, ActionCupidLink, firstLoverID, VisibilityActor, desc2)
+
 		log.Printf("Cupid '%s' linked lovers: '%s' and '%s'", cupid.Name, firstLoverName, target.Name)
 		DebugLog("handleWSCupidChoose", "Cupid '%s' linked '%s' and '%s'", cupid.Name, firstLoverName, target.Name)
 		LogDBState("after cupid links lovers")
@@ -705,10 +718,11 @@ func handleWSWitchHeal(client *Client, msg WSMessage) {
 		return
 	}
 
+	witchHealDesc := fmt.Sprintf("Night %d: You saved %s with your heal potion", game.Round, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc)
 	if err != nil {
 		logError("handleWSWitchHeal: db.Exec insert heal", err)
 		sendErrorToast(client.playerID, "Failed to record heal action")
@@ -791,10 +805,11 @@ func handleWSWitchKill(client *Client, msg WSMessage) {
 		return
 	}
 
+	witchKillDesc := fmt.Sprintf("Night %d: You poisoned %s", game.Round, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc)
 	if err != nil {
 		logError("handleWSWitchKill: db.Exec insert poison", err)
 		sendErrorToast(client.playerID, "Failed to record poison action")
@@ -849,10 +864,11 @@ func handleWSWitchPass(client *Client, msg WSMessage) {
 		return
 	}
 
+	witchPassDesc := fmt.Sprintf("Night %d: Witch %s passed", game.Round, witch.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility)
-		VALUES (?, ?, 'night', ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionWitchPass, VisibilityActor)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionWitchPass, VisibilityActor, witchPassDesc)
 	if err != nil {
 		logError("handleWSWitchPass: db.Exec insert pass", err)
 		sendErrorToast(client.playerID, "Failed to record pass action")

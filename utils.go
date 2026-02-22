@@ -1082,6 +1082,15 @@ func (tp *TestPlayer) getPlayerList() string {
 	return list
 }
 
+// getPlayerID returns the database ID of the player viewing this page.
+func (tp *TestPlayer) getPlayerID() string {
+	el, err := tp.p().Element("#player-id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(el.MustText())
+}
+
 // addRoleByID clicks the add button for a role by its ID
 func (tp *TestPlayer) addRoleByID(roleID string) {
 	if tp.logger != nil {
@@ -1246,4 +1255,22 @@ func generateTestName(base string, n uint8) string {
 		base = base[:10]
 	}
 	return base + suffix
+}
+
+// getHistoryText returns the full text content of the history bar for this player.
+func (tp *TestPlayer) getHistoryText() string {
+	found, el, err := tp.p().Has("#history-bar")
+	if err != nil || !found {
+		return ""
+	}
+	text := el.MustText()
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] History text: %s", tp.Name, strings.ReplaceAll(text, "\n", " | "))
+	}
+	return text
+}
+
+// historyContains returns true if the history bar contains the given substring.
+func (tp *TestPlayer) historyContains(text string) bool {
+	return strings.Contains(tp.getHistoryText(), text)
 }

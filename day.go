@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 )
@@ -62,11 +63,16 @@ func applyHeartbreaks(game *Game, phase string, killedIDs []int64) []int64 {
 				continue
 			}
 			// Record public heartbreak action: actor=trigger person, target=heartbreak victim
-			_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				game.ID, game.Round, phase, killed, ActionLoverHeartbreak, partnerID, VisibilityPublic)
 			var killedName, partnerName string
 			db.Get(&killedName, "SELECT name FROM player WHERE rowid = ?", killed)
 			db.Get(&partnerName, "SELECT name FROM player WHERE rowid = ?", partnerID)
+			phaseLabel := "Night"
+			if phase == "day" {
+				phaseLabel = "Day"
+			}
+			heartbreakDesc := fmt.Sprintf("%s %d: %s died of heartbreak after their lover %s was killed", phaseLabel, game.Round, partnerName, killedName)
+			_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				game.ID, game.Round, phase, killed, ActionLoverHeartbreak, partnerID, VisibilityPublic, heartbreakDesc)
 			log.Printf("Heartbreak: '%s' died after their lover '%s' was killed", partnerName, killedName)
 			DebugLog("applyHeartbreaks", "'%s' died from heartbreak (lover '%s' was killed)", partnerName, killedName)
 			nextRound = append(nextRound, partnerID)
@@ -123,12 +129,13 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 	}
 
 	// Record or update the vote
+	dayVoteDesc := fmt.Sprintf("Day %d: %s voted to eliminate %s", game.Round, voter.Name, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'day', ?, ?, ?, ?)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'day', ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-		DO UPDATE SET target_player_id = ?`,
-		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, targetID)
+		DO UPDATE SET target_player_id = ?, description = ?`,
+		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, dayVoteDesc, targetID, dayVoteDesc)
 	if err != nil {
 		logError("handleWSDayVote: db.Exec insert vote", err)
 		sendErrorToast(client.playerID, "Failed to record vote")
@@ -203,17 +210,19 @@ func resolveDayVotes(game *Game) {
 		return
 	}
 
+	var eliminatedName, eliminatedRole string
+	db.Get(&eliminatedName, "SELECT name FROM player WHERE rowid = ?", eliminatedID)
+	db.Get(&eliminatedRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, eliminatedID)
+
 	// Record the elimination action
+	eliminationDesc := fmt.Sprintf("Day %d: %s (%s) was eliminated by the village", game.Round, eliminatedName, eliminatedRole)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
-		game.ID, game.Round, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'day', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic, eliminationDesc)
 	if err != nil {
 		logError("resolveDayVotes: record elimination", err)
 	}
-
-	var eliminatedName string
-	db.Get(&eliminatedName, "SELECT name FROM player WHERE rowid = ?", eliminatedID)
 	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
 
@@ -310,10 +319,11 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	}
 
 	// Record the revenge action (public visibility)
+	hunterRevengeDesc := fmt.Sprintf("Day %d: Hunter %s shot %s", game.Round, hunter.Name, target.Name)
 	_, err = db.Exec(`
-		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility)
-		VALUES (?, ?, 'day', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic)
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'day', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic, hunterRevengeDesc)
 	if err != nil {
 		logError("handleWSHunterRevenge: record action", err)
 	}

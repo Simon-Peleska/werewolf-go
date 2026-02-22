@@ -6,7 +6,6 @@ import (
 	"embed"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"html/template"
@@ -295,84 +294,51 @@ func handleGameHistory(w http.ResponseWriter, r *http.Request) {
 	buf.WriteTo(w)
 }
 
-type HistoryGameAction struct {
-	ID           int64  `db:"id"`
-	Round        int    `db:"round"`
-	Phase        string `db:"phase"` // "night" or "day"
-	ActionType   string `db:"action_type"`
-	ActorPlayer  string `db:"actor_player"`
-	TargetPlayer string `db:"target_player"`
-}
-
 func getGameHistory(playerID int64, game *Game) (*bytes.Buffer, error) {
-	var actions []HistoryGameAction
-	db.Select(&actions, `
-		SELECT
-			a.rowid as id,
-			a.round as round,
-			a.phase as phase,
-			a.action_type as action_type,
-			ap.name as actor_player,
-			tp.name as target_player
-		FROM game_action a
-			JOIN game g on g.rowid = a.game_id
-			JOIN game_player gp on gp.game_id = g.rowid
-			JOIN player p on gp.player_id = p.rowid  
-			JOIN role pr on gp.role_id = pr.rowid
-			LEFT JOIN player ap on a.target_player_id = ap.rowid  
-			LEFT JOIN player tp on a.actor_player_id = tp.rowid  
-		WHERE g.rowid = ?
-			AND p.rowid = ?
-			AND (
-				a.action_type = "public"
-				OR a.action_type = 'team:' || pr.team
-				OR a.actor_player_id = p.rowid
-				OR (
-					a.action_type = "resolved"
-					AND (
-						a.phase = "day"
-						OR g.round > a.round)
-					)
-				)
-`,
-		game.ID, playerID)
+	viewer, err := getPlayerInGame(game.ID, playerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Player not yet added to the game (race between HTTP request and WS connect).
+			// Return empty history rather than an error.
+			var buf bytes.Buffer
+			if err := templates.ExecuteTemplate(&buf, "history.html", []string(nil)); err != nil {
+				return nil, err
+			}
+			return &buf, nil
+		}
+		return nil, err
+	}
 
-	var action_descs = []string{}
+	type historyRow struct {
+		Description   string `db:"description"`
+		Visibility    string `db:"visibility"`
+		ActorPlayerID int64  `db:"actor_player_id"`
+		Round         int    `db:"round"`
+		Phase         string `db:"phase"`
+	}
 
-	for _, action := range actions {
-		switch action_type := action.ActionType; action_type {
-		case "werewolf_kill":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Werewolf %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "day_vote":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "elimination":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s was eliminated by the village", action.Phase, action.Round, action.TargetPlayer))
-		case "seer_investigate":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Seer %s investigated %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "doctor_protect":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Doctor %s protected %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "guard_protect":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Guard %s protected %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "hunter_revenge":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Hunter %s shot %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "witch_heal":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s healed %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "witch_kill":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s poisoned %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "witch_pass":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Witch %s passed", action.Phase, action.Round, action.ActorPlayer))
-		case "werewolf_kill_2":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Werewolf %s voted to kill %s", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "cupid_link":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: Cupid %s gave %s a love potion", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
-		case "lover_heartbreak":
-			action_descs = append(action_descs, fmt.Sprintf("%s %d: %s died of heartbreak, because %s died", action.Phase, action.Round, action.ActorPlayer, action.TargetPlayer))
+	var rows []historyRow
+	db.Select(&rows, `
+		SELECT description, visibility, actor_player_id, round, phase
+		FROM game_action
+		WHERE game_id = ? AND description != ''
+		ORDER BY rowid ASC`, game.ID)
+
+	var descriptions []string
+	for _, row := range rows {
+		action := GameAction{
+			ActorPlayerID: row.ActorPlayerID,
+			Visibility:    row.Visibility,
+			Round:         row.Round,
+			Phase:         row.Phase,
+		}
+		if canSeeAction(action, viewer, game.Round, game.Status) {
+			descriptions = append(descriptions, row.Description)
 		}
 	}
 
 	var buf bytes.Buffer
-
-	if err := templates.ExecuteTemplate(&buf, "history.html", action_descs); err != nil {
+	if err := templates.ExecuteTemplate(&buf, "history.html", descriptions); err != nil {
 		return nil, err
 	}
 
@@ -500,6 +466,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			logError("getGameComponent: getPlayerInGame", err)
 			return nil, err
 		}
+		isAlive := currentPlayer.IsAlive
 
 		isWerewolf := currentPlayer.Team == "werewolf"
 
@@ -827,6 +794,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		}
 
 		data := NightData{
+			IsAlive:              isAlive,
 			Players:              players,
 			AliveTargets:         aliveTargets,
 			IsWerewolf:           isWerewolf,
