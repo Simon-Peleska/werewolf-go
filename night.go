@@ -132,6 +132,14 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	DebugLog("handleWSWerewolfVote", "Werewolf '%s' voted to kill '%s'", voter.Name, target.Name)
 	LogDBState("after werewolf vote")
 
+	// If this vote just completed all werewolf votes, alert everyone with sound
+	var voteCount, werewolfCount int
+	db.Get(&voteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfKill)
+	db.Get(&werewolfCount, `SELECT COUNT(*) FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+	if voteCount >= werewolfCount {
+		broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
+	}
+
 	// Check if all werewolves have voted and resolve if so
 	resolveWerewolfVotes(game)
 }
@@ -927,9 +935,6 @@ func resolveWerewolfVotes(game *Game) {
 		broadcastGameUpdate()
 		return
 	}
-
-	// All werewolves have voted — alert all players with sound + vibration
-	broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
 
 	// Count votes for each target
 	voteCounts := make(map[int64]int)
