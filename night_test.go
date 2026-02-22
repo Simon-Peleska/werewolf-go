@@ -519,6 +519,18 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 		}
 	}
 
+	// Night death should appear in history for everyone (public)
+	// The record format is "Night 1: NAME (ROLE) was found dead"
+	deathEntry := "Night 1: " + target.Name + " (" + target.getRole() + ") was found dead"
+	if !werewolves[0].historyContains(deathEntry) {
+		ctx.logger.LogDB("FAIL: night death not in werewolf history")
+		t.Errorf("Night death should be visible in werewolf history, got: %s", werewolves[0].getHistoryText())
+	}
+	if !villagers[0].historyContains(deathEntry) {
+		ctx.logger.LogDB("FAIL: night death not in villager history")
+		t.Errorf("Night death should be visible in villager history, got: %s", villagers[0].getHistoryText())
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -810,7 +822,7 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 			otherVillager.Name, announcement, content)
 	}
 
-	// History: witch poison is actor-only — only the witch sees it
+	// History: witch poison action is actor-only — only the witch sees it
 	poisonEntry := "You poisoned " + otherVillager.Name
 	if !witch.historyContains(poisonEntry) {
 		ctx.logger.LogDB("FAIL: witch cannot see own poison in history")
@@ -819,6 +831,27 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	if werewolves[0].historyContains(poisonEntry) {
 		ctx.logger.LogDB("FAIL: werewolf can see witch poison in history")
 		t.Errorf("Werewolf should not see witch poison in history")
+	}
+
+	// Night deaths (wolf kill + witch poison) should be public in history
+	// The record format is "Night 1: NAME (ROLE) was found dead"
+	wolfDeathEntry := "Night 1: " + targetVillager.Name + " (" + targetVillager.getRole() + ") was found dead"
+	if !werewolves[0].historyContains(wolfDeathEntry) {
+		ctx.logger.LogDB("FAIL: wolf kill death not in werewolf history")
+		t.Errorf("Wolf kill death should be public in history, got: %s", werewolves[0].getHistoryText())
+	}
+	if !witch.historyContains(wolfDeathEntry) {
+		ctx.logger.LogDB("FAIL: wolf kill death not in witch history")
+		t.Errorf("Wolf kill death should be public in history, got: %s", witch.getHistoryText())
+	}
+	poisonDeathEntry := "Night 1: " + otherVillager.Name + " (" + otherVillager.getRole() + ") was found dead"
+	if !werewolves[0].historyContains(poisonDeathEntry) {
+		ctx.logger.LogDB("FAIL: poison death not in werewolf history")
+		t.Errorf("Poison death should be public in history, got: %s", werewolves[0].getHistoryText())
+	}
+	if !witch.historyContains(poisonDeathEntry) {
+		ctx.logger.LogDB("FAIL: poison death not in witch history")
+		t.Errorf("Poison death should be public in history, got: %s", witch.getHistoryText())
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

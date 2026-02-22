@@ -1110,6 +1110,22 @@ func handleWSWitchPass(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+// recordPublicDeath inserts a public history entry when a player dies at night.
+func recordPublicDeath(game *Game, playerID int64) {
+	var name string
+	db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
+	var roleName string
+	db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.player_id = ?`, game.ID, playerID)
+	desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
+	_, err := db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, playerID, ActionNightKill, playerID, VisibilityPublic, desc)
+	if err != nil {
+		logError("recordPublicDeath: insert death record", err)
+	} else {
+		log.Printf("Recorded public death: %s", desc)
+	}
+}
+
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
@@ -1352,6 +1368,7 @@ func resolveWerewolfVotes(game *Game) {
 			} else {
 				db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim2)
 				log.Printf("Wolf Cub double kill: werewolves killed %s", victim2Name)
+				recordPublicDeath(game, victim2)
 				nightKillsNoVictim = append(nightKillsNoVictim, victim2)
 			}
 		}
@@ -1362,6 +1379,7 @@ func resolveWerewolfVotes(game *Game) {
 			var poisonName string
 			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
 			log.Printf("Witch poisoned %s", poisonName)
+			recordPublicDeath(game, *witchKillActionNoVictim.TargetPlayerID)
 			nightKillsNoVictim = append(nightKillsNoVictim, *witchKillActionNoVictim.TargetPlayerID)
 		}
 		applyHeartbreaks(game, "night", nightKillsNoVictim)
@@ -1437,6 +1455,7 @@ func resolveWerewolfVotes(game *Game) {
 	db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
 	log.Printf("Werewolves killed %s (player ID %d)", victimName, victim)
 	DebugLog("resolveWerewolfVotes", "Werewolves killed '%s'", victimName)
+	recordPublicDeath(game, victim)
 
 	// Apply Witch poison kill (separate from werewolf victim)
 	var witchKillAction GameAction
@@ -1454,6 +1473,7 @@ func resolveWerewolfVotes(game *Game) {
 		db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
 		log.Printf("Witch poisoned %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
 		DebugLog("resolveWerewolfVotes", "Witch poisoned '%s'", poisonVictimName)
+		recordPublicDeath(game, *witchKillAction.TargetPlayerID)
 	}
 
 	// Track all kills this night (for heartbreak resolution)
@@ -1482,6 +1502,7 @@ func resolveWerewolfVotes(game *Game) {
 			} else {
 				log.Printf("Wolf Cub double kill: werewolves killed %s (player ID %d)", victim2Name, victim2)
 				DebugLog("resolveWerewolfVotes", "Wolf Cub double kill: werewolves killed '%s'", victim2Name)
+				recordPublicDeath(game, victim2)
 				nightKills = append(nightKills, victim2)
 			}
 		}
