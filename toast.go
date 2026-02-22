@@ -11,6 +11,7 @@ type Toast struct {
 	ID      string
 	Type    string // "error", "warning", "success", "info"
 	Message string
+	Sound   bool // if true, triggers client-side sound + vibration
 }
 
 // renderToast renders a toast notification HTML fragment
@@ -33,4 +34,16 @@ func sendErrorToast(playerID int64, message string) {
 	if html != "" {
 		hub.sendToPlayer(playerID, []byte(html))
 	}
+}
+
+// broadcastSoundToast sends a toast with sound+vibration to all connected clients
+func broadcastSoundToast(toastType, message string) {
+	var buf bytes.Buffer
+	toastCounter++
+	toast := Toast{ID: strconv.FormatInt(toastCounter, 10), Type: toastType, Message: message, Sound: true}
+	if err := templates.ExecuteTemplate(&buf, "toast.html", toast); err != nil {
+		log.Printf("Failed to render sound toast: %v", err)
+		return
+	}
+	hub.broadcast <- buf.Bytes()
 }

@@ -313,6 +313,12 @@ func TestWerewolfCanVote(t *testing.T) {
 		t.Errorf("Villager should not see werewolf vote in history")
 	}
 
+	// Sound toast should NOT fire yet — only one of two werewolves has voted
+	if villagers[0].hasSoundToast("werewolves have made their choice") {
+		ctx.logger.LogDB("FAIL: sound toast fired before all werewolves voted")
+		t.Errorf("Sound toast should not appear until all werewolves have voted")
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -474,6 +480,21 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 	werewolves[0].voteForPlayer(target.Name)
 
 	ctx.logger.LogDB("after werewolf vote")
+
+	// Sound toast should fire on all players once all werewolves have voted
+	soundMsg := "werewolves have made their choice"
+	if !werewolves[0].hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: werewolf did not receive sound toast")
+		t.Errorf("Werewolf should see sound toast after voting completes")
+	}
+	if !villagers[0].hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: villager did not receive sound toast")
+		t.Errorf("Villager should see sound toast when werewolves finish voting")
+	}
+	if !target.hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: target did not receive sound toast")
+		t.Errorf("Target should also receive the sound toast")
+	}
 
 	// Check death announcement
 	announcement := werewolves[0].getDeathAnnouncement()

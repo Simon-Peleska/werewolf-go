@@ -1225,6 +1225,20 @@ func (tp *TestPlayer) hasToastWithText(text string) bool {
 	return strings.Contains(el.MustText(), text)
 }
 
+// hasSoundToast returns true if any visible toast with data-sound contains the given text.
+func (tp *TestPlayer) hasSoundToast(text string) bool {
+	toasts, err := tp.p().Elements("#toast-container [data-sound]")
+	if err != nil {
+		return false
+	}
+	for _, t := range toasts {
+		if strings.Contains(t.MustText(), text) {
+			return true
+		}
+	}
+	return false
+}
+
 // hasErrorToast checks if an error toast appeared
 func (tp *TestPlayer) hasErrorToast() bool {
 	el, err := tp.p().Element(".toast-error")

@@ -928,6 +928,9 @@ func resolveWerewolfVotes(game *Game) {
 		return
 	}
 
+	// All werewolves have voted — alert all players with sound + vibration
+	broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
+
 	// Count votes for each target
 	voteCounts := make(map[int64]int)
 	for _, v := range votes {

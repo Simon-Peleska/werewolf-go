@@ -3,9 +3,11 @@
   - change color scheme
   - make colorscheme change during the night
   - add icons
-- add sidebar lover icon
-- add werwolf icon if seer has already asked for a certain character and found a werewolf
-- 
+- werewolves should be allowed to pass
+- werewolf vote shouldn't continue if a verwolf doesnt press continue
+- vibrate phone or voice after werewolves have killed
+- players should be allowed to pass
+- day vote shouldn't continue if a player doesnt press continue
 - add ai storyteller
 - deploy on host provider
 - create nix flake for setup build and testing 
