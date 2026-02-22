@@ -168,6 +168,52 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func TestPlayerCanPassDayVote(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing majority pass skips elimination ===")
+
+	// Setup: 4 villagers + 1 werewolf. Night kills villagers[0].
+	// Day starts with 4 alive: villagers[1-3] + werewolf
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 4, 1)
+
+	if len(werewolves) == 0 || len(villagers) < 4 {
+		t.Fatal("Failed to find enough players")
+	}
+
+	// villagers[0] was killed at night; alive players are villagers[1:] + werewolves
+	alivePlayers := append(villagers[1:], werewolves...)
+
+	// All alive players press Pass
+	for _, p := range alivePlayers {
+		p.clickAndWait("#day-pass-btn")
+	}
+
+	ctx.logger.LogDB("after all players passed")
+
+	// End Vote button should now be visible (all alive players have acted)
+	has, endVoteBtn, _ := alivePlayers[0].p().Has("#day-end-vote-btn")
+	if !has {
+		ctx.logger.LogDB("FAIL: End Vote button not visible after all passed")
+		t.Fatal("End Vote button should appear after all players pass")
+	}
+	alivePlayers[0].clickElementAndWait(endVoteBtn)
+
+	ctx.logger.LogDB("after End Vote press")
+
+	// Majority passed → no kill → transition to night (round 2)
+	if !alivePlayers[0].isInNightPhase() {
+		ctx.logger.LogDB("FAIL: not in night phase after majority pass")
+		t.Fatal("Should transition to night after majority pass (no elimination)")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 func TestDayVoteTransitionToNight(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()

@@ -563,6 +563,71 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func TestWerewolfCanPass(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing werewolf can pass (no kill) ===")
+
+	// Setup: 2 villagers, 1 werewolf
+	players := setupNightPhaseGame(ctx, browser, 2, 1)
+	werewolves, villagers := findPlayersByRole(players)
+
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Fatal("Failed to find enough players")
+	}
+
+	werewolf := werewolves[0]
+
+	// Werewolf presses Pass
+	werewolf.clickAndWait("#werewolf-pass-btn")
+
+	ctx.logger.LogDB("after werewolf pass")
+
+	// Sound toast should NOT fire yet — End Vote not pressed
+	soundMsg := "werewolves have made their choice"
+	if villagers[0].hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: sound toast fired before End Vote")
+		t.Errorf("Sound toast should not appear until End Vote is pressed")
+	}
+
+	// End Vote button should now be visible (all wolves acted)
+	has, endVoteBtn, _ := werewolf.p().Has("#werewolf-end-vote-btn")
+	if !has {
+		ctx.logger.LogDB("FAIL: End Vote button not visible after pass")
+		t.Fatal("End Vote button should appear after werewolf passes")
+	}
+	werewolf.clickElementAndWait(endVoteBtn)
+
+	ctx.logger.LogDB("after End Vote press")
+
+	// Sound toast should now fire on all players
+	if !werewolf.hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: werewolf did not receive sound toast")
+		t.Errorf("Werewolf should see sound toast after End Vote")
+	}
+	if !villagers[0].hasSoundToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: villager did not receive sound toast")
+		t.Errorf("Villager should see sound toast after End Vote")
+	}
+
+	// Should transition to day with no kills
+	if !werewolf.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: not in day phase after pass + End Vote")
+		t.Fatal("Should be in day phase after werewolf passes and presses End Vote")
+	}
+	hasNoKill, _, _ := werewolf.p().Has("#no-death-message")
+	if !hasNoKill {
+		ctx.logger.LogDB("FAIL: no 'no death' message shown")
+		t.Error("Should show 'no one died' message when werewolf passes")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 func TestWitchHealSavesVictim(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
