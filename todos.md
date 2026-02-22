@@ -5,7 +5,6 @@
   - add icons
 - werewolves should be allowed to pass
 - werewolf vote shouldn't continue if a verwolf doesnt press continue
-- vibrate phone or voice after werewolves have killed
 - players should be allowed to pass
 - day vote shouldn't continue if a player doesnt press continue
 - add ai storyteller

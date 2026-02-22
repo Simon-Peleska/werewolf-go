@@ -408,6 +408,14 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSWerewolfVote(client, msg)
 	case "werewolf_vote_2":
 		handleWSWerewolfVote2(client, msg)
+	case "werewolf_pass":
+		handleWSWerewolfPass(client, msg)
+	case "werewolf_pass_2":
+		handleWSWerewolfPass2(client, msg)
+	case "werewolf_end_vote":
+		handleWSWerewolfEndVote(client, msg)
+	case "werewolf_end_vote_2":
+		handleWSWerewolfEndVote2(client, msg)
 	case "seer_investigate":
 		handleWSSeerInvestigate(client, msg)
 	case "doctor_protect":
@@ -416,6 +424,10 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSGuardProtect(client, msg)
 	case "day_vote":
 		handleWSDayVote(client, msg)
+	case "day_pass":
+		handleWSDayPass(client, msg)
+	case "day_end_vote":
+		handleWSDayEndVote(client, msg)
 	case "hunter_revenge":
 		handleWSHunterRevenge(client, msg)
 	case "witch_heal":
@@ -817,6 +829,29 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		// Populate End Vote / all-wolves-acted state
+		var allWolvesActed, allWolvesActed2, wolfEndVoted, wolfEndVoted2 bool
+		if isWerewolf {
+			var werewolfCount int
+			db.Get(&werewolfCount, `SELECT COUNT(*) FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+			var voted1 int
+			db.Get(&voted1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfKill)
+			allWolvesActed = voted1 >= werewolfCount
+
+			var endVote1 int
+			db.Get(&endVote1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfEndVote)
+			wolfEndVoted = endVote1 > 0
+
+			if wolfCubDoubleKill {
+				var voted2 int
+				db.Get(&voted2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfKill2)
+				allWolvesActed2 = voted2 >= werewolfCount
+				var endVote2 int
+				db.Get(&endVote2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfEndVote2)
+				wolfEndVoted2 = endVote2 > 0
+			}
+		}
+
 		data := NightData{
 			IsAlive:              isAlive,
 			Players:              players,
@@ -859,6 +894,10 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			CupidChosen2:         cupidChosen2,
 			IsLover:              isLover,
 			LoverName:            loverName,
+			AllWolvesActed:       allWolvesActed,
+			AllWolvesActed2:      allWolvesActed2,
+			WolfEndVoted:         wolfEndVoted,
+			WolfEndVoted2:        wolfEndVoted2,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
@@ -971,6 +1010,14 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			db.Get(&dayLoverName, "SELECT name FROM player WHERE rowid = ?", dayLoverPartnerID)
 		}
 
+		// All-acted and has-voted checks for End Vote button
+		var totalDayActed int
+		db.Get(&totalDayActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
+			game.ID, game.Round, ActionDayVote)
+		var playerActed int
+		db.Get(&playerActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ? AND actor_player_id = ?`,
+			game.ID, game.Round, ActionDayVote, playerID)
+
 		data := DayData{
 			Players:             players,
 			AliveTargets:        aliveTargets,
@@ -988,6 +1035,8 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			HunterTargets:       hunterTargets,
 			IsLover:             isDayLover,
 			LoverName:           dayLoverName,
+			AllActed:            totalDayActed >= len(aliveTargets),
+			HasVoted:            playerActed > 0,
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {

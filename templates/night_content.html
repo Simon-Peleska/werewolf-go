@@ -8,7 +8,10 @@
         <p>The werewolves awaken...</p>
 
         <h3>Choose a Victim</h3>
-        <p><small>Select a player to kill. All werewolves must vote.</small></p>
+        {{if .WolfEndVoted}}
+        <p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
+        {{else}}
+        <p><small>Select a player to kill, or pass. When all werewolves have acted, end the vote.</small></p>
 
         {{$currentVote := .CurrentVote}}
         {{range .AliveTargets}}
@@ -21,19 +24,36 @@
             </button>
         </form>
         {{end}}
+        <form ws-send id="werewolf-pass-form" class="vote-form">
+            <input type="hidden" name="action" value="werewolf_pass">
+            <button type="submit" id="werewolf-pass-btn" class="vote-button">Pass</button>
+        </form>
+
+        {{if .AllWolvesActed}}
+        <form ws-send id="werewolf-end-vote-form">
+            <input type="hidden" name="action" value="werewolf_end_vote">
+            <button type="submit" id="werewolf-end-vote-btn" class="contrast">End Vote</button>
+        </form>
+        {{else}}
+        <p id="wolf-end-vote-waiting"><small><em>Waiting for all werewolves to vote or pass...</em></small></p>
+        {{end}}
+        {{end}}
 
         {{if .Votes}}
         <h3>Current Votes</h3>
         <ul class="vote-list">
             {{range .Votes}}
-            <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>undecided</em>{{end}}</li>
+            <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
             {{end}}
         </ul>
         {{end}}
 
         {{if .WolfCubDoubleKill}}
         <h3>⚡ Wolf Cub's Revenge — Choose a Second Victim</h3>
-        <p><small>The Wolf Cub was slain. Choose a second player to kill tonight.</small></p>
+        {{if .WolfEndVoted2}}
+        <p id="wolf-end-voted2-msg"><em>Second vote locked in. Waiting for night to end...</em></p>
+        {{else}}
+        <p><small>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</small></p>
 
         {{$currentVote2 := .CurrentVote2}}
         {{range .AliveTargets}}
@@ -45,6 +65,20 @@
                 {{if eq .Team "werewolf"}} 🐺{{end}}
             </button>
         </form>
+        {{end}}
+        <form ws-send id="werewolf-pass2-form" class="vote-form">
+            <input type="hidden" name="action" value="werewolf_pass_2">
+            <button type="submit" id="werewolf-pass2-btn" class="vote-button">Pass</button>
+        </form>
+
+        {{if .AllWolvesActed2}}
+        <form ws-send id="werewolf-end-vote2-form">
+            <input type="hidden" name="action" value="werewolf_end_vote_2">
+            <button type="submit" id="werewolf-end-vote2-btn" class="contrast">End Second Vote</button>
+        </form>
+        {{else}}
+        <p id="wolf-end-vote2-waiting"><small><em>Waiting for all werewolves to vote or pass for the second kill...</em></small></p>
+        {{end}}
         {{end}}
         {{end}}
 

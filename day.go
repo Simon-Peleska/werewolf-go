@@ -36,6 +36,8 @@ type DayData struct {
 	HunterTargets       []Player // Alive targets for the Hunter to pick from
 	IsLover             bool     // Is this player one of the two lovers?
 	LoverName           string   // Name of their partner
+	AllActed            bool     // All alive players have voted or passed this round
+	HasVoted            bool     // This player has a day_vote record (including pass)
 }
 
 // applyHeartbreaks checks if any of the given killed players have a living lover.
@@ -146,7 +148,95 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 	DebugLog("handleWSDayVote", "Player '%s' voted to eliminate '%s'", voter.Name, target.Name)
 	LogDBState("after day vote")
 
-	// Check if all alive players have voted and resolve if so
+	broadcastGameUpdate()
+}
+
+func handleWSDayPass(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSDayPass: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "day" {
+		sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		return
+	}
+
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSDayPass: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+
+	// Record pass as a day_vote with NULL target
+	passDesc := fmt.Sprintf("Day %d: %s passed", game.Round, voter.Name)
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'day', ?, ?, NULL, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = NULL, description = ?`,
+		game.ID, game.Round, client.playerID, ActionDayVote, VisibilityPublic, passDesc, passDesc)
+	if err != nil {
+		logError("handleWSDayPass: db.Exec", err)
+		sendErrorToast(client.playerID, "Failed to record pass")
+		return
+	}
+
+	log.Printf("Player %d (%s) passed the day vote", client.playerID, voter.Name)
+	broadcastGameUpdate()
+}
+
+func handleWSDayEndVote(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSDayEndVote: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "day" {
+		sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		return
+	}
+
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSDayEndVote: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot end the vote")
+		return
+	}
+
+	// Check all alive players have acted
+	var alivePlayers []Player
+	db.Select(&alivePlayers, `
+		SELECT g.rowid as id, g.player_id as player_id, p.name as name
+		FROM game_player g
+		JOIN player p ON g.player_id = p.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
+
+	var totalActed int
+	db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
+		game.ID, game.Round, ActionDayVote)
+
+	if totalActed < len(alivePlayers) {
+		sendErrorToast(client.playerID, fmt.Sprintf("Not all players have voted yet (%d/%d)", totalActed, len(alivePlayers)))
+		return
+	}
+
+	log.Printf("Day End Vote triggered by player %d (%s)", client.playerID, voter.Name)
 	resolveDayVotes(game)
 }
 
@@ -173,10 +263,15 @@ func resolveDayVotes(game *Game) {
 
 	log.Printf("Day vote check: %d alive players, %d votes", len(alivePlayers), totalVotes)
 
-	// Check if all alive players have voted
-	if totalVotes < len(alivePlayers) {
-		log.Printf("Not all players have voted yet (%d/%d)", totalVotes, len(alivePlayers))
-		broadcastGameUpdate()
+	// Check if majority passed — if so, skip elimination
+	realVoteCount := 0
+	for _, c := range voteCounts {
+		realVoteCount += c
+	}
+	passCount := totalVotes - realVoteCount
+	if passCount > len(alivePlayers)/2 {
+		log.Printf("Majority passed (%d/%d) — no elimination this day", passCount, len(alivePlayers))
+		transitionToNight(game)
 		return
 	}
 

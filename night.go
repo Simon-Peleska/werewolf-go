@@ -62,6 +62,10 @@ type NightData struct {
 	CupidChosen2         string // name of second lover
 	IsLover              bool   // is this player one of the two lovers?
 	LoverName            string // name of their partner
+	AllWolvesActed       bool   // all werewolves have voted or passed (first kill)
+	AllWolvesActed2      bool   // all werewolves have voted or passed (Wolf Cub second kill)
+	WolfEndVoted         bool   // End Vote pressed for first kill this round
+	WolfEndVoted2        bool   // End Vote pressed for Wolf Cub second kill
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
@@ -92,6 +96,15 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 
 	if !voter.IsAlive {
 		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+
+	// Reject if End Vote already pressed (vote is locked in)
+	var endVoteCount int
+	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfEndVote)
+	if endVoteCount > 0 {
+		sendErrorToast(client.playerID, "The vote has already been locked in")
 		return
 	}
 
@@ -132,16 +145,7 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	DebugLog("handleWSWerewolfVote", "Werewolf '%s' voted to kill '%s'", voter.Name, target.Name)
 	LogDBState("after werewolf vote")
 
-	// If this vote just completed all werewolf votes, alert everyone with sound
-	var voteCount, werewolfCount int
-	db.Get(&voteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWerewolfKill)
-	db.Get(&werewolfCount, `SELECT COUNT(*) FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
-	if voteCount >= werewolfCount {
-		broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
-	}
-
-	// Check if all werewolves have voted and resolve if so
-	resolveWerewolfVotes(game)
+	broadcastGameUpdate()
 }
 
 func handleWSWerewolfVote2(client *Client, msg WSMessage) {
@@ -193,6 +197,15 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 		return
 	}
 
+	// Reject if End Vote 2 already pressed
+	var endVote2Count int
+	db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfEndVote2)
+	if endVote2Count > 0 {
+		sendErrorToast(client.playerID, "The second vote has already been locked in")
+		return
+	}
+
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
 		sendErrorToast(client.playerID, "Invalid target")
@@ -227,6 +240,203 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 	DebugLog("handleWSWerewolfVote2", "Werewolf '%s' second kill vote: '%s'", voter.Name, target.Name)
 	LogDBState("after werewolf vote2")
 
+	broadcastGameUpdate()
+}
+
+func handleWSWerewolfPass(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfPass: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfPass: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		return
+	}
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+	var endVoteCount int
+	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfEndVote)
+	if endVoteCount > 0 {
+		sendErrorToast(client.playerID, "The vote has already been locked in")
+		return
+	}
+	passDesc := fmt.Sprintf("Night %d: %s passed", game.Round, voter.Name)
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = NULL, description = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passDesc)
+	if err != nil {
+		logError("handleWSWerewolfPass: db.Exec", err)
+		sendErrorToast(client.playerID, "Failed to record pass")
+		return
+	}
+	log.Printf("Werewolf %d (%s) passed the kill vote", client.playerID, voter.Name)
+	broadcastGameUpdate()
+}
+
+func handleWSWerewolfPass2(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfPass2: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfPass2: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		return
+	}
+	if !voter.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot vote")
+		return
+	}
+	var endVote2Count int
+	db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfEndVote2)
+	if endVote2Count > 0 {
+		sendErrorToast(client.playerID, "The second vote has already been locked in")
+		return
+	}
+	passDesc := fmt.Sprintf("Night %d: %s passed (second kill)", game.Round, voter.Name)
+	_, err = db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = NULL, description = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passDesc)
+	if err != nil {
+		logError("handleWSWerewolfPass2: db.Exec", err)
+		sendErrorToast(client.playerID, "Failed to record pass")
+		return
+	}
+	log.Printf("Werewolf %d (%s) passed the second kill vote", client.playerID, voter.Name)
+	broadcastGameUpdate()
+}
+
+func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfEndVote: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfEndVote: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		return
+	}
+
+	// Check all alive werewolves have acted
+	var werewolves []Player
+	db.Select(&werewolves, `
+		SELECT g.rowid as id, g.player_id as player_id, p.name as name
+		FROM game_player g
+		JOIN player p ON g.player_id = p.rowid
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+
+	var totalActed int
+	db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfKill)
+
+	if totalActed < len(werewolves) {
+		sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted yet (%d/%d)", totalActed, len(werewolves)))
+		return
+	}
+
+	// Record End Vote (INSERT OR IGNORE — idempotent)
+	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
+		game.ID, game.Round, client.playerID, ActionWerewolfEndVote, VisibilityTeamWerewolf)
+	if err != nil {
+		logError("handleWSWerewolfEndVote: record end vote", err)
+	}
+
+	log.Printf("Werewolf %d (%s) ended the kill vote", client.playerID, voter.Name)
+	broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
+	resolveWerewolfVotes(game)
+}
+
+func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSWerewolfEndVote2: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		return
+	}
+	voter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSWerewolfEndVote2: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if voter.Team != "werewolf" {
+		sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		return
+	}
+
+	var werewolves []Player
+	db.Select(&werewolves, `
+		SELECT g.rowid as id, g.player_id as player_id, p.name as name
+		FROM game_player g
+		JOIN player p ON g.player_id = p.rowid
+		JOIN role r ON g.role_id = r.rowid
+		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+
+	var totalActed2 int
+	db.Get(&totalActed2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfKill2)
+
+	if totalActed2 < len(werewolves) {
+		sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted for the second kill yet (%d/%d)", totalActed2, len(werewolves)))
+		return
+	}
+
+	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
+		game.ID, game.Round, client.playerID, ActionWerewolfEndVote2, VisibilityTeamWerewolf)
+	if err != nil {
+		logError("handleWSWerewolfEndVote2: record end vote 2", err)
+	}
+
+	log.Printf("Werewolf %d (%s) ended the second kill vote", client.playerID, voter.Name)
 	resolveWerewolfVotes(game)
 }
 
@@ -929,14 +1139,24 @@ func resolveWerewolfVotes(game *Game) {
 
 	log.Printf("Werewolf vote check: %d werewolves, %d votes", len(werewolves), len(votes))
 
-	// Check if all werewolves have voted
+	// Check if all werewolves have voted or passed
 	if len(votes) < len(werewolves) {
 		log.Printf("Not all werewolves have voted yet (%d/%d)", len(votes), len(werewolves))
 		broadcastGameUpdate()
 		return
 	}
 
-	// Count votes for each target
+	// Check if End Vote has been pressed — don't resolve until one wolf locks it in
+	var endVoteCount int
+	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		game.ID, game.Round, ActionWerewolfEndVote)
+	if endVoteCount == 0 {
+		log.Printf("Werewolves have all voted but End Vote not pressed yet")
+		broadcastGameUpdate()
+		return
+	}
+
+	// Count votes for each target (NULL = pass, excluded from counts)
 	voteCounts := make(map[int64]int)
 	for _, v := range votes {
 		if v.TargetPlayerID != nil {
@@ -955,11 +1175,11 @@ func resolveWerewolfVotes(game *Game) {
 	}
 
 	// Check for majority (more than half of werewolves)
+	// If no majority (all passed or split), victim = 0 (no kill) — proceed to check other night roles
 	majority := len(werewolves)/2 + 1
 	if maxVotes < majority {
-		log.Printf("No majority reached yet (need %d, max is %d)", majority, maxVotes)
-		broadcastGameUpdate()
-		return
+		log.Printf("No majority reached (need %d, max is %d) — no kill this night", majority, maxVotes)
+		victim = 0
 	}
 
 	// Check if Wolf Cub died last round → double kill required
@@ -992,6 +1212,15 @@ func resolveWerewolfVotes(game *Game) {
 			return
 		}
 
+		var endVote2Count int
+		db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+			game.ID, game.Round, ActionWerewolfEndVote2)
+		if endVote2Count == 0 {
+			log.Printf("Wolf Cub double kill: End Vote 2 not pressed yet")
+			broadcastGameUpdate()
+			return
+		}
+
 		voteCounts2 := make(map[int64]int)
 		for _, v := range votes2 {
 			if v.TargetPlayerID != nil {
@@ -1006,9 +1235,8 @@ func resolveWerewolfVotes(game *Game) {
 			}
 		}
 		if maxVotes2 < majority {
-			log.Printf("Wolf Cub double kill: no majority for second victim yet (need %d, max is %d)", majority, maxVotes2)
-			broadcastGameUpdate()
-			return
+			log.Printf("Wolf Cub double kill: no majority for second victim (need %d, max is %d) — no second kill", majority, maxVotes2)
+			victim2 = 0
 		}
 	}
 
@@ -1106,6 +1334,48 @@ func resolveWerewolfVotes(game *Game) {
 			broadcastGameUpdate()
 			return
 		}
+	}
+
+	// No kill this night (wolves passed or no majority) — skip to witch poison + day
+	if victim == 0 {
+		log.Printf("No werewolf kill this night (wolves passed or no majority)")
+		var nightKillsNoVictim []int64
+		// Still apply Wolf Cub second kill if active and voted
+		if wolfCubDoubleKill && victim2 != 0 {
+			var protect2Count int
+			db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
+				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+			var victim2Name string
+			db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+			if protect2Count > 0 {
+				log.Printf("Protection saved %s from Wolf Cub double kill", victim2Name)
+			} else {
+				db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim2)
+				log.Printf("Wolf Cub double kill: werewolves killed %s", victim2Name)
+				nightKillsNoVictim = append(nightKillsNoVictim, victim2)
+			}
+		}
+		// Apply Witch poison
+		var witchKillActionNoVictim GameAction
+		if wkErr := db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
+			db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, *witchKillActionNoVictim.TargetPlayerID)
+			var poisonName string
+			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
+			log.Printf("Witch poisoned %s", poisonName)
+			nightKillsNoVictim = append(nightKillsNoVictim, *witchKillActionNoVictim.TargetPlayerID)
+		}
+		applyHeartbreaks(game, "night", nightKillsNoVictim)
+		_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
+		if err != nil {
+			logError("resolveWerewolfVotes: transition to day (no kill)", err)
+			return
+		}
+		log.Printf("Night %d ended (no wolf kill), transitioning to day", game.Round)
+		if checkWinConditions(game) {
+			return
+		}
+		broadcastGameUpdate()
+		return
 	}
 
 	// Check if the victim is protected by any Doctor

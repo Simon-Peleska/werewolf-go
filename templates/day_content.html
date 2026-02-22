@@ -42,9 +42,10 @@
     <section>
         <h3>Vote to Eliminate</h3>
         {{if .IsAlive}}
-        <p><small>Choose a player to eliminate. Majority vote required.</small></p>
+        <p><small>Choose a player to eliminate, or pass. Majority vote required. When everyone has acted, end the vote.</small></p>
 
         {{$currentVote := .CurrentVote}}
+        {{$hasVoted := .HasVoted}}
         {{range .AliveTargets}}
         <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="day_vote">
@@ -54,6 +55,22 @@
             </button>
         </form>
         {{end}}
+        <form ws-send id="day-pass-form" class="vote-form">
+            <input type="hidden" name="action" value="day_pass">
+            <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">
+                Pass
+            </button>
+        </form>
+
+        {{if .AllActed}}
+        <form ws-send id="day-end-vote-form">
+            <input type="hidden" name="action" value="day_end_vote">
+            <button type="submit" id="day-end-vote-btn" class="contrast">End Vote</button>
+        </form>
+        {{else}}
+        <p id="day-end-vote-waiting"><small><em>Waiting for all players to vote or pass...</em></small></p>
+        {{end}}
+
         {{else}}
         <p><em>You are dead and cannot vote.</em></p>
         {{end}}
@@ -62,7 +79,7 @@
         <h3>Current Votes</h3>
         <ul id="day-vote-list" class="vote-list">
             {{range .Votes}}
-            <li>{{.VoterName}} voted for {{if .TargetName}}{{.TargetName}}{{else}}<em>undecided</em>{{end}}</li>
+            <li>{{.VoterName}} voted for {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
             {{end}}
         </ul>
         {{end}}

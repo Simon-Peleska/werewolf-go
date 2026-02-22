@@ -147,19 +147,21 @@ type GameAction struct {
 
 // Action types
 const (
-	ActionWerewolfKill    = "werewolf_kill"
-	ActionDayVote         = "day_vote"
-	ActionElimination     = "elimination"
-	ActionSeerInvestigate = "seer_investigate"
-	ActionDoctorProtect   = "doctor_protect"
-	ActionGuardProtect    = "guard_protect"
-	ActionHunterRevenge   = "hunter_revenge"
-	ActionWitchHeal       = "witch_heal"
-	ActionWitchKill       = "witch_kill"
-	ActionWitchPass       = "witch_pass"
-	ActionWerewolfKill2   = "werewolf_kill_2"  // second kill on Wolf Cub death night
-	ActionCupidLink       = "cupid_link"       // tracks Cupid's step-1 lover choice (Night 1 only)
-	ActionLoverHeartbreak = "lover_heartbreak" // partner dies of heartbreak when their lover is killed
+	ActionWerewolfKill     = "werewolf_kill"
+	ActionDayVote          = "day_vote"
+	ActionElimination      = "elimination"
+	ActionSeerInvestigate  = "seer_investigate"
+	ActionDoctorProtect    = "doctor_protect"
+	ActionGuardProtect     = "guard_protect"
+	ActionHunterRevenge    = "hunter_revenge"
+	ActionWitchHeal        = "witch_heal"
+	ActionWitchKill        = "witch_kill"
+	ActionWitchPass        = "witch_pass"
+	ActionWerewolfKill2    = "werewolf_kill_2"     // second kill on Wolf Cub death night
+	ActionCupidLink        = "cupid_link"          // tracks Cupid's step-1 lover choice (Night 1 only)
+	ActionLoverHeartbreak  = "lover_heartbreak"    // partner dies of heartbreak when their lover is killed
+	ActionWerewolfEndVote  = "werewolf_end_vote"   // one wolf presses End Vote to lock in first kill
+	ActionWerewolfEndVote2 = "werewolf_end_vote_2" // one wolf presses End Vote to lock in second kill (Wolf Cub)
 )
 
 // Visibility types

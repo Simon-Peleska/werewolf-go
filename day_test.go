@@ -30,6 +30,10 @@ func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
 			// Click and wait for WebSocket response
 			tp.clickElementAndWait(btn)
 			tp.logHTML("after day voting for " + targetName)
+			// Auto-press End Vote if all players have now voted
+			if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn"); has {
+				tp.clickElementAndWait(endVoteBtn)
+			}
 			return
 		}
 	}

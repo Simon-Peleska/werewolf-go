@@ -115,6 +115,10 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 			// Click and wait for WebSocket response
 			tp.clickElementAndWait(btn)
 			tp.logHTML("after voting for " + targetName)
+			// Auto-press End Vote if all werewolves have now voted
+			if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn"); has {
+				tp.clickElementAndWait(endVoteBtn)
+			}
 			return
 		}
 	}
@@ -538,17 +542,22 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 	ctx.logger.Debug("Werewolves: %s, %s", werewolves[0].Name, werewolves[1].Name)
 	ctx.logger.Debug("Villagers: %s, %s", villagers[0].Name, villagers[1].Name)
 
-	// Werewolves vote for different targets
+	// Werewolves vote for different targets — second vote triggers End Vote auto-press
 	werewolves[0].voteForPlayer(villagers[0].Name)
 	werewolves[1].voteForPlayer(villagers[1].Name)
 
-	ctx.logger.LogDB("after split vote")
+	ctx.logger.LogDB("after split vote + End Vote")
 
-	// Should still be in night (no majority for either target)
+	// Split vote resolves as no kill — should transition to day with no death announcement
+	if !werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: did not transition to day after split vote End Vote")
+		t.Error("Should transition to day after End Vote with split vote (no kill)")
+	}
 
-	if werewolves[0].isInDayPhase() {
-		ctx.logger.LogDB("FAIL: transitioned to day on split vote")
-		t.Error("Should NOT transition to day when votes are split")
+	has, _, _ := werewolves[0].p().Has("#no-death-message")
+	if !has {
+		ctx.logger.LogDB("FAIL: no 'no death' message shown")
+		t.Error("Should show 'no one died' message when split vote results in no kill")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1095,6 +1104,9 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 			break
 		}
 	}
+	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
+		werewolf.clickElementAndWait(endVote2Btn)
+	}
 
 	// Should transition to day 2 with 2 victims
 	if !werewolf.isInDayPhase() {
@@ -1206,6 +1218,9 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 			werewolf.clickElementAndWait(btn)
 			break
 		}
+	}
+	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
+		werewolf.clickElementAndWait(endVote2Btn)
 	}
 
 	// Witch should see both victims listed
@@ -1333,6 +1348,9 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 			werewolf.clickElementAndWait(btn)
 			break
 		}
+	}
+	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
+		werewolf.clickElementAndWait(endVote2Btn)
 	}
 
 	// Day 2: two victims announced
