@@ -28,15 +28,14 @@
   {{end}}
 
   {{ $self := .Player }}
+  {{ $loverID := .LoverPartnerID }}
   <section>
     <h3>All Players</h3>
     <ul id="player-list" class="player-list">
       {{range .Players}}
       <li class="{{if not .IsAlive}}dead-player{{end}}">
         <span class="player-db-id" hidden>{{.ID}}</span>
-        {{if
-        and (eq .Team "werewolf") (or (eq $self.Team "werewolf") (not .IsAlive))
-        }}🐺 {{end}}{{.Name}}{{if not .IsAlive}} <span id="is-dead-{{.ID}}">💀</span> ({{.RoleName}}){{end}}
+        {{if and (eq .Team "werewolf") (or (eq $self.Team "werewolf") (not .IsAlive))}}🐺 {{end}}{{if and (ne $loverID 0) (eq .PlayerID $loverID)}}<span id="lover-of-{{$loverID}}">💞</span> {{end}}{{.Name}}{{if not .IsAlive}} <span id="is-dead-{{.ID}}">💀</span> ({{.RoleName}}){{end}}
       </li>
       {{end}}
     </ul>

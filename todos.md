@@ -1,17 +1,11 @@
 # Todos
-- implement special characters
-  - [x] Seer
-  - [x] Doctor
-  - [x] Guard
-  - [x] Witch
-  - [x] Hunter
-  - [ ] Cupid
-  - [x] Mason
-  - [x] Wolf Cub
 - styling
   - change color scheme
   - make colorscheme change during the night
   - add icons
+- add sidebar lover icon
+- add werwolf icon if seer has already asked for a certain character and found a werewolf
+- 
 - add ai storyteller
 - deploy on host provider
 - create nix flake for setup build and testing 

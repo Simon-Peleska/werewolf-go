@@ -1356,19 +1356,21 @@ func (tp *TestPlayer) canSeeCupidUI() bool {
 	return strings.Contains(html, "Link Two Lovers")
 }
 
-// canSeeLoverInfo checks if the player can see their lover info
-func (tp *TestPlayer) canSeeLoverInfo() bool {
-	found, _, err := tp.p().Has("#lover-info")
-	return err == nil && found
-}
-
-// getLoverInfo returns the lover info text
+// getLoverInfo returns the sidebar player entry text for the viewer's lover.
+// The entry is identified by a span with id "lover-of-{partnerID}".
+// Returns "" if no lover is visible in the sidebar.
 func (tp *TestPlayer) getLoverInfo() string {
-	el, err := tp.p().Element("#lover-info")
+	lis, err := tp.p().Elements("#player-list li")
 	if err != nil {
 		return ""
 	}
-	return el.MustText()
+	for _, li := range lis {
+		found, _, _ := li.Has("span[id^='lover-of-']")
+		if found {
+			return strings.TrimSpace(li.MustText())
+		}
+	}
+	return ""
 }
 
 // cupidPickLover clicks the cupid button to pick a lover
@@ -1460,24 +1462,18 @@ func TestCupidLinksLovers(t *testing.T) {
 		t.Fatal("Night should resolve after Cupid links lovers")
 	}
 
-	// Both lovers should see each other's identity on the day page
-	if !lover1.canSeeLoverInfo() {
-		t.Errorf("Lover1 (%s) should see lover info", lover1.Name)
-	}
-	if !lover2.canSeeLoverInfo() {
-		t.Errorf("Lover2 (%s) should see lover info", lover2.Name)
-	}
+	// Both lovers should see each other's name in the sidebar player list (💞 indicator)
 	if !strings.Contains(lover1.getLoverInfo(), lover2.Name) {
-		t.Errorf("Lover1 should see Lover2's name, got: %s", lover1.getLoverInfo())
+		t.Errorf("Lover1 (%s) should see Lover2's name in sidebar, got: %s", lover1.Name, lover1.getLoverInfo())
 	}
 	if !strings.Contains(lover2.getLoverInfo(), lover1.Name) {
-		t.Errorf("Lover2 should see Lover1's name, got: %s", lover2.getLoverInfo())
+		t.Errorf("Lover2 (%s) should see Lover1's name in sidebar, got: %s", lover2.Name, lover2.getLoverInfo())
 	}
 
-	// Non-lovers should NOT see lover info
+	// Non-lovers should NOT see the 💞 indicator
 	for _, w := range werewolves {
-		if w.canSeeLoverInfo() {
-			t.Errorf("Non-lover werewolf (%s) should not see lover info", w.Name)
+		if w.getLoverInfo() != "" {
+			t.Errorf("Non-lover werewolf (%s) should not see lover info, got: %s", w.Name, w.getLoverInfo())
 		}
 	}
 

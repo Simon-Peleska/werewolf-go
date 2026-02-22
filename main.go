@@ -63,9 +63,10 @@ func broadcastGameUpdate() {
 		var charBuf bytes.Buffer
 
 		data := SidebarData{
-			Player:  &p,
-			Players: players,
-			Game:    game,
+			Player:         &p,
+			Players:        players,
+			Game:           game,
+			LoverPartnerID: getLoverPartner(game.ID, p.PlayerID),
 		}
 
 		templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
@@ -200,9 +201,10 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 }
 
 type SidebarData struct {
-	Player  *Player
-	Players []Player
-	Game    *Game
+	Player         *Player
+	Players        []Player
+	Game           *Game
+	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 }
 
 func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
@@ -238,9 +240,10 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := SidebarData{
-		Player:  &player,
-		Players: players,
-		Game:    game,
+		Player:         &player,
+		Players:        players,
+		Game:           game,
+		LoverPartnerID: getLoverPartner(game.ID, playerID),
 	}
 
 	templates.ExecuteTemplate(w, "sidebar.html", data)

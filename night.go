@@ -571,6 +571,10 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
 			game.ID, targetID, ActionCupidLink, firstLoverID, VisibilityActor, desc2)
 
+		// Notify each lover via toast
+		hub.sendToPlayer(firstLoverID, []byte(renderToast("info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", target.Name))))
+		hub.sendToPlayer(targetID, []byte(renderToast("info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", firstLoverName))))
+
 		log.Printf("Cupid '%s' linked lovers: '%s' and '%s'", cupid.Name, firstLoverName, target.Name)
 		DebugLog("handleWSCupidChoose", "Cupid '%s' linked '%s' and '%s'", cupid.Name, firstLoverName, target.Name)
 		LogDBState("after cupid links lovers")
