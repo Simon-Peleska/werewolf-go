@@ -32,7 +32,7 @@
                 <input type="hidden" name="action" value="update_role">
                 <input type="hidden" name="role_id" value="{{.Role.ID}}">
                 <input type="hidden" name="delta" value="1">
-                <button type="submit" id="btn-add-{{.Role.ID}}">+</button>
+                <button type="submit" id="btn-add-{{.Role.ID}}" {{if ge $.TotalRoles $.PlayerCount}}disabled{{end}}>+</button>
             </form>
             <span class="role-name">
                 <strong>{{.Role.Name}}</strong>
