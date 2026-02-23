@@ -163,6 +163,7 @@ const (
 	ActionWerewolfEndVote  = "werewolf_end_vote"   // one wolf presses End Vote to lock in first kill
 	ActionWerewolfEndVote2 = "werewolf_end_vote_2" // one wolf presses End Vote to lock in second kill (Wolf Cub)
 	ActionNightKill        = "night_kill"          // public death record inserted when any player dies at night
+	ActionStory            = "story"               // AI-generated story shown in history after deaths
 )
 
 // Visibility types

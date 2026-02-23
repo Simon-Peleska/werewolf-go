@@ -176,6 +176,10 @@ if [[ -n "$LOG_REQUESTS" || -n "$LOG_HTML" || -n "$LOG_DB" || -n "$LOG_WS" || -n
     echo ""
 fi
 
+# AI Storyteller configuration
+export STORYTELLER_PROVIDER="claude"
+export STORYTELLER_MODEL="claude-sonnet-4-6"
+
 # Start server in background
 echo "Starting server with timeout ${TIMEOUT}s..."
 echo "Arguments: ${ARGS[*]}"

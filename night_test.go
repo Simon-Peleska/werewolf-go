@@ -1768,6 +1768,58 @@ func TestLoversWinCondition(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func TestAIStoryteller(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	// Enable mock storyteller for this test; restore nil afterwards
+	storyText := "The village wept in silence."
+	globalStoryteller = &mockStoryteller{text: storyText}
+	defer func() { globalStoryteller = nil }()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// 1 werewolf + 2 villagers
+	var players []*TestPlayer
+	for _, name := range []string{"ST1", "ST2", "ST3"} {
+		players = append(players, browser.signupPlayer(ctx.baseURL, name))
+	}
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].startGame()
+
+	werewolves, villagers := findPlayersByRole(players)
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+
+	target := villagers[0]
+	watcher := villagers[1]
+
+	// Werewolf kills target (voteForPlayer auto-presses End Vote)
+	werewolves[0].voteForPlayer(target.Name)
+
+	// Wait for the async AI story to appear in the watcher's history
+	err := watcher.waitUntilCondition(
+		fmt.Sprintf(`() => { const h = document.querySelector('#history-bar'); return h && h.textContent.includes(%q); }`, storyText),
+		"AI story appears in history",
+	)
+	if err != nil {
+		ctx.logger.LogDB("FAIL: AI story not in history")
+		t.Errorf("AI story did not appear in history: %v", err)
+	}
+
+	// Story is public — werewolf should see it too
+	if !werewolves[0].historyContains(storyText) {
+		t.Errorf("Werewolf cannot see AI story in history")
+	}
+
+	ctx.logger.Debug("=== TestAIStoryteller passed ===")
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a

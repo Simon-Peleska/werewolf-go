@@ -1526,5 +1526,6 @@ func resolveWerewolfVotes(game *Game) {
 		return
 	}
 
+	maybeGenerateStory(game.ID, game.Round, "night", victim)
 	broadcastGameUpdate()
 }

@@ -289,6 +289,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./night.go` | Night phase: werewolf voting, seer investigation, doctor/guard protection, vote resolution |
 | `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
 | `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
+| `./storyteller.go` | AI storyteller: Storyteller interface, Ollama/OpenAI backends, streaming story generation |
 | `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
 
 ### Test Files (Feature-Specific Tests)
@@ -322,20 +323,20 @@ Test files are organized by feature and contain all tests and helpers for that f
 - all frontend dependencies shoud be minified and locally served
   - backend
     - packages in the go standard library
-    - sqlite
-    - sqlx
-    - gorilla websockets
+    - sqlite github.com/mattn/go-sqlite3
+    - sqlx https://github.com/launchbadge/sqlx
+    - gorilla websockets https://github.com/gorilla/websocket
+    - langchaingo https://github.com/tmc/langchaingo
   - frontend
-    - htmx
-    - htmx ideomorph extension
-    - htmx Web Socket extension
-    - Pico.css
+    - htmx https://github.com/bigskysoftware/htmx
+    - htmx ideomorph extension https://github.com/bigskysoftware/idiomorph/blob/main/src/idiomorph-htmx.js
+    - htmx Web Socket extension https://github.com/bigskysoftware/htmx-extensions/tree/main/src/ws
+    - Pico.css https://github.com/picocss/pico
     - Metal Mania Google Font https://fonts.google.com/specimen/Metal+Mania
     - IM Fell Great Primer Google font https://fonts.google.com/specimen/IM+Fell+Great+Primer
   - testing
-    - go-rod
+    - go-rod github.com/go-rod/rod
 
-## Coding style
 You are a senior developer with many years of hard-won experience. You think like "grug brain developer": you are pragmatic, humble, and deeply suspicious of unnecessary complexity. You write code that works, is readable, and is maintainable by normal humans — not just the person who wrote it.
 
 ### Core Philosophy

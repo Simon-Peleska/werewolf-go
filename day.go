@@ -320,6 +320,7 @@ func resolveDayVotes(game *Game) {
 	}
 	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
+	maybeGenerateStory(game.ID, game.Round, "day", eliminatedID)
 
 	// Apply heartbreak from day elimination — chains across multiple lover pairs
 	heartbroken := applyHeartbreaks(game, "day", []int64{eliminatedID})
@@ -426,6 +427,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	log.Printf("Hunter '%s' took revenge on '%s'", hunter.Name, target.Name)
 	DebugLog("handleWSHunterRevenge", "Hunter '%s' shot '%s'", hunter.Name, target.Name)
 	LogDBState("after hunter revenge")
+	maybeGenerateStory(game.ID, game.Round, "day", targetID)
 
 	// Apply heartbreak from Hunter's shot — chains across multiple lover pairs
 	heartbroken := applyHeartbreaks(game, "day", []int64{targetID})

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -592,6 +593,9 @@ func newTestContext(t *testing.T) *TestContext {
 	if dbErr != nil {
 		t.Fatalf("Failed to connect to test database: %v", dbErr)
 	}
+
+	// Disable AI storyteller in tests by default (individual tests may override)
+	globalStoryteller = nil
 
 	// Set globals temporarily for initDB
 	db = testDB
@@ -1303,4 +1307,17 @@ func (tp *TestPlayer) getHistoryText() string {
 // historyContains returns true if the history bar contains the given substring.
 func (tp *TestPlayer) historyContains(text string) bool {
 	return strings.Contains(tp.getHistoryText(), text)
+}
+
+// mockStoryteller is a test double for the Storyteller interface.
+// It returns a fixed story text without calling any LLM.
+type mockStoryteller struct {
+	text string
+}
+
+func (m *mockStoryteller) Tell(_ context.Context, _ []string, onChunk func(string)) (string, error) {
+	if onChunk != nil {
+		onChunk(m.text)
+	}
+	return m.text, nil
 }

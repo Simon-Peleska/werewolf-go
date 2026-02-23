@@ -1115,6 +1115,8 @@ func main() {
 
 	LogDBState("after initDB")
 
+	initStoryteller()
+
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
 	}

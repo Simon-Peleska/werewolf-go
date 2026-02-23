@@ -416,7 +416,7 @@
   <div id="toast-container"></div>
   <input type="checkbox" id="sidebar-nav-toggle" hidden>
   <input type="checkbox" id="history-bar-nav-toggle" hidden>
-  <main class="layout" >
+  <main class="layout">
     <header class="topbar">
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">
         ☰
@@ -429,13 +429,15 @@
         H
       </label>
     </header>
-    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="morph">
+    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="innerHTML" hx-swap-oob="true">
     </aside>
     <section class="container">
-      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="morph">
+      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="innerHTML"
+        hx-swap-oob="true">
       </div>
     </section>
-    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="morph">
+    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="innerHTML"
+      hx-swap-oob="true">
     </aside>
   </main>
   <script>
@@ -462,6 +464,54 @@
       toast.addEventListener('mouseleave', startTimer);
       startTimer();
     }
+  const scrollStateMap = new Map();
+
+  // Save scroll state before swap
+  document.body.addEventListener("htmx:beforeSwap", (e) => {
+    const target = e.detail.target;
+    if (!target) return;
+
+    // Only track scrollable elements
+    if (target.scrollTop !== undefined) {
+      scrollStateMap.set(target, {
+        scrollTop: target.scrollTop,
+        scrollLeft: target.scrollLeft
+      });
+    }
+
+    // Save window scroll
+    scrollStateMap.set(window, {
+      scrollTop: window.scrollY,
+      scrollLeft: window.scrollX
+    });
+  });
+
+  // Restore scroll state after swap
+  document.body.addEventListener("htmx:afterSwap", (e) => {
+    requestAnimationFrame(() => {
+      // Restore scrollable element
+      for (const [el, pos] of scrollStateMap) {
+        if (el === window) {
+          window.scrollTo(pos.scrollLeft, pos.scrollTop);
+        } else if (document.body.contains(el)) {
+          el.scrollTop = pos.scrollTop;
+          el.scrollLeft = pos.scrollLeft;
+        } else {
+          // If the old element is gone, try to find its replacement by ID
+          if (el.id) {
+            const replacement = document.getElementById(el.id);
+            if (replacement) {
+              replacement.scrollTop = pos.scrollTop;
+              replacement.scrollLeft = pos.scrollLeft;
+            }
+          }
+        }
+      }
+
+      // Clear saved scroll state
+      scrollStateMap.clear();
+    });
+  });
 
     // Initialize existing toasts and watch for new ones
     document.querySelectorAll('[data-toast]').forEach(initToast);
@@ -472,11 +522,11 @@
           if (node.nodeType === 1) {
             if (node.hasAttribute('data-toast')) {
               initToast(node);
-              if (node.hasAttribute('data-sound')) { playSound(); }
+              if (node.hasAttribute('data-sound')) {playSound();}
             }
-            node.querySelectorAll('[data-toast]').forEach(function(t) {
+            node.querySelectorAll('[data-toast]').forEach(function (t) {
               initToast(t);
-              if (t.hasAttribute('data-sound')) { playSound(); }
+              if (t.hasAttribute('data-sound')) {playSound();}
             });
           }
         });
@@ -499,7 +549,7 @@
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.7);
-      } catch (e) {}
+      } catch (e) { }
       if (navigator.vibrate) {
         navigator.vibrate([150, 80, 150]);
       }
