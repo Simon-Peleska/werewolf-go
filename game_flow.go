@@ -82,6 +82,72 @@ func checkWinConditions(game *Game) bool {
 	return false
 }
 
+// handleWSNewGame resets the game: creates a new lobby game with the same role counts,
+// cleans up the finished game, and puts all connected players into the new lobby.
+func handleWSNewGame(client *Client) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSNewGame: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "finished" {
+		log.Printf("Cannot start new game: game status is '%s', expected 'finished'", game.Status)
+		sendErrorToast(client.playerID, "Game is not finished yet")
+		return
+	}
+
+	// Save role configs from the finished game
+	var roleConfigs []GameRoleConfig
+	err = db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
+	if err != nil {
+		logError("handleWSNewGame: db.Select roleConfigs", err)
+		sendErrorToast(client.playerID, "Failed to get role config")
+		return
+	}
+
+	// Create new lobby game
+	result, err := db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
+	if err != nil {
+		logError("handleWSNewGame: create new game", err)
+		sendErrorToast(client.playerID, "Failed to create new game")
+		return
+	}
+	newGameID, _ := result.LastInsertId()
+
+	// Copy role configs to new game
+	for _, rc := range roleConfigs {
+		_, err = db.Exec("INSERT INTO game_role_config (game_id, role_id, count) VALUES (?, ?, ?)", newGameID, rc.RoleID, rc.Count)
+		if err != nil {
+			logError("handleWSNewGame: copy role config", err)
+		}
+	}
+
+	// Delete the old game and all its associated data
+	oldGameID := game.ID
+	db.Exec("DELETE FROM game_action WHERE game_id = ?", oldGameID)
+	db.Exec("DELETE FROM game_lovers WHERE game_id = ?", oldGameID)
+	db.Exec("DELETE FROM game_role_config WHERE game_id = ?", oldGameID)
+	db.Exec("DELETE FROM game_player WHERE game_id = ?", oldGameID)
+	db.Exec("DELETE FROM game WHERE rowid = ?", oldGameID)
+
+	// Add all currently connected players to the new lobby
+	playerIDs := hub.connectedPlayerIDs()
+	for _, pid := range playerIDs {
+		_, err = db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", newGameID, pid)
+		if err != nil {
+			logError("handleWSNewGame: add player to new game", err)
+		}
+	}
+
+	log.Printf("New game %d created (replaced game %d), %d players added to lobby, %d role configs copied",
+		newGameID, oldGameID, len(playerIDs), len(roleConfigs))
+	LogDBState("after new game created")
+
+	broadcastGameUpdate()
+}
+
 // endGame marks the game as finished with a winner
 func endGame(game *Game, winner string) {
 	_, err := db.Exec("UPDATE game SET status = 'finished' WHERE rowid = ?", game.ID)

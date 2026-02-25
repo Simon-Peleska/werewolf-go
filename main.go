@@ -440,6 +440,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSCupidChoose(client, msg)
 	case "night_survey":
 		handleWSNightSurvey(client, msg)
+	case "new_game":
+		handleWSNewGame(client)
 	default:
 		log.Printf("Unknown action: %s for player %d (%s) in game %d (status: %s)", msg.Action, client.playerID, playerName, game.ID, game.Status)
 	}

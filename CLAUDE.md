@@ -395,6 +395,13 @@ You are a senior developer with many years of hard-won experience. You think lik
 - When you find a bug: write a regression test *first*, then fix it.
 - Write your test local to the functionality you are testing
 
+### go-rod (browser automation) patterns
+- Always select by ID (`#my-id`) for unique elements; use attribute selectors (`[name='...']`) only for form fields without IDs
+- Select dropdown by visible option text: `MustElement("select[name='...']").MustSelect(optionText)`
+- Type into textarea: `MustElement("textarea[name='...']").MustInput(text)`
+- `Page.Element()` BLOCKS up to 30s — use `Page.Has()` for non-blocking "current state" checks
+- Disabled buttons are NOT test-safe: go-rod `.click()` fires on disabled elements; always add server-side validation too
+
 ### Logging
 - Log generously.
 - Log all major branches, all important decisions.

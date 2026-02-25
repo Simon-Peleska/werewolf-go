@@ -337,6 +337,62 @@ func TestWerewolvesWinByEliminatingVillagers(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func TestNewGameReturnsToLobbyWithSameRoles(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing new game returns to lobby with same role counts ===")
+
+	// Setup: 3 villagers, 1 werewolf (role config: Villager×3, Werewolf×1)
+	// After night kill: villagers[0] is dead; alive = villagers[1], villagers[2], werewolves[0]
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	// Vote out the werewolf → villagers win
+	villagers[1].dayVoteForPlayer(werewolves[0].Name)
+	villagers[2].dayVoteForPlayer(werewolves[0].Name)
+	werewolves[0].dayVoteForPlayer(villagers[1].Name)
+
+	ctx.logger.LogDB("after winning vote")
+
+	if !villagers[1].isGameFinished() {
+		t.Fatal("Game should be finished after eliminating the last werewolf")
+	}
+
+	// "Play Again" button should be visible
+	if has, _, _ := villagers[1].p().Has("#btn-new-game"); !has {
+		t.Fatal("Play Again button should be visible on the finished screen")
+	}
+
+	// Click "Play Again" — sends new_game action, server broadcasts lobby update to all players
+	villagers[1].clickAndWait("#btn-new-game")
+	ctx.logger.LogDB("after play again click")
+
+	// All connected players should now see the lobby
+	allPlayers := []*TestPlayer{villagers[0], villagers[1], villagers[2], werewolves[0]}
+	for _, p := range allPlayers {
+		err := p.waitUntilCondition(`() => document.querySelector('#btn-start') !== null`, "lobby loaded")
+		if err != nil {
+			ctx.logger.LogDB("FAIL: player not in lobby")
+			t.Errorf("Player %s should be in lobby after new game: %v", p.Name, err)
+		}
+	}
+
+	// Role counts must be preserved: Villager=3, Werewolf=1
+	if count := villagers[1].getRoleCountByID(RoleVillager); count != "3" {
+		ctx.logger.LogDB("FAIL: wrong villager count")
+		t.Errorf("Expected Villager count 3 in new lobby, got %q", count)
+	}
+	if count := villagers[1].getRoleCountByID(RoleWerewolf); count != "1" {
+		ctx.logger.LogDB("FAIL: wrong werewolf count")
+		t.Errorf("Expected Werewolf count 1 in new lobby, got %q", count)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 func TestNoEliminationOnTiedVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()

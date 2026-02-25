@@ -149,6 +149,21 @@ func (h *Hub) run() {
 	}
 }
 
+// connectedPlayerIDs returns the set of unique player IDs with active WebSocket connections.
+func (h *Hub) connectedPlayerIDs() []int64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := make(map[int64]bool)
+	var ids []int64
+	for _, client := range h.clients {
+		if !seen[client.playerID] {
+			seen[client.playerID] = true
+			ids = append(ids, client.playerID)
+		}
+	}
+	return ids
+}
+
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Capture globals at entry to avoid race conditions in parallel tests
 	currentDB := db
