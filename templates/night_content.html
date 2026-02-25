@@ -257,6 +257,35 @@
         <p>Close your eyes and wait for morning.</p>
         {{end}}
 
+        {{if .ShowSurvey}}
+        <hr>
+        <section class="night-survey">
+            <h3>Your Thoughts</h3>
+            {{if .HasSubmittedSurvey}}
+            <p id="survey-waiting"><em>Waiting for {{subtract .AliveCount .SurveyCount}} more player(s)...</em></p>
+            {{else}}
+            <form ws-send id="night-survey-form">
+                <input type="hidden" name="action" value="night_survey">
+                <label>Who do you think is a Werewolf?
+                    <select name="suspect_player_id">
+                        <option value="0">— no suspicion —</option>
+                        {{range .SurveyTargets}}
+                        <option value="{{.PlayerID}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label>How do you think the victim died?
+                    <input type="text" name="death_theory" placeholder="(optional)">
+                </label>
+                <label>Notes
+                    <textarea name="notes" placeholder="(optional)"></textarea>
+                </label>
+                <button type="submit">Continue →</button>
+            </form>
+            {{end}}
+        </section>
+        {{end}}
+
         {{end}}
     </section>
 </div>

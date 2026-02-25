@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 )
 
 // WerewolfVote represents a werewolf's vote during the night
@@ -56,16 +57,21 @@ type NightData struct {
 	IsMason              bool
 	Masons               []Player // Other alive Masons (excluding self)
 	IsCupid              bool
-	CupidChosen1ID       int64  // 0 if not chosen yet
-	CupidChosen1         string // name of first lover
-	CupidChosen2ID       int64  // 0 if not chosen yet
-	CupidChosen2         string // name of second lover
-	IsLover              bool   // is this player one of the two lovers?
-	LoverName            string // name of their partner
-	AllWolvesActed       bool   // all werewolves have voted or passed (first kill)
-	AllWolvesActed2      bool   // all werewolves have voted or passed (Wolf Cub second kill)
-	WolfEndVoted         bool   // End Vote pressed for first kill this round
-	WolfEndVoted2        bool   // End Vote pressed for Wolf Cub second kill
+	CupidChosen1ID       int64    // 0 if not chosen yet
+	CupidChosen1         string   // name of first lover
+	CupidChosen2ID       int64    // 0 if not chosen yet
+	CupidChosen2         string   // name of second lover
+	IsLover              bool     // is this player one of the two lovers?
+	LoverName            string   // name of their partner
+	AllWolvesActed       bool     // all werewolves have voted or passed (first kill)
+	AllWolvesActed2      bool     // all werewolves have voted or passed (Wolf Cub second kill)
+	WolfEndVoted         bool     // End Vote pressed for first kill this round
+	WolfEndVoted2        bool     // End Vote pressed for Wolf Cub second kill
+	ShowSurvey           bool     // player has finished their role action, show survey
+	HasSubmittedSurvey   bool     // this player already pressed Continue
+	SurveyCount          int      // how many alive players have submitted the survey
+	AliveCount           int      // total alive players (for "waiting for N more" display)
+	SurveyTargets        []Player // alive players for the suspect dropdown
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
@@ -1110,6 +1116,191 @@ func handleWSWitchPass(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+// playerDoneWithNightAction returns true if the given player has completed their night role action
+// and the survey should be shown to them.
+func playerDoneWithNightAction(gameID int64, round int, player Player) bool {
+	switch player.RoleName {
+	case "Villager", "Mason", "Hunter":
+		return true // no night action
+	case "Seer":
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			gameID, round, player.PlayerID, ActionSeerInvestigate)
+		return c > 0
+	case "Doctor":
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			gameID, round, player.PlayerID, ActionDoctorProtect)
+		return c > 0
+	case "Guard":
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			gameID, round, player.PlayerID, ActionGuardProtect)
+		return c > 0
+	case "Witch":
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type IN (?, ?, ?)`,
+			gameID, round, player.PlayerID, ActionWitchHeal, ActionWitchKill, ActionWitchPass)
+		return c > 0
+	case "Werewolf", "Wolf Cub":
+		// Survey available after End Vote is pressed (any wolf)
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+			gameID, round, ActionWerewolfEndVote)
+		if c == 0 {
+			return false
+		}
+		// If Wolf Cub double kill is active this round, also require End Vote 2
+		if round > 1 {
+			var wolfCubDeathCount int
+			db.Get(&wolfCubDeathCount, `
+				SELECT COUNT(*) FROM game_action ga
+				JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
+				JOIN role r ON gp.role_id = r.rowid
+				WHERE ga.game_id = ? AND ga.round = ?
+				AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+				AND r.name = 'Wolf Cub'`,
+				gameID, round-1)
+			if wolfCubDeathCount > 0 {
+				var c2 int
+				db.Get(&c2, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+					gameID, round, ActionWerewolfEndVote2)
+				return c2 > 0
+			}
+		}
+		return true
+	case "Cupid":
+		if round > 1 {
+			return true
+		}
+		var loverCount int
+		db.Get(&loverCount, `SELECT COUNT(*) FROM game_lovers WHERE game_id=?`, gameID)
+		return loverCount > 0
+	default:
+		return true
+	}
+}
+
+// handleWSNightSurvey records a player's night survey answers.
+// Once all alive players have submitted, the game transitions to day.
+func handleWSNightSurvey(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSNightSurvey: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Survey only available during night phase")
+		return
+	}
+
+	player, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil || !player.IsAlive {
+		sendErrorToast(client.playerID, "You must be alive to submit the survey")
+		return
+	}
+
+	// Idempotent: ignore if already submitted
+	var existing int
+	db.Get(&existing, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
+		game.ID, game.Round, ActionNightSurvey, client.playerID)
+	if existing > 0 {
+		return
+	}
+
+	// Build description from non-empty fields
+	suspectID, _ := strconv.ParseInt(msg.SuspectPlayerID, 10, 64)
+	deathTheory := strings.TrimSpace(msg.DeathTheory)
+	notes := strings.TrimSpace(msg.Notes)
+
+	var parts []string
+	if suspectID > 0 {
+		var suspectName string
+		db.Get(&suspectName, "SELECT name FROM player WHERE rowid=?", suspectID)
+		if suspectName != "" {
+			parts = append(parts, "Suspects: "+suspectName)
+		}
+	}
+	if deathTheory != "" {
+		parts = append(parts, "Theory: "+deathTheory)
+	}
+	if notes != "" {
+		parts = append(parts, "Notes: "+notes)
+	}
+
+	var description string
+	if len(parts) > 0 {
+		description = fmt.Sprintf("Night %d: %s — %s", game.Round, player.Name, strings.Join(parts, " | "))
+	}
+	// If all empty, description stays "" (counts as submitted, hidden from history)
+
+	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionNightSurvey, VisibilityResolved, description)
+	if err != nil {
+		logError("handleWSNightSurvey: insert survey", err)
+		sendErrorToast(client.playerID, "Failed to record survey")
+		return
+	}
+
+	log.Printf("Survey submitted by '%s' (game %d round %d)", player.Name, game.ID, game.Round)
+
+	// Transition to day if all alive players have now submitted
+	var aliveCount int
+	db.Get(&aliveCount, `SELECT COUNT(*) FROM game_player WHERE game_id=? AND is_alive=1`, game.ID)
+	var surveyCount int
+	db.Get(&surveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+		game.ID, game.Round, ActionNightSurvey)
+
+	log.Printf("Night survey progress: %d/%d", surveyCount, aliveCount)
+
+	if surveyCount >= aliveCount {
+		// Apply all pending night kills (description='' marks them as pending)
+		type pendingKill struct {
+			ID             int64 `db:"id"`
+			TargetPlayerID int64 `db:"target_player_id"`
+		}
+		var pendingKills []pendingKill
+		db.Select(&pendingKills, `SELECT rowid as id, target_player_id FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND description=''`,
+			game.ID, game.Round, ActionNightKill)
+
+		var nightKills []int64
+		for _, pk := range pendingKills {
+			if _, err = db.Exec("UPDATE game_player SET is_alive=0 WHERE game_id=? AND player_id=?", game.ID, pk.TargetPlayerID); err != nil {
+				logError("handleWSNightSurvey: apply kill", err)
+				continue
+			}
+			var name, roleName string
+			db.Get(&name, "SELECT name FROM player WHERE rowid=?", pk.TargetPlayerID)
+			db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id=r.rowid WHERE gp.game_id=? AND gp.player_id=?`, game.ID, pk.TargetPlayerID)
+			desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
+			db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, desc, pk.ID)
+			nightKills = append(nightKills, pk.TargetPlayerID)
+			log.Printf("Applied pending night kill: %s (%s)", name, roleName)
+		}
+
+		// Transition to day, then apply heartbreaks and check win conditions
+		if _, err = db.Exec("UPDATE game SET status='day' WHERE rowid=?", game.ID); err != nil {
+			logError("handleWSNightSurvey: transition to day", err)
+			return
+		}
+		applyHeartbreaks(game, "night", nightKills)
+
+		log.Printf("Night %d ended (all surveys submitted), transitioning to day", game.Round)
+		LogDBState("after all surveys submitted and kills applied")
+
+		if checkWinConditions(game) {
+			return
+		}
+		if len(nightKills) > 0 {
+			maybeGenerateStory(game.ID, game.Round, "night", nightKills[0])
+		}
+	}
+
+	broadcastGameUpdate()
+}
+
 // recordPublicDeath inserts a public history entry when a player dies at night.
 func recordPublicDeath(game *Game, playerID int64) {
 	var name string
@@ -1352,11 +1543,10 @@ func resolveWerewolfVotes(game *Game) {
 		}
 	}
 
-	// No kill this night (wolves passed or no majority) — skip to witch poison + day
+	// No kill this night (wolves passed or no majority) — record pending kills for wolf cub and witch
 	if victim == 0 {
 		log.Printf("No werewolf kill this night (wolves passed or no majority)")
-		var nightKillsNoVictim []int64
-		// Still apply Wolf Cub second kill if active and voted
+		// Wolf Cub second kill (pending — applied when surveys complete)
 		if wolfCubDoubleKill && victim2 != 0 {
 			var protect2Count int
 			db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
@@ -1366,32 +1556,21 @@ func resolveWerewolfVotes(game *Game) {
 			if protect2Count > 0 {
 				log.Printf("Protection saved %s from Wolf Cub double kill", victim2Name)
 			} else {
-				db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim2)
-				log.Printf("Wolf Cub double kill: werewolves killed %s", victim2Name)
-				recordPublicDeath(game, victim2)
-				nightKillsNoVictim = append(nightKillsNoVictim, victim2)
+				log.Printf("Wolf Cub double kill pending: %s", victim2Name)
+				db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
 			}
 		}
-		// Apply Witch poison
+		// Witch poison (pending — applied when surveys complete)
 		var witchKillActionNoVictim GameAction
 		if wkErr := db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
-			db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, *witchKillActionNoVictim.TargetPlayerID)
 			var poisonName string
 			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
-			log.Printf("Witch poisoned %s", poisonName)
-			recordPublicDeath(game, *witchKillActionNoVictim.TargetPlayerID)
-			nightKillsNoVictim = append(nightKillsNoVictim, *witchKillActionNoVictim.TargetPlayerID)
+			log.Printf("Witch poison pending: %s", poisonName)
+			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+				game.ID, game.Round, *witchKillActionNoVictim.TargetPlayerID, ActionNightKill, *witchKillActionNoVictim.TargetPlayerID, VisibilityPublic)
 		}
-		applyHeartbreaks(game, "night", nightKillsNoVictim)
-		_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
-		if err != nil {
-			logError("resolveWerewolfVotes: transition to day (no kill)", err)
-			return
-		}
-		log.Printf("Night %d ended (no wolf kill), transitioning to day", game.Round)
-		if checkWinConditions(game) {
-			return
-		}
+		log.Printf("Night %d: no wolf kill, waiting for surveys", game.Round)
 		broadcastGameUpdate()
 		return
 	}
@@ -1422,69 +1601,65 @@ func resolveWerewolfVotes(game *Game) {
 		db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
 		if protectionCount > 0 {
 			log.Printf("Doctor saved %s (player ID %d) from werewolf attack", victimName, victim)
-			DebugLog("resolveWerewolfVotes", "Doctor saved '%s', no kill this night", victimName)
 		}
 		if guardProtectionCount > 0 {
 			log.Printf("Guard saved %s (player ID %d) from werewolf attack", victimName, victim)
-			DebugLog("resolveWerewolfVotes", "Guard saved '%s', no kill this night", victimName)
 		}
 		if witchHealCount > 0 {
 			log.Printf("Witch saved %s (player ID %d) from werewolf attack", victimName, victim)
-			DebugLog("resolveWerewolfVotes", "Witch saved '%s', no kill this night", victimName)
 		}
 
-		_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
-		if err != nil {
-			logError("resolveWerewolfVotes: transition to day (no kill)", err)
-			return
+		// Wolf Cub second kill may still land even if main victim is protected
+		if wolfCubDoubleKill && victim2 != 0 {
+			var protect2Count int
+			db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
+				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+			var victim2Name string
+			db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+			if protect2Count > 0 {
+				log.Printf("Protection saved %s from Wolf Cub double kill", victim2Name)
+			} else {
+				log.Printf("Wolf Cub double kill pending: %s", victim2Name)
+				db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
+			}
 		}
-		log.Printf("Night %d ended (protection save), transitioning to day phase", game.Round)
+		// Witch poison is separate from the main wolf kill
+		var witchKillActionP2 GameAction
+		if wkErr := db.Get(&witchKillActionP2, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionP2.TargetPlayerID != nil {
+			var poisonName string
+			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionP2.TargetPlayerID)
+			log.Printf("Witch poison pending: %s", poisonName)
+			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+				game.ID, game.Round, *witchKillActionP2.TargetPlayerID, ActionNightKill, *witchKillActionP2.TargetPlayerID, VisibilityPublic)
+		}
+
+		log.Printf("Night %d: main victim protected, waiting for surveys", game.Round)
 		LogDBState("after protection save")
 		broadcastGameUpdate()
 		return
 	}
 
-	// Kill the victim
-	_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim)
-	if err != nil {
-		logError("resolveWerewolfVotes: kill victim", err)
-		return
-	}
-
+	// Insert pending kill for main wolf victim (description='' hides from history until surveys complete)
 	var victimName string
 	db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
-	log.Printf("Werewolves killed %s (player ID %d)", victimName, victim)
-	DebugLog("resolveWerewolfVotes", "Werewolves killed '%s'", victimName)
-	recordPublicDeath(game, victim)
+	log.Printf("Werewolf kill pending: %s (player ID %d)", victimName, victim)
+	DebugLog("resolveWerewolfVotes", "Werewolf kill pending: '%s', waiting for surveys", victimName)
+	db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		game.ID, game.Round, victim, ActionNightKill, victim, VisibilityPublic)
 
-	// Apply Witch poison kill (separate from werewolf victim)
+	// Witch poison (pending — applied when surveys complete)
 	var witchKillAction GameAction
-	err = db.Get(&witchKillAction, `
-		SELECT * FROM game_action
-		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWitchKill)
-	if err == nil && witchKillAction.TargetPlayerID != nil {
-		_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?",
-			game.ID, *witchKillAction.TargetPlayerID)
-		if err != nil {
-			logError("resolveWerewolfVotes: kill witch poison target", err)
-		}
+	if err := db.Get(&witchKillAction, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); err == nil && witchKillAction.TargetPlayerID != nil {
 		var poisonVictimName string
 		db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
-		log.Printf("Witch poisoned %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
-		DebugLog("resolveWerewolfVotes", "Witch poisoned '%s'", poisonVictimName)
-		recordPublicDeath(game, *witchKillAction.TargetPlayerID)
+		log.Printf("Witch poison pending: %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
+		db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, *witchKillAction.TargetPlayerID, ActionNightKill, *witchKillAction.TargetPlayerID, VisibilityPublic)
 	}
 
-	// Track all kills this night (for heartbreak resolution)
-	nightKills := []int64{victim}
-	if witchKillAction.TargetPlayerID != nil {
-		nightKills = append(nightKills, *witchKillAction.TargetPlayerID)
-	}
-
-	// Apply Wolf Cub second kill
+	// Wolf Cub second kill (pending — applied when surveys complete)
 	if wolfCubDoubleKill && victim2 != 0 && victim2 != victim {
-		// Doctor, Guard, and Witch heal can all save the second victim
 		var protect2Count int
 		db.Get(&protect2Count, `
 			SELECT COUNT(*) FROM game_action
@@ -1496,36 +1671,13 @@ func resolveWerewolfVotes(game *Game) {
 		if protect2Count > 0 {
 			log.Printf("Protection saved %s (player ID %d) from Wolf Cub double kill", victim2Name, victim2)
 		} else {
-			_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, victim2)
-			if err != nil {
-				logError("resolveWerewolfVotes: kill victim2", err)
-			} else {
-				log.Printf("Wolf Cub double kill: werewolves killed %s (player ID %d)", victim2Name, victim2)
-				DebugLog("resolveWerewolfVotes", "Wolf Cub double kill: werewolves killed '%s'", victim2Name)
-				recordPublicDeath(game, victim2)
-				nightKills = append(nightKills, victim2)
-			}
+			log.Printf("Wolf Cub double kill pending: %s (player ID %d)", victim2Name, victim2)
+			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+				game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
 		}
 	}
 
-	// Transition to day phase
-	_, err = db.Exec("UPDATE game SET status = 'day' WHERE rowid = ?", game.ID)
-	if err != nil {
-		logError("resolveWerewolfVotes: transition to day", err)
-		return
-	}
-
-	// Apply heartbreaks now that day has begun — night kill victims may have living lovers
-	applyHeartbreaks(game, "night", nightKills)
-
-	log.Printf("Night %d ended, transitioning to day phase", game.Round)
-	DebugLog("resolveWerewolfVotes", "Night %d ended, transitioning to day", game.Round)
-	LogDBState("after night resolution")
-
-	if checkWinConditions(game) {
-		return
-	}
-
-	maybeGenerateStory(game.ID, game.Round, "night", victim)
+	log.Printf("Night %d: kills pending, waiting for surveys", game.Round)
+	LogDBState("after pending night kills recorded")
 	broadcastGameUpdate()
 }

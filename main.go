@@ -438,6 +438,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSWitchPass(client, msg)
 	case "cupid_choose":
 		handleWSCupidChoose(client, msg)
+	case "night_survey":
+		handleWSNightSurvey(client, msg)
 	default:
 		log.Printf("Unknown action: %s for player %d (%s) in game %d (status: %s)", msg.Action, client.playerID, playerName, game.ID, game.Status)
 	}
@@ -898,6 +900,19 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			AllWolvesActed2:      allWolvesActed2,
 			WolfEndVoted:         wolfEndVoted,
 			WolfEndVoted2:        wolfEndVoted2,
+		}
+
+		// Survey: show once player has completed their night role action
+		if isAlive && playerDoneWithNightAction(game.ID, game.Round, currentPlayer) {
+			data.ShowSurvey = true
+			var submitted int
+			db.Get(&submitted, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
+				game.ID, game.Round, ActionNightSurvey, currentPlayer.PlayerID)
+			data.HasSubmittedSurvey = submitted > 0
+			db.Get(&data.SurveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+				game.ID, game.Round, ActionNightSurvey)
+			data.AliveCount = len(aliveTargets)
+			data.SurveyTargets = aliveTargets
 		}
 
 		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {

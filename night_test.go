@@ -50,6 +50,56 @@ func (tp *TestPlayer) waitForNightPhase() error {
 	return tp.waitUntilCondition(checkJS, "night phase")
 }
 
+// submitNightSurvey submits the night survey for this player.
+// Waits for the survey form, "waiting" message, or "You are dead" to appear, then submits if form is visible.
+func (tp *TestPlayer) submitNightSurvey() {
+	checkJS := `() => {
+		return !!document.querySelector('#night-survey-form') ||
+		       !!document.querySelector('#survey-waiting') ||
+		       document.body.textContent.includes('You are dead');
+	}`
+	tp.waitUntilCondition(checkJS, "night survey state")
+	if has, btn, _ := tp.p().Has("#night-survey-form button[type='submit']"); has {
+		tp.clickElementAndWait(btn)
+	}
+}
+
+// submitNightSurveysForAllPlayers submits the night survey for each player.
+// Dead players from previous rounds are skipped automatically.
+func submitNightSurveysForAllPlayers(players []*TestPlayer) {
+	for _, p := range players {
+		p.submitNightSurvey()
+	}
+}
+
+// submitNightSurveyWithAnswers fills in the survey form with the given answers before submitting.
+// Pass nil for suspect to leave the dropdown at "no suspicion".
+func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, notes string) {
+	checkJS := `() => {
+		return !!document.querySelector('#night-survey-form') ||
+		       !!document.querySelector('#survey-waiting') ||
+		       document.body.textContent.includes('You are dead');
+	}`
+	tp.waitUntilCondition(checkJS, "night survey state")
+
+	if has, _, _ := tp.p().Has("#night-survey-form"); !has {
+		return // already submitted or dead
+	}
+
+	if suspect != nil {
+		tp.p().MustElement("select[name='suspect_player_id']").MustSelect(suspect.Name)
+	}
+	if theory != "" {
+		tp.p().MustElement("input[name='death_theory']").MustInput(theory)
+	}
+	if notes != "" {
+		tp.p().MustElement("textarea[name='notes']").MustInput(notes)
+	}
+
+	btn := tp.p().MustElement("#night-survey-form button[type='submit']")
+	tp.clickElementAndWait(btn)
+}
+
 // canSeeWerewolfVotes checks if the player can see the werewolf voting UI
 func (tp *TestPlayer) canSeeWerewolfVotes() bool {
 	html, _ := tp.Page.HTML()
@@ -398,6 +448,8 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 	targetName := villagers[0].Name
 	werewolves[0].voteForPlayer(targetName)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day (second WebSocket message after vote)
 	err := werewolves[0].waitForDayPhase()
 	if err != nil {
@@ -500,6 +552,8 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 		t.Errorf("Target should also receive the sound toast")
 	}
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Check death announcement
 	announcement := werewolves[0].getDeathAnnouncement()
 	if !strings.Contains(announcement, target.Name) {
@@ -559,6 +613,8 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 	werewolves[1].voteForPlayer(villagers[1].Name)
 
 	ctx.logger.LogDB("after split vote + End Vote")
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Split vote resolves as no kill — should transition to day with no death announcement
 	if !werewolves[0].isInDayPhase() {
@@ -625,6 +681,8 @@ func TestWerewolfCanPass(t *testing.T) {
 		ctx.logger.LogDB("FAIL: villager did not receive sound toast")
 		t.Errorf("Villager should see sound toast after End Vote")
 	}
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Should transition to day with no kills
 	if !werewolf.isInDayPhase() {
@@ -700,6 +758,8 @@ func TestWitchHealSavesVictim(t *testing.T) {
 
 	// Witch passes to end night
 	witch.clickAndWait("#witch-pass-button")
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Check day phase - victim should be alive
 	if !targetVillager.isInDayPhase() {
@@ -801,6 +861,8 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 
 	// Witch passes - click the button by id
 	witch.clickAndWait("#witch-pass-button")
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Wait for phase transition to day (use a living player, not the poisoned one)
 	err = witch.waitForDayPhase()
@@ -915,6 +977,8 @@ func TestWitchPassEndNight(t *testing.T) {
 
 	// Witch just passes without using potions
 	witch.clickAndWait("#witch-pass-button")
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Wait for phase transition to day
 	err := witch.waitForDayPhase()
@@ -1146,6 +1210,8 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	wolfCub.voteForPlayer(wolfCub.Name)
 	werewolf.voteForPlayer(wolfCub.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Should now be in day phase
 	if !werewolf.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day phase after wolf cub kill")
@@ -1205,6 +1271,8 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
 		werewolf.clickElementAndWait(endVote2Btn)
 	}
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Should transition to day 2 with 2 victims
 	if !werewolf.isInDayPhase() {
@@ -1286,6 +1354,8 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	// Witch passes to end the night
 	witch.clickAndWait("#witch-pass-button")
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Day 1: all alive players vote out a villager to advance to night 2
 	advanceTarget := pureVillagers[0]
 	for _, p := range players {
@@ -1353,6 +1423,8 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	// Witch passes to end the night
 	witch.clickAndWait("#witch-pass-button")
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Day 2: victim1 should be dead, victim2 should be alive
 	if !witch.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day 2")
@@ -1410,6 +1482,8 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	wolfCub.voteForPlayer(killTarget.Name)
 	werewolf.voteForPlayer(killTarget.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Day 1: All alive players vote to eliminate Wolf Cub
 	for _, v := range villagers[1:] {
 		v.dayVoteForPlayer(wolfCub.Name)
@@ -1450,6 +1524,8 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
 		werewolf.clickElementAndWait(endVote2Btn)
 	}
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Day 2: two victims announced
 	if !werewolf.isInDayPhase() {
@@ -1593,6 +1669,8 @@ func TestCupidLinksLovers(t *testing.T) {
 	// Cupid picks second lover
 	cupid.cupidPickLover(lover2.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Night should now resolve (werewolves already voted, Cupid done)
 	if !werewolves[0].isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day after Cupid links")
@@ -1675,6 +1753,8 @@ func TestHeartbreakOnNightKill(t *testing.T) {
 		w.voteForPlayer(lover1.Name)
 	}
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Day should begin
 	if !werewolves[0].isInDayPhase() {
 		ctx.logger.LogDB("FAIL: not in day phase")
@@ -1743,6 +1823,8 @@ func TestLoversWinCondition(t *testing.T) {
 	// Werewolf kills Cupid (the non-lover)
 	werewolf.voteForPlayer(cupid.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// With only 2 players alive (villager + werewolf lovers), lovers win immediately
 	// after win conditions are checked during the day phase
 
@@ -1802,6 +1884,8 @@ func TestAIStoryteller(t *testing.T) {
 	// Werewolf kills target (voteForPlayer auto-presses End Vote)
 	werewolves[0].voteForPlayer(target.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for the async AI story to appear in the watcher's history
 	err := watcher.waitUntilCondition(
 		fmt.Sprintf(`() => { const h = document.querySelector('#history-bar'); return h && h.textContent.includes(%q); }`, storyText),
@@ -1818,6 +1902,147 @@ func TestAIStoryteller(t *testing.T) {
 	}
 
 	ctx.logger.Debug("=== TestAIStoryteller passed ===")
+}
+
+// ============================================================================
+// Night Survey Tests
+// ============================================================================
+
+// TestNightSurveyBlocksDayTransition verifies that day does not start until
+// ALL alive players have submitted the night survey.
+func TestNightSurveyBlocksDayTransition(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing night survey blocks day transition ===")
+
+	// Setup: 1 werewolf + 2 villagers = 3 players
+	players := setupNightPhaseGame(ctx, browser, 2, 1)
+	werewolves, villagers := findPlayersByRole(players)
+
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Fatal("Need at least 1 werewolf and 2 villagers")
+	}
+
+	villager1 := villagers[0]
+	villager2 := villagers[1]
+
+	// Villagers have no night action, so they immediately see the survey form.
+	// Submit villager1's survey first.
+	villager1.submitNightSurvey()
+
+	// Villager1 should now see the "waiting for N more" message
+	if has, _, _ := villager1.p().Has("#survey-waiting"); !has {
+		ctx.logger.LogDB("FAIL: no survey-waiting message after submit")
+		t.Error("After submitting survey, player should see 'Waiting for N more' message")
+	}
+
+	// Day should NOT have started yet (wolf hasn't voted, villager2 hasn't submitted)
+	if villager1.isInDayPhase() {
+		ctx.logger.LogDB("FAIL: day started too early")
+		t.Error("Day should not start until all players submit survey")
+	}
+
+	// Werewolf votes and End Vote is auto-pressed (1 wolf = majority immediately)
+	werewolves[0].voteForPlayer(villager1.Name)
+
+	// Day should STILL NOT have started (wolf and villager2 haven't submitted yet)
+	if werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: day started before wolf/villager2 submitted survey")
+		t.Error("Day should not start until all players submit survey")
+	}
+
+	// Wolf submits survey (2 of 3 submitted — villager2 still outstanding)
+	werewolves[0].submitNightSurvey()
+
+	// Day should STILL NOT have started (villager2 hasn't submitted yet)
+	if werewolves[0].isInDayPhase() {
+		ctx.logger.LogDB("FAIL: day started before villager2 submitted survey")
+		t.Error("Day should not start until villager2 submits survey")
+	}
+
+	// Villager2 submits survey — this is the last survey, triggers day transition
+	villager2.submitNightSurvey()
+
+	// All surveys submitted → day should start now
+	err := werewolves[0].waitForDayPhase()
+	if err != nil {
+		ctx.logger.LogDB("FAIL: day did not start after all surveys")
+		t.Errorf("Day should start after all surveys submitted: %v", err)
+	}
+
+	if !werewolves[0].isInDayPhase() {
+		content := werewolves[0].getGameContent()
+		ctx.logger.LogDB("FAIL: not in day phase")
+		t.Errorf("Should be in day phase after all surveys submitted. Content: %s", content)
+	}
+
+	// The night kill should now be revealed (villager1 died at night)
+	announcement := werewolves[0].getDeathAnnouncement()
+	if !strings.Contains(announcement, villager1.Name) {
+		t.Errorf("Death announcement should mention villager1 (%s), got: %s", villager1.Name, announcement)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestNightSurveyAnswersVisibleInHistory verifies that non-empty survey answers
+// are written to history and become visible to all players once the day starts.
+func TestNightSurveyAnswersVisibleInHistory(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing night survey answers visible in history ===")
+
+	// 1 werewolf + 2 villagers
+	players := setupNightPhaseGame(ctx, browser, 2, 1)
+	werewolves, villagers := findPlayersByRole(players)
+
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Fatal("Need at least 1 werewolf and 2 villagers")
+	}
+
+	villager1 := villagers[0]
+	villager2 := villagers[1]
+	wolf := werewolves[0]
+
+	// Villager1 submits with a suspect, theory, and notes
+	theory := "I think it was the wolf"
+	notes := "seemed nervous during discussion"
+	villager1.submitNightSurveyWithAnswers(wolf, theory, notes)
+
+	// Wolf votes to kill villager1, then submits empty survey
+	wolf.voteForPlayer(villager1.Name)
+	wolf.submitNightSurvey()
+
+	// Villager2 submits empty survey — last one, triggers day transition
+	villager2.submitNightSurvey()
+
+	err := villager2.waitForDayPhase()
+	if err != nil {
+		ctx.logger.LogDB("FAIL: day did not start")
+		t.Fatalf("Day should start after all surveys: %v", err)
+	}
+
+	// Full history entry format: "Night 1: <name> — Suspects: <wolf> | Theory: <text> | Notes: <text>"
+	// VisibilityResolved means visible to everyone once day starts.
+	expected := fmt.Sprintf("Night 1: %s — Suspects: %s | Theory: %s | Notes: %s",
+		villager1.Name, wolf.Name, theory, notes)
+
+	for _, viewer := range []*TestPlayer{villager2, wolf} {
+		if !viewer.historyContains(expected) {
+			ctx.logger.LogDB("FAIL: survey not in history for " + viewer.Name)
+			t.Errorf("[%s] Survey not in history.\nExpected: %q\nGot: %s", viewer.Name, expected, viewer.getHistoryText())
+		}
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
 }
 
 func minInt(a, b int) int {

@@ -95,6 +95,8 @@ func setupDayPhaseGame(ctx *TestContext, browser *TestBrowser, numVillagers, num
 		w.voteForPlayer(targetName)
 	}
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day on all players
 	for _, p := range players {
 		err := p.waitForDayPhase()
@@ -686,6 +688,8 @@ func TestNightWaitsForSeer(t *testing.T) {
 	// Seer investigates - night SHOULD end now
 	seer.seerInvestigatePlayer(werewolf.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day
 	err := seer.waitForDayPhase()
 	if err != nil {
@@ -769,6 +773,8 @@ func TestTwoSeersActIndependently(t *testing.T) {
 
 	// Werewolf votes - all conditions now met, night ends
 	werewolf.voteForPlayer(villager.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	if !werewolf.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: did not transition to day after werewolf voted")
@@ -1011,6 +1017,8 @@ func TestDoctorSavesVictim(t *testing.T) {
 	// Werewolf votes for the villager (the protected player)
 	werewolf.voteForPlayer(villager.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day
 	err := werewolf.waitForDayPhase()
 	if err != nil {
@@ -1070,6 +1078,8 @@ func TestDoctorDoesNotSaveWrongPlayer(t *testing.T) {
 
 	// Werewolf kills villager1 (a different player - not protected)
 	werewolf.voteForPlayer(villager1.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Day should show villager1 died
 	if !werewolf.isInDayPhase() {
@@ -1144,6 +1154,8 @@ func TestNightWaitsForDoctor(t *testing.T) {
 
 	// Doctor protects - night SHOULD end now
 	doctor.doctorProtectPlayer(werewolf.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Wait for phase transition to day
 	err := doctor.waitForDayPhase()
@@ -1229,6 +1241,8 @@ func TestTwoDoctorsActIndependently(t *testing.T) {
 
 	// Werewolf votes for the villager (protected by doctor1) - all conditions met, night ends
 	werewolf.voteForPlayer(villager.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Day should show no one died (doctor1 protected the villager)
 	if !werewolf.isInDayPhase() {
@@ -1450,6 +1464,8 @@ func TestGuardSavesVictim(t *testing.T) {
 	// Werewolf votes for the villager (the protected player)
 	werewolf.voteForPlayer(villager.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day
 	err := werewolf.waitForDayPhase()
 	if err != nil {
@@ -1555,6 +1571,8 @@ func TestGuardCannotProtectSamePlayerTwiceInARow(t *testing.T) {
 	// Werewolf kills targetVillager (different from protected)
 	werewolf.voteForPlayer(targetVillager.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Should transition to day
 	if !guard.isInDayPhase() {
 		ctx.logger.LogDB("FAIL: did not transition to day after night 1")
@@ -1659,6 +1677,8 @@ func TestNightWaitsForGuard(t *testing.T) {
 	// Guard protects the villager (saving them) - night SHOULD end now
 	guard.guardProtectPlayer(villager.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	// Wait for phase transition to day
 	err := guard.waitForDayPhase()
 	if err != nil {
@@ -1738,6 +1758,8 @@ func TestTwoGuardsActIndependently(t *testing.T) {
 
 	// Werewolf votes for the villager (protected by guard1) - all conditions met, night ends
 	werewolf.voteForPlayer(villager.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	// Day should show no one died (guard1 protected the villager)
 	if !werewolf.isInDayPhase() {
@@ -1894,6 +1916,8 @@ func TestHunterDeathShotOnNightKill(t *testing.T) {
 	hunter := hunters[0]
 	werewolves[0].voteForPlayer(hunter.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	ctx.logger.LogDB("after werewolf kills hunter")
 
 	// Day 1: Hunter should see revenge buttons
@@ -1990,6 +2014,8 @@ func TestHunterDeathShotOnDayElimination(t *testing.T) {
 	// Night 1: Werewolf kills a villager (not the hunter)
 	werewolves[0].voteForPlayer(villagers[0].Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	ctx.logger.LogDB("after night 1 kill")
 
 	// Day 1: Vote to eliminate the Hunter
@@ -2084,6 +2110,8 @@ func TestHunterShootsLastWerewolf(t *testing.T) {
 	// Night 1: Werewolf kills the Hunter
 	werewolves[0].voteForPlayer(hunter.Name)
 
+	submitNightSurveysForAllPlayers(players)
+
 	ctx.logger.LogDB("after werewolf kills hunter")
 
 	// Day 1: Hunter uses revenge shot to kill the last werewolf
@@ -2138,6 +2166,8 @@ func TestNonHunterPlayersWaitDuringRevenge(t *testing.T) {
 
 	// Night 1: Werewolf kills the Hunter
 	werewolves[0].voteForPlayer(hunter.Name)
+
+	submitNightSurveysForAllPlayers(players)
 
 	ctx.logger.LogDB("after werewolf kills hunter")
 	// Non-hunter players should see waiting message

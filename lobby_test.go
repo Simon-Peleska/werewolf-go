@@ -247,12 +247,13 @@ func TestLobbyCanStartWithMatchingRoles(t *testing.T) {
 }
 
 func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
-	f := func(villagers, werewolves, extraRoles uint8) bool {
-		v := int(villagers%3) + 1      // 1-3 villagers
-		w := int(werewolves%2) + 1     // 1-2 werewolves
-		extra := int(extraRoles%2) + 1 // 1-2 extra roles (mismatch)
-		totalPlayers := v + w
-		totalRoles := v + w + extra // More roles than players
+	// Test: fewer roles than players → start disabled
+	f := func(villagers, werewolves uint8) bool {
+		v := int(villagers%2) + 2  // 2-3 villagers
+		w := int(werewolves%2) + 2 // 2-3 werewolves
+		totalPlayers := v + w      // at least 4 players
+		// Add one fewer role than players (mismatch: roles < players)
+		roleCount := totalPlayers - 1
 
 		ctx := newTestContext(t)
 		defer ctx.cleanup()
@@ -260,7 +261,7 @@ func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
 		browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 		defer browserCleanup()
 
-		ctx.logger.Debug("=== Testing mismatch: %d players, %d roles ===", totalPlayers, totalRoles)
+		ctx.logger.Debug("=== Testing mismatch: %d players, %d roles ===", totalPlayers, roleCount)
 
 		// Create players
 		var players []*TestPlayer
@@ -270,26 +271,26 @@ func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
 			players = append(players, player)
 		}
 
-		// Add roles (more than players)
-		for i := 0; i < v; i++ {
+		// Add fewer roles than players (leave one slot unfilled)
+		added := 0
+		for i := 0; i < v && added < roleCount; i++ {
 			players[0].addRoleByID(RoleVillager)
+			added++
 		}
-		for i := 0; i < w; i++ {
+		for i := 0; i < w && added < roleCount; i++ {
 			players[0].addRoleByID(RoleWerewolf)
-		}
-		for i := 0; i < extra; i++ {
-			players[0].addRoleByID(RoleSeer)
+			added++
 		}
 
 		ctx.logger.LogDB("after adding mismatched roles")
 
-		// Check that start is disabled
+		// Check that start is disabled (roles != players)
 		canStart := players[0].canStartGame()
 
 		if canStart {
 			ctx.logger.LogDB("FAIL: can start with mismatched roles")
 			t.Errorf("Should NOT be able to start with %d roles and %d players",
-				totalRoles, totalPlayers)
+				roleCount, totalPlayers)
 			return false
 		}
 

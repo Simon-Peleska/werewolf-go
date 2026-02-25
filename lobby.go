@@ -102,6 +102,18 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 	roleID := msg.RoleID
 	delta := msg.Delta
 
+	// For additions, check that we haven't already filled all player slots
+	if delta == "1" {
+		var totalRoles int
+		db.Get(&totalRoles, "SELECT COALESCE(SUM(count), 0) FROM game_role_config WHERE game_id = ?", game.ID)
+		var playerCount int
+		db.Get(&playerCount, "SELECT COUNT(*) FROM game_player WHERE game_id = ?", game.ID)
+		if totalRoles >= playerCount {
+			log.Printf("Rejected role addition: %d roles already cover all %d players", totalRoles, playerCount)
+			return
+		}
+	}
+
 	// Get current count
 	var current GameRoleConfig
 	err = db.Get(&current, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ? AND role_id = ?", game.ID, roleID)

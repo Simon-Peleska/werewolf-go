@@ -10,10 +10,13 @@ import (
 
 // WSMessage represents a message from the client
 type WSMessage struct {
-	Action         string `json:"action"`
-	RoleID         string `json:"role_id,omitempty"`
-	Delta          string `json:"delta,omitempty"`
-	TargetPlayerID string `json:"target_player_id,omitempty"`
+	Action          string `json:"action"`
+	RoleID          string `json:"role_id,omitempty"`
+	Delta           string `json:"delta,omitempty"`
+	TargetPlayerID  string `json:"target_player_id,omitempty"`
+	SuspectPlayerID string `json:"suspect_player_id,omitempty"`
+	DeathTheory     string `json:"death_theory,omitempty"`
+	Notes           string `json:"notes,omitempty"`
 }
 
 // Client represents a websocket connection with player info
