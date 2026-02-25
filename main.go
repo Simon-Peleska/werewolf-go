@@ -1096,9 +1096,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 }
 
 func main() {
-	dbPathFlag := flag.String("db", "file::memory:?cache=shared", "database path")
-	flag.BoolVar(&devMode, "dev", false, "enable development mode (verbose logging, db dumps on error)")
+	fv := registerFlags()
 	flag.Parse()
+
+	cfg := loadConfig(*fv.configPath)
+	fv.applyTo(&cfg)
+
+	devMode = cfg.Dev
 
 	// Set up logging to both stdout and file
 	logFile, err := os.OpenFile("werewolf.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -1108,8 +1112,8 @@ func main() {
 	defer logFile.Close()
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
-	// Initialize application logger from environment variables
-	logger, err := NewAppLoggerFromEnv()
+	// Initialize application logger from config
+	logger, err := NewAppLogger(cfg.toLogConfig())
 	if err != nil {
 		log.Fatal("Failed to initialize logger:", err)
 	}
@@ -1120,7 +1124,7 @@ func main() {
 		log.Println("Extended logging enabled")
 	}
 
-	db, err = sqlx.Connect("sqlite3", *dbPathFlag)
+	db, err = sqlx.Connect("sqlite3", cfg.DB)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -1132,7 +1136,7 @@ func main() {
 
 	LogDBState("after initDB")
 
-	initStoryteller()
+	initStoryteller(cfg)
 
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
@@ -1172,6 +1176,6 @@ func main() {
 	staticHandler := http.FileServer(http.FS(staticFS))
 	http.Handle("/static/", staticHandler)
 
-	log.Println("Server starting on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("Server starting on %s", cfg.Addr)
+	log.Fatal(http.ListenAndServe(cfg.Addr, nil))
 }

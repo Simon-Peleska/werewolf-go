@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,62 +54,48 @@ func (s *llmStoryteller) Tell(ctx context.Context, history []string, onChunk fun
 	return strings.TrimSpace(fullText.String()), err
 }
 
-// buildCallOpts reads STORYTELLER_TEMPERATURE and STORYTELLER_THINKING env vars
-// and returns the corresponding CallOptions.
-// STORYTELLER_TEMPERATURE: float 0–1 (e.g. "0.7")
-// STORYTELLER_THINKING: none | low | medium | high | auto
-func buildCallOpts() []llms.CallOption {
+// buildCallOpts builds LLM call options from the config.
+func buildCallOpts(cfg AppConfig) []llms.CallOption {
 	var opts []llms.CallOption
 
-	if temp := os.Getenv("STORYTELLER_TEMPERATURE"); temp != "" {
-		if f, err := strconv.ParseFloat(temp, 64); err == nil {
+	if cfg.StorytellerTemperature != "" {
+		if f, err := strconv.ParseFloat(cfg.StorytellerTemperature, 64); err == nil {
 			opts = append(opts, llms.WithTemperature(f))
 			log.Printf("Storyteller: temperature=%.2f", f)
 		} else {
-			log.Printf("Storyteller: invalid STORYTELLER_TEMPERATURE %q: %v", temp, err)
+			log.Printf("Storyteller: invalid temperature %q: %v", cfg.StorytellerTemperature, err)
 		}
 	}
 
-	if thinking := os.Getenv("STORYTELLER_THINKING"); thinking != "" {
-		mode := llms.ThinkingMode(thinking)
+	if cfg.StorytellerThinking != "" {
+		mode := llms.ThinkingMode(cfg.StorytellerThinking)
 		switch mode {
 		case llms.ThinkingModeNone, llms.ThinkingModeLow, llms.ThinkingModeMedium, llms.ThinkingModeHigh, llms.ThinkingModeAuto:
 			opts = append(opts, llms.WithThinkingMode(mode))
 			log.Printf("Storyteller: thinking=%s", mode)
 		default:
-			log.Printf("Storyteller: invalid STORYTELLER_THINKING %q (valid: none, low, medium, high, auto)", thinking)
+			log.Printf("Storyteller: invalid thinking %q (valid: none, low, medium, high, auto)", cfg.StorytellerThinking)
 		}
 	}
 
 	return opts
 }
 
-// initStoryteller reads env vars and sets up the global storyteller.
-// STORYTELLER_PROVIDER:    ollama | openai | claude | gemini | groq | openai-compatible
-// STORYTELLER_MODEL:       model name (e.g. "llama3", "gpt-4o-mini", "claude-sonnet-4-6")
-// STORYTELLER_OLLAMA_URL:  Ollama server URL (default: http://localhost:11434)
-// STORYTELLER_URL:         base URL for openai-compatible provider
-// STORYTELLER_API_KEY:     API key for openai-compatible provider
-// STORYTELLER_TEMPERATURE: sampling temperature 0–1 (e.g. "0.8")
-// STORYTELLER_THINKING:    thinking mode: none | low | medium | high | auto
-func initStoryteller() {
-	provider := os.Getenv("STORYTELLER_PROVIDER")
-	model := os.Getenv("STORYTELLER_MODEL")
-	callOpts := buildCallOpts()
+// initStoryteller sets up the global storyteller from config.
+func initStoryteller(cfg AppConfig) {
+	provider := cfg.StorytellerProvider
+	model := cfg.StorytellerModel
+	callOpts := buildCallOpts(cfg)
 
 	switch provider {
 	case "ollama":
-		url := os.Getenv("STORYTELLER_OLLAMA_URL")
-		if url == "" {
-			url = "http://localhost:11434"
-		}
-		llm, err := ollama.New(ollama.WithModel(model), ollama.WithServerURL(url))
+		llm, err := ollama.New(ollama.WithModel(model), ollama.WithServerURL(cfg.StorytellerOllamaURL))
 		if err != nil {
-			log.Printf("Storyteller: failed to init Ollama (%s at %s): %v", model, url, err)
+			log.Printf("Storyteller: failed to init Ollama (%s at %s): %v", model, cfg.StorytellerOllamaURL, err)
 			return
 		}
 		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
-		log.Printf("Storyteller: Ollama model=%s url=%s", model, url)
+		log.Printf("Storyteller: Ollama model=%s url=%s", model, cfg.StorytellerOllamaURL)
 	case "openai":
 		llm, err := openai.New(openai.WithModel(model))
 		if err != nil {
@@ -139,7 +124,7 @@ func initStoryteller() {
 		llm, err := openai.New(
 			openai.WithModel(model),
 			openai.WithBaseURL("https://api.groq.com/openai/v1"),
-			openai.WithToken(os.Getenv("GROQ_API_KEY")),
+			openai.WithToken(cfg.GroqAPIKey),
 		)
 		if err != nil {
 			log.Printf("Storyteller: failed to init Groq (%s): %v", model, err)
@@ -148,30 +133,26 @@ func initStoryteller() {
 		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: Groq model=%s", model)
 	case "openai-compatible":
-		// Generic OpenAI-compatible endpoint (LM Studio, Together AI, etc.)
-		// STORYTELLER_URL: base URL of the API (required)
-		// STORYTELLER_API_KEY: API key (optional, use "none" if not needed)
-		apiURL := os.Getenv("STORYTELLER_URL")
-		if apiURL == "" {
-			log.Printf("Storyteller: STORYTELLER_URL is required for openai-compatible provider")
+		if cfg.StorytellerURL == "" {
+			log.Printf("Storyteller: storyteller_url is required for openai-compatible provider")
 			return
 		}
 		opts := []openai.Option{
 			openai.WithModel(model),
-			openai.WithBaseURL(apiURL),
+			openai.WithBaseURL(cfg.StorytellerURL),
 		}
-		if key := os.Getenv("STORYTELLER_API_KEY"); key != "" {
-			opts = append(opts, openai.WithToken(key))
+		if cfg.StorytellerAPIKey != "" {
+			opts = append(opts, openai.WithToken(cfg.StorytellerAPIKey))
 		}
 		llm, err := openai.New(opts...)
 		if err != nil {
-			log.Printf("Storyteller: failed to init openai-compatible (%s at %s): %v", model, apiURL, err)
+			log.Printf("Storyteller: failed to init openai-compatible (%s at %s): %v", model, cfg.StorytellerURL, err)
 			return
 		}
 		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
-		log.Printf("Storyteller: openai-compatible model=%s url=%s", model, apiURL)
+		log.Printf("Storyteller: openai-compatible model=%s url=%s", model, cfg.StorytellerURL)
 	default:
-		log.Printf("Storyteller: disabled (set STORYTELLER_PROVIDER=ollama or openai to enable)")
+		log.Printf("Storyteller: disabled (set storyteller_provider to enable)")
 	}
 }
 

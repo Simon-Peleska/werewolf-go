@@ -1,5 +1,4 @@
 # Todos
-- add automated reading
 - move settings to config
 - styling
   - chage layouts of day and night
