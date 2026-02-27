@@ -1,11 +1,14 @@
 <div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
     <section>
-        <h2 id="phase-heading"><span id="day">Day</span> {{.NightNumber}}</h2>
+        <div class="phase-heading">
+            <img class="icon icon-md" src="/static/icons/Day.webp" alt="Day">
+            <h2 id="phase-heading">Day {{.NightNumber}}</h2>
+        </div>
 
         {{if .NightVictims}}
         <div class="death-announcement" id="death-announcement">
             {{range .NightVictims}}
-            <p><strong>{{.Name}}</strong> was found dead this morning. They were a <strong>{{.Role}}</strong>.</p>
+            <p>💀 <strong>{{.Name}}</strong> was found dead. They were a <strong>{{.Role}}</strong>.</p>
             {{end}}
         </div>
         {{else}}
@@ -16,21 +19,24 @@
         <div id="hunter-revenge-section">
             {{if .HunterRevengeDone}}
             <div class="death-announcement" id="hunter-revenge-result">
-                <p>The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
+                <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
                 <p>They were a <strong>{{.HunterVictimRole}}</strong>.</p>
             </div>
             {{else if .IsTheHunter}}
-            <h3>🏹 Your Last Shot</h3>
+            <div class="phase-heading" style="margin-bottom:0.75rem">
+                <img class="icon icon-sm" src="/static/icons/Hunter.webp" alt="Hunter">
+                <h3 style="margin:0">Your Last Shot</h3>
+            </div>
             <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
+            <div class="vote-grid">
             {{range .HunterTargets}}
             <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form">
                 <input type="hidden" name="action" value="hunter_revenge">
                 <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">
-                    {{.Name}}
-                </button>
+                <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">{{.Name}}</button>
             </form>
             {{end}}
+            </div>
             {{else}}
             <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
             {{end}}
@@ -42,10 +48,11 @@
     <section>
         <h3>Vote to Eliminate</h3>
         {{if .IsAlive}}
-        <p><small>Choose a player to eliminate, or pass. Majority vote required. When everyone has acted, end the vote.</small></p>
+        <p><small>Choose a player to eliminate, or pass. Majority vote required.</small></p>
 
         {{$currentVote := .CurrentVote}}
         {{$hasVoted := .HasVoted}}
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="day_vote">
@@ -57,10 +64,9 @@
         {{end}}
         <form ws-send id="day-pass-form" class="vote-form">
             <input type="hidden" name="action" value="day_pass">
-            <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">
-                Pass
-            </button>
+            <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">Pass</button>
         </form>
+        </div>
 
         {{if .AllActed}}
         <form ws-send id="day-end-vote-form">
@@ -79,7 +85,7 @@
         <h3>Current Votes</h3>
         <ul id="day-vote-list" class="vote-list">
             {{range .Votes}}
-            <li>{{.VoterName}} voted for {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+            <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
             {{end}}
         </ul>
         {{end}}

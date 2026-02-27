@@ -12,9 +12,11 @@ import (
 
 // isInNightPhase checks if the player sees the night phase UI
 func (tp *TestPlayer) isInNightPhase() bool {
-	// Check the #phase-heading element for "Night" prefix
-	result, _, err := tp.Page.Has("#night")
-	isNight := err == nil && result
+	res, err := tp.Page.Eval(`() => {
+		const h = document.querySelector('#phase-heading');
+		return !!(h && h.textContent.trim().startsWith('Night'));
+	}`)
+	isNight := err == nil && res != nil && res.Value.Bool()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Is in night phase: %v", tp.Name, isNight)
 	}
@@ -23,9 +25,11 @@ func (tp *TestPlayer) isInNightPhase() bool {
 
 // isInDayPhase checks if the player sees the day phase UI
 func (tp *TestPlayer) isInDayPhase() bool {
-	// Check the #phase-heading element for "Day" prefix
-	result, _, err := tp.Page.Has("#day")
-	isDay := err == nil && result
+	res, err := tp.Page.Eval(`() => {
+		const h = document.querySelector('#phase-heading');
+		return !!(h && h.textContent.trim().startsWith('Day'));
+	}`)
+	isDay := err == nil && res != nil && res.Value.Bool()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Is in day phase: %v", tp.Name, isDay)
 	}

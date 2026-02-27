@@ -1,5 +1,4 @@
 # Todos
-- move settings to config
 - styling
   - chage layouts of day and night
   - change color scheme
@@ -14,7 +13,6 @@
 - deploy on host provider
 - create nix flake for setup build and testing 
 - add multigame support
-- add questions during the night
 - add i18n support
 - add different scenario support
  

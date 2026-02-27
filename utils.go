@@ -609,6 +609,9 @@ func newTestContext(t *testing.T) *TestContext {
 	// Parse templates
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
+		"roleIcon": func(name string) string {
+			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		},
 	}
 	testTemplates, tmplErr := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if tmplErr != nil {

@@ -65,7 +65,7 @@ func (tp *TestPlayer) getDayVoteButtons() []string {
 // isGameFinished checks if the game has ended
 func (tp *TestPlayer) isGameFinished() bool {
 	html, _ := tp.Page.HTML()
-	isFinished := strings.Contains(html, "Game Over")
+	isFinished := strings.Contains(html, "winner-announcement")
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Is game finished: %v", tp.Name, isFinished)
 	}
@@ -144,9 +144,9 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 	// Vote for the werewolf
 	villagers[1].dayVoteForPlayer(werewolves[0].Name)
 
-	// Verify vote was recorded (check page shows vote list)
+	// Verify vote was recorded (check page shows vote list with arrow format "VoterName → TargetName")
 	content := villagers[1].getGameContent()
-	if !strings.Contains(content, "voted for") {
+	if !strings.Contains(content, "→") {
 		ctx.logger.LogDB("FAIL: vote not shown")
 		t.Error("Vote should be visible in the vote list")
 	}

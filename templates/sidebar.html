@@ -1,4 +1,4 @@
-<aside id="sidebar" class="sidebar"  hx-swap="innerHTML" hx-swap-oob="true">
+<aside id="sidebar" class="sidebar" hx-swap="innerHTML" hx-swap-oob="true">
   <div class="leftbound">
     <div>
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Toggle navigation">
@@ -9,20 +9,24 @@
       <h1>Werewolf</h1>
     </div>
   </div>
+
   <section>
-    <p><strong>Player: </strong>{{.Player.Name}} <small>(Secret: <code
-          id="secret-code-display">{{.Player.SecretCode}}</code>)</small>
-    </p>
+    <p><strong>{{.Player.Name}}</strong> <small>(Code: <code id="secret-code-display">{{.Player.SecretCode}}</code>)</small></p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
   </section>
+
   <hr>
-  {{if ne .Game.Status "lobby" }}
+
+  {{if ne .Game.Status "lobby"}}
   <section>
-    <h3>Character</h3>
-    <p><strong>Role:</strong> <span id="role">{{.Player.RoleName}}</span></p>
-    <p>{{.Player.RoleDescription}}</p>
-    <p><strong>Team:</strong> {{.Player.Team}}</p>
-    <p><strong>Status:</strong> {{if .Player.IsAlive}}Alive{{else}}Dead{{end}}</p>
+    <div class="role-badge">
+      <img class="icon icon-md" src="{{ roleIcon .Player.RoleName }}" alt="{{.Player.RoleName}}">
+      <div class="role-badge-text">
+        <strong id="role">{{.Player.RoleName}}</strong>
+        <small>{{if .Player.IsAlive}}Alive · {{.Player.Team}}{{else}}Dead{{end}}</small>
+      </div>
+    </div>
+    <p style="font-size:0.85em; color: var(--c-muted);">{{.Player.RoleDescription}}</p>
   </section>
   <hr>
   {{end}}
@@ -31,12 +35,15 @@
   {{ $loverID := .LoverPartnerID }}
   {{ $seerFound := .SeerFoundWerewolves }}
   <section>
-    <h3>All Players</h3>
+    <h3>Players</h3>
     <ul id="player-list" class="player-list">
       {{range .Players}}
       <li class="{{if not .IsAlive}}dead-player{{end}}">
         <span class="player-db-id" hidden>{{.ID}}</span>
-        {{if and (eq .Team "werewolf") (or (eq $self.Team "werewolf") (not .IsAlive) (index $seerFound .PlayerID))}}<span id="wolf-indicator-{{.PlayerID}}">🐺</span> {{end}}{{if and (ne $loverID 0) (eq .PlayerID $loverID)}}<span id="lover-of-{{$loverID}}">💞</span> {{end}}{{.Name}}{{if not .IsAlive}} <span id="is-dead-{{.ID}}">💀</span> ({{.RoleName}}){{end}}
+        {{if and (eq .Team "werewolf") (or (eq $self.Team "werewolf") (not .IsAlive) (index $seerFound .PlayerID))}}<span id="wolf-indicator-{{.PlayerID}}">🐺</span>{{end}}
+        {{if and (ne $loverID 0) (eq .PlayerID $loverID)}}<span id="lover-of-{{$loverID}}">💞</span>{{end}}
+        {{.Name}}
+        {{if not .IsAlive}}<span id="is-dead-{{.ID}}">· {{.RoleName}}</span>{{end}}
       </li>
       {{end}}
     </ul>

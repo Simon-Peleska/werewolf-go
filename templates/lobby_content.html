@@ -2,7 +2,7 @@
     <div id="status-bar" class="status-bar">
         <span><strong>Players:</strong> {{.PlayerCount}}</span>
         <span><strong>Roles:</strong> {{.TotalRoles}}</span>
-        <span id="status-message">
+        <span id="status-message" class="status-msg">
             {{if .CanStart}}
                 Ready to start!
             {{else if gt .TotalRoles .PlayerCount}}
@@ -20,24 +20,27 @@
         <p><small>Select which roles and how many of each to include in the game.</small></p>
 
         {{range .RoleConfigs}}
-        <div id="role-{{.Role.ID}}" class="role-counter role-team-{{.Role.Team}}">
-            <form ws-send style="display:inline;">
-                <input type="hidden" name="action" value="update_role">
-                <input type="hidden" name="role_id" value="{{.Role.ID}}">
-                <input type="hidden" name="delta" value="-1">
-                <button type="submit" id="btn-remove-{{.Role.ID}}" {{if eq .Count 0}}disabled{{end}}>-</button>
-            </form>
-            <span id="count-{{.Role.ID}}" class="role-count">{{.Count}}</span>
-            <form ws-send style="display:inline;">
-                <input type="hidden" name="action" value="update_role">
-                <input type="hidden" name="role_id" value="{{.Role.ID}}">
-                <input type="hidden" name="delta" value="1">
-                <button type="submit" id="btn-add-{{.Role.ID}}" {{if ge $.TotalRoles $.PlayerCount}}disabled{{end}}>+</button>
-            </form>
-            <span class="role-name">
+        <div id="role-{{.Role.ID}}" class="role-card role-team-{{.Role.Team}}">
+            <img class="icon icon-md" src="{{ roleIcon .Role.Name }}" alt="{{.Role.Name}}">
+            <div class="role-card-info">
                 <strong>{{.Role.Name}}</strong>
-                <br><small>{{.Role.Description}}</small>
-            </span>
+                <small>{{.Role.Description}}</small>
+            </div>
+            <div class="role-card-controls">
+                <form ws-send style="display:contents">
+                    <input type="hidden" name="action" value="update_role">
+                    <input type="hidden" name="role_id" value="{{.Role.ID}}">
+                    <input type="hidden" name="delta" value="-1">
+                    <button type="submit" id="btn-remove-{{.Role.ID}}" {{if eq .Count 0}}disabled{{end}}>−</button>
+                </form>
+                <span id="count-{{.Role.ID}}" class="role-count">{{.Count}}</span>
+                <form ws-send style="display:contents">
+                    <input type="hidden" name="action" value="update_role">
+                    <input type="hidden" name="role_id" value="{{.Role.ID}}">
+                    <input type="hidden" name="delta" value="1">
+                    <button type="submit" id="btn-add-{{.Role.ID}}" {{if ge $.TotalRoles $.PlayerCount}}disabled{{end}}>+</button>
+                </form>
+            </div>
         </div>
         {{end}}
     </section>

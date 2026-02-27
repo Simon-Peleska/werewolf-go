@@ -1,34 +1,351 @@
 @import url("../static/pico.css");
 
+/* ── Custom fonts ──────────────────────────────────────────────────────── */
 @font-face {
   font-family: "Metal Mania";
   src: url("/static/fonts/MetalMania-Regular.ttf") format("truetype");
 }
-
 @font-face {
   font-family: "IM Fell Great Primer";
   src: url("/static/fonts/IMFellGreatPrimer-Regular.ttf") format("truetype");
   font-style: normal;
 }
-
 @font-face {
   font-family: "IM Fell Great Primer";
   src: url("/static/fonts/IMFellGreatPrimer-Italic.ttf") format("truetype");
   font-style: italic;
 }
 
+/* ── Global fonts + palette ────────────────────────────────────────────── */
 :root {
-  --pico-font-family: "IM Fell Great Primer",
-    var(--pico-font-family-emoji);
+  --pico-font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
+
+  /* An Old Kerosene Lamp in a Dark Forest */
+  --c-bg:           #0D0D0D; /* near-black page background     */
+  --c-surface:      #181210; /* warm near-black card surface   */
+  --c-surface-2:    #231a14; /* hover / active surface         */
+  --c-border:       #2e2010; /* subtle warm border             */
+  --c-amber:        #F2B263; /* warm amber — body text         */
+  --c-amber-bright: #f7cc96; /* bright amber — headings        */
+  --c-flame:        #F26716; /* flame orange — primary accent  */
+  --c-bark:         #591902; /* blood bark — button bg/danger  */
+  --c-muted:        #7a5530; /* muted amber text               */
+  --c-success:      #7ab030; /* forest green — villager win    */
+  --c-danger:       #d44010; /* flame red — death / werewolf   */
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  --pico-font-family: "Metal Mania",
-    var(--pico-font-family-emoji);
+h1, h2, h3, h4, h5, h6 {
+  --pico-font-family: "Metal Mania", var(--pico-font-family-emoji);
   font-weight: 200;
 }
+
+/* ── Pico dark-theme overrides ─────────────────────────────────────────── */
+[data-theme=dark] {
+  color-scheme: dark;
+
+  --pico-background-color:      var(--c-bg);
+  --pico-color:                 var(--c-amber);
+  --pico-muted-color:           var(--c-muted);
+  --pico-muted-border-color:    var(--c-border);
+
+  --pico-primary:                  var(--c-flame);
+  --pico-primary-background:       var(--c-bark);
+  --pico-primary-border:           var(--c-flame);
+  --pico-primary-underline:        rgba(242, 103, 22, 0.5);
+  --pico-primary-hover:            var(--c-amber);
+  --pico-primary-hover-background: #7a2203;
+  --pico-primary-hover-border:     var(--c-amber);
+  --pico-primary-focus:            rgba(242, 103, 22, 0.4);
+  --pico-primary-inverse:          var(--c-amber);
+
+  --pico-secondary:                  var(--c-muted);
+  --pico-secondary-background:       #3d2010;
+  --pico-secondary-border:           #3d2010;
+  --pico-secondary-hover:            #b38040;
+  --pico-secondary-hover-background: #4a2d14;
+  --pico-secondary-focus:            rgba(138, 101, 53, 0.25);
+  --pico-secondary-inverse:          var(--c-amber);
+
+  --pico-ins-color:   var(--c-success);
+  --pico-del-color:   var(--c-danger);
+
+  --pico-h1-color: var(--c-amber-bright);
+  --pico-h2-color: var(--c-amber);
+  --pico-h3-color: #d9964a;
+  --pico-h4-color: #c07a35;
+
+  --pico-card-background-color:            var(--c-surface);
+  --pico-card-border-color:                var(--c-border);
+  --pico-card-sectioning-background-color: var(--c-surface-2);
+
+  --pico-form-element-background-color:        var(--c-surface);
+  --pico-form-element-border-color:            var(--c-border);
+  --pico-form-element-color:                   var(--c-amber);
+  --pico-form-element-placeholder-color:       var(--c-muted);
+  --pico-form-element-active-border-color:     var(--c-flame);
+  --pico-form-element-active-background-color: var(--c-surface-2);
+  --pico-form-element-focus-color:             var(--c-flame);
+
+  --pico-dropdown-background-color:       var(--c-surface);
+  --pico-dropdown-border-color:           var(--c-border);
+  --pico-dropdown-hover-background-color: var(--c-surface-2);
+
+  --pico-table-border-color: var(--c-border);
+  --pico-code-background-color: var(--c-bg);
+  --pico-code-color: #d9964a;
+  --pico-mark-background-color: var(--c-bark);
+  --pico-mark-color: var(--c-amber);
+  --pico-accordion-border-color: var(--c-border);
+
+  --pico-box-shadow:
+    0.0145rem 0.029rem 0.174rem rgba(13, 8, 0, 0.025),
+    0.0625rem 0.125rem 0.75rem  rgba(13, 8, 0, 0.04),
+    0.2085rem 0.417rem 2.502rem rgba(13, 8, 0, 0.055),
+    0.5rem    1rem     6rem     rgba(13, 8, 0, 0.075),
+    0 0 0 0.0625rem              rgba(13, 8, 0, 0.02);
+}
+
+/* ── Icon utilities ────────────────────────────────────────────────────── */
+.icon {
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.icon-sm  { width: 22px;  height: 22px; }
+.icon-md  { width: 40px;  height: 40px; }
+.icon-lg  { width: 56px;  height: 56px; }
+.icon-win { width: 140px; height: 140px; border-radius: 0.75rem; }
+
+/* ── Phase heading ─────────────────────────────────────────────────────── */
+.phase-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.phase-heading h2 { margin: 0; }
+
+/* ── Status bar (lobby) ────────────────────────────────────────────────── */
+.status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  background: var(--c-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--c-border);
+  margin-bottom: 1rem;
+  font-size: 0.9em;
+}
+.status-bar .status-msg {
+  margin-left: auto;
+  color: var(--c-flame);
+  font-style: italic;
+}
+
+/* ── Role card (lobby) ─────────────────────────────────────────────────── */
+.role-card {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--c-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-border);
+  margin-bottom: 0.5rem;
+}
+.role-card.role-team-villager { border-left-color: var(--c-flame); }
+.role-card.role-team-werewolf { border-left-color: var(--c-danger); }
+.role-card-info strong {
+  display: block;
+  font-family: "Metal Mania", var(--pico-font-family-emoji);
+  font-weight: 400;
+  font-size: 1em;
+  color: var(--c-amber);
+  margin-bottom: 0.1rem;
+}
+.role-card-info small { color: var(--c-muted); }
+.role-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.role-card-controls button {
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  border-radius: 50%;
+  font-size: 1rem;
+}
+.role-count {
+  min-width: 1.8rem;
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.1em;
+  color: var(--c-amber-bright);
+}
+
+/* ── Role badge (sidebar character section) ────────────────────────────── */
+.role-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--c-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--c-border);
+  margin: 0.4rem 0 0.8rem;
+}
+.role-badge-text strong {
+  display: block;
+  font-family: "Metal Mania", var(--pico-font-family-emoji);
+  font-size: 1.1em;
+  color: var(--c-amber);
+}
+.role-badge-text small { color: var(--c-muted); }
+
+/* ── Player list ───────────────────────────────────────────────────────── */
+.player-list {
+  list-style: none;
+  padding: 0;
+}
+.player-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--c-surface);
+  margin-bottom: 0.2rem;
+  border-radius: 0.3rem;
+  font-size: 0.9em;
+}
+.dead-player {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.werewolf-player { color: var(--c-danger); font-weight: bold; }
+
+/* ── Vote grid ─────────────────────────────────────────────────────────── */
+.vote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+/* Make forms transparent to grid layout so buttons become grid items */
+.vote-grid .vote-form { display: contents; }
+
+/* ── Action / vote buttons ─────────────────────────────────────────────── */
+.vote-button,
+.seer-button,
+.doctor-button,
+.guard-button,
+.hunter-button,
+.cupid-button,
+.witch-heal-button,
+.witch-kill-button {
+  width: 100%;
+  padding: 0.55rem 0.4rem;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 0.4rem;
+  color: var(--c-amber);
+  font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  margin: 0;
+}
+.vote-button:hover,
+.seer-button:hover,
+.doctor-button:hover,
+.guard-button:hover,
+.hunter-button:hover,
+.cupid-button:hover,
+.witch-heal-button:hover,
+.witch-kill-button:hover {
+  background: var(--c-surface-2);
+  border-color: var(--c-flame);
+  color: var(--c-amber-bright);
+}
+.vote-button.selected {
+  background: rgba(89, 25, 2, 0.6);
+  border-color: var(--c-danger);
+  color: var(--c-amber-bright);
+  box-shadow: 0 0 0 2px rgba(212, 64, 16, 0.2);
+}
+.witch-pass-button {
+  padding: 0.55rem 1rem;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: 0.4rem;
+  color: var(--c-muted);
+  font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+  margin: 0;
+}
+.witch-pass-button:hover { border-color: var(--c-amber); color: var(--c-amber); }
+
+/* ── Seer result labels ────────────────────────────────────────────────── */
+.seer-werewolf { color: var(--c-danger); font-weight: bold; }
+.seer-safe     { color: var(--c-success); }
+
+/* ── Vote list (tally) ─────────────────────────────────────────────────── */
+.vote-list { list-style: none; padding: 0; }
+.vote-list li {
+  padding: 0.3rem 0.5rem;
+  background: var(--c-surface);
+  margin-bottom: 0.2rem;
+  border-radius: 0.3rem;
+  font-size: 0.9em;
+}
+
+/* ── Death announcement ────────────────────────────────────────────────── */
+.death-announcement {
+  border-left: 3px solid var(--c-danger);
+  background: rgba(212, 64, 16, 0.07);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+  color: #f0a080;
+}
+.death-announcement p { margin: 0.2rem 0; color: #f0a080; }
+
+/* ── Winner announcement ───────────────────────────────────────────────── */
+.winner-announcement {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 2rem;
+  border-radius: 0.75rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.winner-villagers {
+  background: rgba(122, 176, 48, 0.1);
+  border: 1px solid var(--c-success);
+}
+.winner-werewolves {
+  background: rgba(212, 64, 16, 0.1);
+  border: 1px solid var(--c-danger);
+}
+.winner-lovers {
+  background: rgba(242, 178, 99, 0.08);
+  border: 1px solid var(--c-amber);
+}
+.winner-announcement h3 { color: var(--c-amber-bright); margin: 0; }
+.winner-announcement p  { margin: 0; color: var(--c-amber); }
+
+/* ── Final roster (finished screen) ───────────────────────────────────── */
+.team-werewolf { border-left: 3px solid var(--c-danger);  padding-left: 0.5rem; }
+.team-villager { border-left: 3px solid var(--c-success); padding-left: 0.5rem; }
+.survivor      { font-weight: bold; }

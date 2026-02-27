@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 //go:embed templates/*
@@ -1140,6 +1141,10 @@ func main() {
 
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
+		// roleIcon maps a role name to its webp icon path, e.g. "Wolf Cub" → "/static/icons/Wolf_Cub.webp"
+		"roleIcon": func(name string) string {
+			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		},
 	}
 	templates, err = template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {

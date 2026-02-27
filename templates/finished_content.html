@@ -1,15 +1,15 @@
-<div  class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
+<div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
     <section>
-        <h2>Game Over</h2>
-
         <div id="winner-announcement" class="winner-announcement winner-{{.Winner}}">
             {{if eq .Winner "villagers"}}
+            <img class="icon-win" src="/static/icons/Villagers_win.webp" alt="Villagers win">
             <h3>The Villagers Win!</h3>
             <p>All werewolves have been eliminated. The village is safe.</p>
             {{else if eq .Winner "lovers"}}
             <h3>💞 The Lovers Win!</h3>
             <p>Only the two lovers remain. Love conquers all.</p>
             {{else}}
+            <img class="icon-win" src="/static/icons/Werewolves_win.webp" alt="Werewolves win">
             <h3>The Werewolves Win!</h3>
             <p>The werewolves have devoured the village.</p>
             {{end}}
@@ -21,7 +21,8 @@
         <ul id="final-player-list" class="player-list">
             {{range .Players}}
             <li id="final-player-{{.PlayerID}}" class="{{if .IsAlive}}survivor{{else}}dead-player{{end}} team-{{.Team}}">
-                {{.Name}} - <strong>{{.RoleName}}</strong>
+                <img class="icon icon-sm" src="{{ roleIcon .RoleName }}" alt="{{.RoleName}}">
+                {{.Name}} — <strong>{{.RoleName}}</strong>
                 {{if .IsAlive}} (Survived){{else}} (Dead){{end}}
             </li>
             {{end}}

@@ -1,26 +1,32 @@
 <div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
     <section>
-        <h2 id="phase-heading"><span id="night">Night</span> {{.NightNumber}}</h2>
-        {{if not .IsAlive}}
-        <p><em>You are dead.</em></p>
-        {{else}}
-        {{if .IsWerewolf}}
-        <p>The werewolves awaken...</p>
+        <div class="phase-heading">
+            <img class="icon icon-md" src="/static/icons/Night.webp" alt="Night">
+            <h2 id="phase-heading">Night {{.NightNumber}}</h2>
+        </div>
 
-        <h3>Choose a Victim</h3>
+        {{if not .IsAlive}}
+        <p><em>You are dead. The village sleeps around you.</em></p>
+        {{else}}
+
+        {{if .IsWerewolf}}
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Werewolf.webp" alt="Werewolf">
+            <h3 style="margin:0">Choose a Victim</h3>
+        </div>
         {{if .WolfEndVoted}}
         <p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
         {{else}}
         <p><small>Select a player to kill, or pass. When all werewolves have acted, end the vote.</small></p>
 
         {{$currentVote := .CurrentVote}}
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="vote-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="werewolf_vote">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
             <button type="submit" id="vote-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote .PlayerID}} selected{{end}}">
-                {{.Name}}
-                {{if eq .Team "werewolf"}} 🐺{{end}}
+                {{.Name}}{{if eq .Team "werewolf"}} 🐺{{end}}
             </button>
         </form>
         {{end}}
@@ -28,6 +34,7 @@
             <input type="hidden" name="action" value="werewolf_pass">
             <button type="submit" id="werewolf-pass-btn" class="vote-button">Pass</button>
         </form>
+        </div>
 
         {{if .AllWolvesActed}}
         <form ws-send id="werewolf-end-vote-form">
@@ -49,20 +56,23 @@
         {{end}}
 
         {{if .WolfCubDoubleKill}}
-        <h3>⚡ Wolf Cub's Revenge — Choose a Second Victim</h3>
+        <div class="phase-heading" style="margin-top:1.5rem;margin-bottom:0.5rem">
+            <img class="icon icon-sm" src="/static/icons/Wolf_Cub.webp" alt="Wolf Cub">
+            <h3 style="margin:0">Wolf Cub's Revenge — Second Victim</h3>
+        </div>
         {{if .WolfEndVoted2}}
         <p id="wolf-end-voted2-msg"><em>Second vote locked in. Waiting for night to end...</em></p>
         {{else}}
         <p><small>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</small></p>
 
         {{$currentVote2 := .CurrentVote2}}
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="werewolf_vote_2">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
             <button type="submit" id="vote2-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote2 .PlayerID}} selected{{end}}">
-                {{.Name}}
-                {{if eq .Team "werewolf"}} 🐺{{end}}
+                {{.Name}}{{if eq .Team "werewolf"}} 🐺{{end}}
             </button>
         </form>
         {{end}}
@@ -70,6 +80,7 @@
             <input type="hidden" name="action" value="werewolf_pass_2">
             <button type="submit" id="werewolf-pass2-btn" class="vote-button">Pass</button>
         </form>
+        </div>
 
         {{if .AllWolvesActed2}}
         <form ws-send id="werewolf-end-vote2-form">
@@ -83,7 +94,10 @@
         {{end}}
 
         {{else if .IsSeer}}
-        <h3>🔮 Your Investigation</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Seer.webp" alt="Seer">
+            <h3 style="margin:0">Your Investigation</h3>
+        </div>
         {{if .HasInvestigated}}
         <p><em>You have already investigated tonight.</em></p>
         {{if .SeerResults}}
@@ -96,53 +110,62 @@
         {{end}}
         {{else}}
         <p><small>Choose a player to investigate. You will learn if they are a werewolf.</small></p>
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="seer-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="seer_investigate">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="seer-btn-{{.PlayerID}}" class="seer-button">
-                {{.Name}}
-            </button>
+            <button type="submit" id="seer-btn-{{.PlayerID}}" class="seer-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{end}}
 
         {{else if .IsDoctor}}
-        <h3>🏥 Your Protection</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Doctor.webp" alt="Doctor">
+            <h3 style="margin:0">Your Protection</h3>
+        </div>
         {{if .HasProtected}}
         <p id="doctor-result"><em>You are protecting <strong>{{.DoctorProtecting}}</strong> tonight.</em></p>
         {{else}}
         <p><small>Choose a player to protect from the werewolves tonight.</small></p>
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="doctor-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="doctor_protect">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="doctor-btn-{{.PlayerID}}" class="doctor-button">
-                {{.Name}}
-            </button>
+            <button type="submit" id="doctor-btn-{{.PlayerID}}" class="doctor-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{end}}
 
         {{else if .IsGuard}}
-        <h3>🛡️ Your Protection</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Guard.webp" alt="Guard">
+            <h3 style="margin:0">Your Protection</h3>
+        </div>
         {{if .GuardHasProtected}}
         <p id="guard-result"><em>You are protecting <strong>{{.GuardProtecting}}</strong> tonight.</em></p>
         {{else}}
-        <p><small>Choose a player to protect from the werewolves tonight. You cannot protect yourself or the same player two nights in a row.</small></p>
+        <p><small>Choose a player to protect. You cannot protect yourself or the same player twice in a row.</small></p>
+        <div class="vote-grid">
         {{range .GuardTargets}}
         <form ws-send id="guard-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="guard_protect">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="guard-btn-{{.PlayerID}}" class="guard-button">
-                {{.Name}}
-            </button>
+            <button type="submit" id="guard-btn-{{.PlayerID}}" class="guard-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{end}}
 
         {{else if .IsWitch}}
-        <h3>🧙 You are the Witch</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Witch.webp" alt="Witch">
+            <h3 style="margin:0">You are the Witch</h3>
+        </div>
         {{if .WitchVictim}}
         {{if .WitchVictim2}}
         <p>The werewolves are targeting <strong>{{.WitchVictim}}</strong> and <strong>{{.WitchVictim2}}</strong> tonight.</p>
@@ -154,20 +177,16 @@
         {{if .WitchHealedThisNight}}
         <p id="witch-heal-result">✓ You saved <strong>{{.WitchHealedName}}</strong>!</p>
         {{else if not .WitchDoneThisNight}}
-        <form ws-send id="witch-heal-form-{{.WitchVictimID}}" class="vote-form">
+        <form ws-send id="witch-heal-form-{{.WitchVictimID}}" class="vote-form" style="display:block;margin-bottom:0.5rem">
             <input type="hidden" name="action" value="witch_heal">
             <input type="hidden" name="target_player_id" value="{{.WitchVictimID}}">
-            <button type="submit" class="witch-heal-button">
-                🧪 Save {{.WitchVictim}}
-            </button>
+            <button type="submit" class="witch-heal-button">🧪 Save {{.WitchVictim}}</button>
         </form>
         {{if .WitchVictim2}}
-        <form ws-send id="witch-heal-form-{{.WitchVictimID2}}" class="vote-form">
+        <form ws-send id="witch-heal-form-{{.WitchVictimID2}}" class="vote-form" style="display:block;margin-bottom:0.5rem">
             <input type="hidden" name="action" value="witch_heal">
             <input type="hidden" name="target_player_id" value="{{.WitchVictimID2}}">
-            <button type="submit" class="witch-heal-button">
-                🧪 Save {{.WitchVictim2}}
-            </button>
+            <button type="submit" class="witch-heal-button">🧪 Save {{.WitchVictim2}}</button>
         </form>
         {{end}}
         {{end}}
@@ -184,34 +203,35 @@
         {{if .WitchKilledThisNight}}
         <p id="witch-kill-result">✓ You poisoned <strong>{{.WitchKilledTarget}}</strong>.</p>
         {{else if not .WitchDoneThisNight}}
-        <p><small>Choose a player to poison. You can choose any living player.</small></p>
+        <p><small>Choose a player to poison.</small></p>
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="witch-kill-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="witch_kill">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" class="witch-kill-button">
-                Poison {{.Name}}
-            </button>
+            <button type="submit" class="witch-kill-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{end}}
         {{else}}
         <p><em>Your poison potion has been used.</em></p>
         {{end}}
 
         {{if not .WitchDoneThisNight}}
-        <form ws-send id="witch-pass-form" class="vote-form">
+        <form ws-send id="witch-pass-form" class="vote-form" style="display:block;margin-top:1rem">
             <input type="hidden" name="action" value="witch_pass">
-            <button type="submit" id="witch-pass-button" class="witch-pass-button">
-                ✓ Done for tonight
-            </button>
+            <button type="submit" id="witch-pass-button" class="witch-pass-button">✓ Done for tonight</button>
         </form>
         {{else}}
         <p><em>Waiting for the night to end...</em></p>
         {{end}}
 
         {{else if .IsMason}}
-        <h3>🧱 Your Fellow Masons</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Mason.webp" alt="Mason">
+            <h3 style="margin:0">Your Fellow Masons</h3>
+        </div>
         {{if .Masons}}
         <p><small>You know these confirmed villagers:</small></p>
         <ul class="player-list">
@@ -224,37 +244,40 @@
         {{end}}
 
         {{else if .IsCupid}}
-        <h3>💘 Link Two Lovers</h3>
+        <div class="phase-heading" style="margin-bottom:1rem">
+            <img class="icon icon-sm" src="/static/icons/Cupid.webp" alt="Cupid">
+            <h3 style="margin:0">Link Two Lovers</h3>
+        </div>
         {{if .CupidChosen2}}
         <p id="cupid-result"><em>You have linked <strong>{{.CupidChosen1}}</strong> and <strong>{{.CupidChosen2}}</strong> as lovers.</em></p>
         {{else if .CupidChosen1}}
         <p><strong>First lover:</strong> {{.CupidChosen1}}</p>
         <p><small>Now choose the second lover.</small></p>
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="cupid_choose">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">
-                {{.Name}}
-            </button>
+            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{else}}
         <p><small>Choose two players to become lovers. They will know each other's identities.</small></p>
+        <div class="vote-grid">
         {{range .AliveTargets}}
         <form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form">
             <input type="hidden" name="action" value="cupid_choose">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">
-                {{.Name}}
-            </button>
+            <button type="submit" id="cupid-btn-{{.PlayerID}}" class="cupid-button">{{.Name}}</button>
         </form>
         {{end}}
+        </div>
         {{end}}
 
         {{else}}
         <p>The village sleeps...</p>
-        <p>Close your eyes and wait for morning.</p>
+        <p><em>Close your eyes and wait for morning.</em></p>
         {{end}}
 
         {{if .ShowSurvey}}
