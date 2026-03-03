@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" id="html-root">
 
 <head>
   <meta charset="UTF-8">
@@ -9,6 +9,7 @@
   <script src="/static/htmx.js"></script>
   <script src="/static/htmx-ws.js"></script>
   <script src="/static/idiomorph-ext.js"></script>
+  <script src="/static/player-card.js"></script>
   <style>
     body {
       height: 100vh;
@@ -181,6 +182,7 @@
       padding: var(--pico-spacing);
       overflow: auto;
       grid-area: container;
+      margin-bottom: 0;
     }
 
     /* Top bar (mobile only) */
@@ -190,6 +192,7 @@
       gap: 1rem;
       padding: var(--pico-spacing);
       border-bottom: var(--pico-border-width) solid var(--pico-muted-border-color);
+      background: var(--pico-card-background-color);
     }
 
     .nav-toggle-button {
@@ -264,6 +267,7 @@
 </head>
 
 <body hx-ext="ws,morph" ws-connect="/ws">
+  <div id="page-theme" data-theme="dark" hidden></div>
   <div id="toast-container"></div>
   <input type="checkbox" id="sidebar-nav-toggle" hidden>
   <input type="checkbox" id="history-bar-nav-toggle" hidden>
@@ -272,7 +276,7 @@
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">
         ☰
       </label>
-      <div>
+      <div id="topbar-phase">
         <h1>Werewolf</h1>
       </div>
       <label class="nav-toggle-button" for="history-bar-nav-toggle" role="button"
@@ -280,18 +284,59 @@
         H
       </label>
     </header>
-    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="innerHTML" hx-swap-oob="true">
+    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="none">
     </aside>
     <section class="container">
-      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="innerHTML"
-        hx-swap-oob="true">
+      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="none">
       </div>
     </section>
-    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="innerHTML"
-      hx-swap-oob="true">
+    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="none">
     </aside>
   </main>
   <script>
+    // Sidebar scroll-collapse (keep for sidebar card)
+    var sidebar = document.querySelector('.sidebar');
+    function initScrollCollapse(el, threshold) {
+      if (!el) return;
+      var locked = false;
+      el.addEventListener('scroll', function () {
+        if (el.scrollTop > threshold) {
+          if (!el.classList.contains('scrolled')) {
+            el.classList.add('scrolled');
+            locked = true;
+            setTimeout(function () { locked = false; }, 500);
+          }
+        } else if (!locked) {
+          el.classList.remove('scrolled');
+        }
+      }, { passive: true });
+    }
+    initScrollCollapse(sidebar, 60);
+
+    // Reset sidebar scroll state when the sidebar is closed
+    document.getElementById('sidebar-nav-toggle').addEventListener('change', function () {
+      if (!this.checked && sidebar) {
+        sidebar.classList.remove('scrolled');
+        sidebar.scrollTop = 0;
+      }
+    });
+
+    // Global helper: send a WS message from inside shadow DOM where htmx
+    // ws-send can't reach the [ws-connect] ancestor across the shadow boundary.
+    var _wsSocket = null;
+    document.body.addEventListener('htmx:wsOpen', function (e) {
+      _wsSocket = e.detail.socketWrapper;
+    });
+    window.wsSend = function (params) {
+      if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);
+    };
+
+    // Apply theme from #page-theme to <html> on every WS message
+    new MutationObserver(() => {
+      const t = document.getElementById('page-theme')?.dataset.theme;
+      if (t) document.documentElement.dataset.theme = t;
+    }).observe(document.getElementById('page-theme'), { attributes: true, attributeFilter: ['data-theme'] });
+
     // Auto-dismiss toasts after 10 seconds unless hovered
     function initToast(toast) {
       let timeout;
@@ -315,55 +360,8 @@
       toast.addEventListener('mouseleave', startTimer);
       startTimer();
     }
-  const scrollStateMap = new Map();
 
-  // Save scroll state before swap
-  document.body.addEventListener("htmx:beforeSwap", (e) => {
-    const target = e.detail.target;
-    if (!target) return;
-
-    // Only track scrollable elements
-    if (target.scrollTop !== undefined) {
-      scrollStateMap.set(target, {
-        scrollTop: target.scrollTop,
-        scrollLeft: target.scrollLeft
-      });
-    }
-
-    // Save window scroll
-    scrollStateMap.set(window, {
-      scrollTop: window.scrollY,
-      scrollLeft: window.scrollX
-    });
-  });
-
-  // Restore scroll state after swap
-  document.body.addEventListener("htmx:afterSwap", (e) => {
-    requestAnimationFrame(() => {
-      // Restore scrollable element
-      for (const [el, pos] of scrollStateMap) {
-        if (el === window) {
-          window.scrollTo(pos.scrollLeft, pos.scrollTop);
-        } else if (document.body.contains(el)) {
-          el.scrollTop = pos.scrollTop;
-          el.scrollLeft = pos.scrollLeft;
-        } else {
-          // If the old element is gone, try to find its replacement by ID
-          if (el.id) {
-            const replacement = document.getElementById(el.id);
-            if (replacement) {
-              replacement.scrollTop = pos.scrollTop;
-              replacement.scrollLeft = pos.scrollLeft;
-            }
-          }
-        }
-      }
-
-      // Clear saved scroll state
-      scrollStateMap.clear();
-    });
-  });
-
+    const scrollStateMap = new Map();
     // Initialize existing toasts and watch for new ones
     document.querySelectorAll('[data-toast]').forEach(initToast);
 

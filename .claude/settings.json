@@ -4,5 +4,6 @@
     "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true
-  }
+  },
+  "allowedDomains": ["localhost", "localhost:8080"]
 }

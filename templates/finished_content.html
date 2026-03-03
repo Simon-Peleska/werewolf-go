@@ -1,33 +1,53 @@
-<div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
-    <section>
-        <div id="winner-announcement" class="winner-announcement winner-{{.Winner}}">
-            {{if eq .Winner "villagers"}}
-            <img class="icon-win" src="/static/icons/Villagers_win.webp" alt="Villagers win">
-            <h3>The Villagers Win!</h3>
-            <p>All werewolves have been eliminated. The village is safe.</p>
-            {{else if eq .Winner "lovers"}}
-            <h3>💞 The Lovers Win!</h3>
-            <p>Only the two lovers remain. Love conquers all.</p>
-            {{else}}
-            <img class="icon-win" src="/static/icons/Werewolves_win.webp" alt="Werewolves win">
-            <h3>The Werewolves Win!</h3>
-            <p>The werewolves have devoured the village.</p>
-            {{end}}
-        </div>
+<div id="topbar-phase" hx-swap-oob="morph"><h1>Werewolf</h1></div>
+<div id="page-theme" data-theme="{{if eq .Winner "villagers"}}light{{else}}dark{{end}}" hx-swap-oob="morph" hidden></div>
+
+<div class="game-content" id="game-content" hx-swap-oob="morph">
+
+    <!-- Hero: big centered win seal -->
+    <section class="win-hero">
+        {{if eq .Winner "villagers"}}
+        <img class="seal seal-xl win-seal-glow win-seal-villagers" src="/static/seals/Villagers_win.webp" alt="Villagers win">
+        {{else if eq .Winner "lovers"}}
+        <img class="seal seal-xl win-seal-glow win-seal-lovers" src="/static/seals/lovers_win.webp" alt="Lovers win">
+        {{else}}
+        <img class="seal seal-xl win-seal-glow win-seal-werewolves" src="/static/seals/Werewolves_win.webp" alt="Werewolves win">
+        {{end}}
     </section>
 
+    <!-- Victors -->
+    {{if .Winners}}
     <section>
-        <h3>Final Roster</h3>
-        <ul id="final-player-list" class="player-list">
-            {{range .Players}}
-            <li id="final-player-{{.PlayerID}}" class="{{if .IsAlive}}survivor{{else}}dead-player{{end}} team-{{.Team}}">
-                <img class="icon icon-sm" src="{{ roleIcon .RoleName }}" alt="{{.RoleName}}">
-                {{.Name}} — <strong>{{.RoleName}}</strong>
-                {{if .IsAlive}} (Survived){{else}} (Dead){{end}}
-            </li>
+        <h3 class="win-section-title">Victors</h3>
+        <card-list class="win-list">
+            {{range .Winners}}
+            <player-card
+                role-name="{{.RoleName}}"
+                role-desc="{{.RoleDescription}}"
+                player-name="{{.Name}}"
+                team="{{.Team}}"
+                winner></player-card>
             {{end}}
-        </ul>
+        </card-list>
     </section>
+    {{end}}
+
+    <!-- The Fallen -->
+    {{if .Losers}}
+    <section>
+        <h3 class="win-section-title win-section-title-fallen">The Fallen</h3>
+        <card-list class="win-list">
+            {{range .Losers}}
+            <player-card
+                role-name="{{.RoleName}}"
+                role-desc="{{.RoleDescription}}"
+                player-name="{{.Name}}"
+                team="{{.Team}}"
+                loser
+                collapsible></player-card>
+            {{end}}
+        </card-list>
+    </section>
+    {{end}}
 
     <section>
         <form ws-send>

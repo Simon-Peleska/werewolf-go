@@ -609,6 +609,9 @@ func newTestContext(t *testing.T) *TestContext {
 	// Parse templates
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
+		"roleSeal": func(name string) string {
+			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		},
 		"roleIcon": func(name string) string {
 			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},

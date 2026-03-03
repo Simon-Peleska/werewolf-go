@@ -1,4 +1,4 @@
-<aside id="sidebar" class="sidebar" hx-swap="innerHTML" hx-swap-oob="true">
+<aside id="sidebar" class="sidebar" hx-swap-oob="morph">
   <div class="leftbound">
     <div>
       <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Toggle navigation">
@@ -10,6 +10,12 @@
     </div>
   </div>
 
+  {{if eq .Game.Status "night"}}
+  <h2 class="sidebar-phase-label">Night {{.Game.Round}}</h2>
+  {{else if eq .Game.Status "day"}}
+  <h2 class="sidebar-phase-label sidebar-phase-day">Day {{.Game.Round}}</h2>
+  {{end}}
+
   <section>
     <p><strong>{{.Player.Name}}</strong> <small>(Code: <code id="secret-code-display">{{.Player.SecretCode}}</code>)</small></p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
@@ -19,14 +25,14 @@
 
   {{if ne .Game.Status "lobby"}}
   <section>
-    <div class="role-badge">
-      <img class="icon icon-md" src="{{ roleIcon .Player.RoleName }}" alt="{{.Player.RoleName}}">
-      <div class="role-badge-text">
-        <strong id="role">{{.Player.RoleName}}</strong>
-        <small>{{if .Player.IsAlive}}Alive · {{.Player.Team}}{{else}}Dead{{end}}</small>
-      </div>
-    </div>
-    <p style="font-size:0.85em; color: var(--c-muted);">{{.Player.RoleDescription}}</p>
+    <span id="role" hidden>{{.Player.RoleName}}</span>
+    <player-card id="sidebar-role-card"
+      role-name="{{.Player.RoleName}}"
+      role-desc="{{.Player.RoleDescription}}"
+      player-name="{{.Player.Name}}"
+      team="{{.Player.Team}}"
+      alive="{{if .Player.IsAlive}}true{{else}}false{{end}}"
+      sidebar></player-card>
   </section>
   <hr>
   {{end}}

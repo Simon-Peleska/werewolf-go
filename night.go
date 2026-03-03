@@ -72,6 +72,11 @@ type NightData struct {
 	SurveyCount          int      // how many alive players have submitted the survey
 	AliveCount           int      // total alive players (for "waiting for N more" display)
 	SurveyTargets        []Player // alive players for the suspect dropdown
+	// Card display fields
+	PlayerName      string
+	RoleName        string
+	RoleDescription string
+	RoleTeam        string
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {

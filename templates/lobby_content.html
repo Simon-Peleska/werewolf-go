@@ -1,4 +1,7 @@
-<div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
+<div id="topbar-phase" hx-swap-oob="morph"><h1>Werewolf</h1></div>
+<div id="page-theme" data-theme="dark" hx-swap-oob="morph" hidden></div>
+
+<div class="game-content" id="game-content" hx-swap-oob="morph">
     <div id="status-bar" class="status-bar">
         <span><strong>Players:</strong> {{.PlayerCount}}</span>
         <span><strong>Roles:</strong> {{.TotalRoles}}</span>
@@ -19,30 +22,21 @@
         <h2>Roles</h2>
         <p><small>Select which roles and how many of each to include in the game.</small></p>
 
+        <card-list>
         {{range .RoleConfigs}}
-        <div id="role-{{.Role.ID}}" class="role-card role-team-{{.Role.Team}}">
-            <img class="icon icon-md" src="{{ roleIcon .Role.Name }}" alt="{{.Role.Name}}">
-            <div class="role-card-info">
-                <strong>{{.Role.Name}}</strong>
-                <small>{{.Role.Description}}</small>
-            </div>
-            <div class="role-card-controls">
-                <form ws-send style="display:contents">
-                    <input type="hidden" name="action" value="update_role">
-                    <input type="hidden" name="role_id" value="{{.Role.ID}}">
-                    <input type="hidden" name="delta" value="-1">
-                    <button type="submit" id="btn-remove-{{.Role.ID}}" {{if eq .Count 0}}disabled{{end}}>−</button>
-                </form>
-                <span id="count-{{.Role.ID}}" class="role-count">{{.Count}}</span>
-                <form ws-send style="display:contents">
-                    <input type="hidden" name="action" value="update_role">
-                    <input type="hidden" name="role_id" value="{{.Role.ID}}">
-                    <input type="hidden" name="delta" value="1">
-                    <button type="submit" id="btn-add-{{.Role.ID}}" {{if ge $.TotalRoles $.PlayerCount}}disabled{{end}}>+</button>
-                </form>
-            </div>
-        </div>
+        <player-card id="role-{{.Role.ID}}"
+            role-name="{{.Role.Name}}"
+            role-desc="{{.Role.Description}}"
+            team="{{.Role.Team}}"
+            count="{{.Count}}"
+            role-id="{{.Role.ID}}"
+            total-roles="{{$.TotalRoles}}"
+            player-count="{{$.PlayerCount}}"
+            lobby
+            {{if gt .Count 0}}active{{end}}
+            collapsible></player-card>
         {{end}}
+        </card-list>
     </section>
 
     <hr>

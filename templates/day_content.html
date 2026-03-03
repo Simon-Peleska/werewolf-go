@@ -1,47 +1,55 @@
-<div class="game-content" id="game-content" hx-swap="innerHTML" hx-swap-oob="true">
+<div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label topbar-phase-day">Day {{.NightNumber}}</span></div>
+<div id="page-theme" data-theme="light" hx-swap-oob="morph" hidden></div>
+
+<div class="game-content" id="game-content" hx-swap-oob="morph">
     <section>
-        <div class="phase-heading">
-            <img class="icon icon-md" src="/static/icons/Day.webp" alt="Day">
-            <h2 id="phase-heading">Day {{.NightNumber}}</h2>
-        </div>
+        <div class="phase-action-layout">
+            <player-card id="phase-role-card"
+                role-name="{{.RoleName}}"
+                role-desc="{{.RoleDescription}}"
+                player-name="{{.PlayerName}}"
+                team="{{.RoleTeam}}"></player-card>
 
-        {{if .NightVictims}}
-        <div class="death-announcement" id="death-announcement">
-            {{range .NightVictims}}
-            <p>💀 <strong>{{.Name}}</strong> was found dead. They were a <strong>{{.Role}}</strong>.</p>
-            {{end}}
-        </div>
-        {{else}}
-        <p id="no-death-message">The village awakens. No one died last night.</p>
-        {{end}}
+            <div class="phase-action-panel">
+                {{if .NightVictims}}
+                <div class="death-announcement" id="death-announcement">
+                    {{range .NightVictims}}
+                    <p>💀 <strong>{{.Name}}</strong> was found dead. They were a <strong>{{.Role}}</strong>.</p>
+                    {{end}}
+                </div>
+                {{else}}
+                <p id="no-death-message">The village awakens. No one died last night.</p>
+                {{end}}
 
-        {{if .HunterRevengeNeeded}}
-        <div id="hunter-revenge-section">
-            {{if .HunterRevengeDone}}
-            <div class="death-announcement" id="hunter-revenge-result">
-                <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
-                <p>They were a <strong>{{.HunterVictimRole}}</strong>.</p>
+                {{if .HunterRevengeNeeded}}
+                <div id="hunter-revenge-section">
+                    {{if .HunterRevengeDone}}
+                    <div class="death-announcement" id="hunter-revenge-result">
+                        <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
+                        <p>They were a <strong>{{.HunterVictimRole}}</strong>.</p>
+                    </div>
+                    {{else if .IsTheHunter}}
+                    <div class="phase-heading" style="margin-bottom:0.75rem">
+                        <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
+                        <h3 style="margin:0">Your Last Shot</h3>
+                    </div>
+                    <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
+                    <div class="vote-grid">
+                    {{range .HunterTargets}}
+                    <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form">
+                        <input type="hidden" name="action" value="hunter_revenge">
+                        <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+                        <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">{{.Name}}</button>
+                    </form>
+                    {{end}}
+                    </div>
+                    {{else}}
+                    <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
+                    {{end}}
+                </div>
+                {{end}}
             </div>
-            {{else if .IsTheHunter}}
-            <div class="phase-heading" style="margin-bottom:0.75rem">
-                <img class="icon icon-sm" src="/static/icons/Hunter.webp" alt="Hunter">
-                <h3 style="margin:0">Your Last Shot</h3>
-            </div>
-            <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
-            <div class="vote-grid">
-            {{range .HunterTargets}}
-            <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form">
-                <input type="hidden" name="action" value="hunter_revenge">
-                <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">{{.Name}}</button>
-            </form>
-            {{end}}
-            </div>
-            {{else}}
-            <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
-            {{end}}
         </div>
-        {{end}}
     </section>
 
     {{if not .HunterRevengeNeeded | or .HunterRevengeDone}}

@@ -38,6 +38,11 @@ type DayData struct {
 	LoverName           string   // Name of their partner
 	AllActed            bool     // All alive players have voted or passed this round
 	HasVoted            bool     // This player has a day_vote record (including pass)
+	// Card display fields
+	PlayerName      string
+	RoleName        string
+	RoleDescription string
+	RoleTeam        string
 }
 
 // applyHeartbreaks checks if any of the given killed players have a living lover.

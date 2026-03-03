@@ -231,28 +231,37 @@ func getSeerFoundWerewolves(gameID, playerID int64) map[int64]bool {
 func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	playerID, err := getPlayerIdFromSession(r)
 	if err != nil {
-		DebugLog("handleGame", "Redirecting anonymous visitor to index")
+		DebugLog("handleSidebarInfo", "Redirecting anonymous visitor to index")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
-		logError("handleGame: getOrCreateCurrentGame", err)
+		logError("handleSidebarInfo: getOrCreateCurrentGame", err)
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
 
-	// Get player info from player table
+	// Get player info — include role data if game has started
 	var player Player
-	err = db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
-	if err != nil {
-		logError("handleGame: db.Get player", err)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
+	if game.Status != "lobby" {
+		player, err = getPlayerInGame(game.ID, playerID)
+		if err != nil {
+			logError("handleSidebarInfo: getPlayerInGame", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+	} else {
+		err = db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
+		if err != nil {
+			logError("handleSidebarInfo: db.Get player", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		player.PlayerID = playerID
 	}
-	player.PlayerID = playerID
-	DebugLog("handleGame", "Player '%s' (ID: %d) accessing game page, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
+	DebugLog("handleSidebarInfo", "Player '%s' (ID: %d) accessing sidebar, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
 
 	// Get all players in the game
 	players, err := getPlayersByGameId(game.ID)
@@ -858,6 +867,10 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		}
 
 		data := NightData{
+			PlayerName:           currentPlayer.Name,
+			RoleName:             currentPlayer.RoleName,
+			RoleDescription:      currentPlayer.RoleDescription,
+			RoleTeam:             currentPlayer.Team,
 			IsAlive:              isAlive,
 			Players:              players,
 			AliveTargets:         aliveTargets,
@@ -1037,6 +1050,10 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			game.ID, game.Round, ActionDayVote, playerID)
 
 		data := DayData{
+			PlayerName:          currentPlayer.Name,
+			RoleName:            currentPlayer.RoleName,
+			RoleDescription:     currentPlayer.RoleDescription,
+			RoleTeam:            currentPlayer.Team,
 			Players:             players,
 			AliveTargets:        aliveTargets,
 			NightNumber:         game.Round,
@@ -1082,8 +1099,27 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			}
 		}
 
+		var winners, losers []Player
+		for _, p := range players {
+			isWinner := false
+			switch winner {
+			case "villagers":
+				isWinner = p.Team == "villager"
+			case "werewolves":
+				isWinner = p.Team == "werewolf"
+			case "lovers":
+				isWinner = p.IsAlive
+			}
+			if isWinner {
+				winners = append(winners, p)
+			} else {
+				losers = append(losers, p)
+			}
+		}
+
 		data := FinishedData{
-			Players: players,
+			Winners: winners,
+			Losers:  losers,
 			Winner:  winner,
 		}
 
@@ -1141,9 +1177,9 @@ func main() {
 
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
-		// roleIcon maps a role name to its webp icon path, e.g. "Wolf Cub" → "/static/icons/Wolf_Cub.webp"
-		"roleIcon": func(name string) string {
-			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		// roleSeal maps a role name to its webp seal path, e.g. "Wolf Cub" → "/static/seals/Wolf_Cub.webp"
+		"roleSeal": func(name string) string {
+			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
 	}
 	templates, err = template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")

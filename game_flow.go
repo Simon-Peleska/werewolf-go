@@ -6,8 +6,9 @@ import (
 
 // FinishedData holds all data needed to render the finished game screen
 type FinishedData struct {
-	Players []Player
-	Winner  string // "villagers" or "werewolves"
+	Winners []Player
+	Losers  []Player
+	Winner  string // "villagers", "werewolves", or "lovers"
 }
 
 // transitionToNight moves the game to the next night phase

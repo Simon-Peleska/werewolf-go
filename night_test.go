@@ -13,7 +13,7 @@ import (
 // isInNightPhase checks if the player sees the night phase UI
 func (tp *TestPlayer) isInNightPhase() bool {
 	res, err := tp.Page.Eval(`() => {
-		const h = document.querySelector('#phase-heading');
+		const h = document.querySelector('#topbar-phase');
 		return !!(h && h.textContent.trim().startsWith('Night'));
 	}`)
 	isNight := err == nil && res != nil && res.Value.Bool()
@@ -26,7 +26,7 @@ func (tp *TestPlayer) isInNightPhase() bool {
 // isInDayPhase checks if the player sees the day phase UI
 func (tp *TestPlayer) isInDayPhase() bool {
 	res, err := tp.Page.Eval(`() => {
-		const h = document.querySelector('#phase-heading');
+		const h = document.querySelector('#topbar-phase');
 		return !!(h && h.textContent.trim().startsWith('Day'));
 	}`)
 	isDay := err == nil && res != nil && res.Value.Bool()
@@ -39,7 +39,7 @@ func (tp *TestPlayer) isInDayPhase() bool {
 // waitForDayPhase waits for the player to transition to day phase by listening to WebSocket messages
 func (tp *TestPlayer) waitForDayPhase() error {
 	checkJS := `(() => {
-		const heading = document.querySelector('#phase-heading');
+		const heading = document.querySelector('#topbar-phase');
 		return heading && heading.textContent.trim().startsWith('Day');
 	})`
 	return tp.waitUntilCondition(checkJS, "day phase")
@@ -48,7 +48,7 @@ func (tp *TestPlayer) waitForDayPhase() error {
 // waitForNightPhase waits for the player to transition to night phase by listening to WebSocket messages
 func (tp *TestPlayer) waitForNightPhase() error {
 	checkJS := `(() => {
-		const heading = document.querySelector('#phase-heading');
+		const heading = document.querySelector('#topbar-phase');
 		return heading && heading.textContent.trim().startsWith('Night');
 	})`
 	return tp.waitUntilCondition(checkJS, "night phase")
@@ -63,8 +63,8 @@ func (tp *TestPlayer) submitNightSurvey() {
 		       document.body.textContent.includes('You are dead');
 	}`
 	tp.waitUntilCondition(checkJS, "night survey state")
-	if has, btn, _ := tp.p().Has("#night-survey-form button[type='submit']"); has {
-		tp.clickElementAndWait(btn)
+	if has, _, _ := tp.p().Has("#night-survey-form button[type='submit']"); has {
+		tp.clickAndWait("#night-survey-form button[type='submit']")
 	}
 }
 
@@ -100,8 +100,7 @@ func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, 
 		tp.p().MustElement("textarea[name='notes']").MustInput(notes)
 	}
 
-	btn := tp.p().MustElement("#night-survey-form button[type='submit']")
-	tp.clickElementAndWait(btn)
+	tp.clickAndWait("#night-survey-form button[type='submit']")
 }
 
 // canSeeWerewolfVotes checks if the player can see the werewolf voting UI
