@@ -147,24 +147,27 @@ type GameAction struct {
 
 // Action types
 const (
-	ActionWerewolfKill     = "werewolf_kill"
-	ActionDayVote          = "day_vote"
-	ActionElimination      = "elimination"
-	ActionSeerInvestigate  = "seer_investigate"
-	ActionDoctorProtect    = "doctor_protect"
-	ActionGuardProtect     = "guard_protect"
-	ActionHunterRevenge    = "hunter_revenge"
-	ActionWitchHeal        = "witch_heal"
-	ActionWitchKill        = "witch_kill"
-	ActionWitchPass        = "witch_pass"
-	ActionWerewolfKill2    = "werewolf_kill_2"     // second kill on Wolf Cub death night
-	ActionCupidLink        = "cupid_link"          // tracks Cupid's step-1 lover choice (Night 1 only)
-	ActionLoverHeartbreak  = "lover_heartbreak"    // partner dies of heartbreak when their lover is killed
-	ActionWerewolfEndVote  = "werewolf_end_vote"   // one wolf presses End Vote to lock in first kill
-	ActionWerewolfEndVote2 = "werewolf_end_vote_2" // one wolf presses End Vote to lock in second kill (Wolf Cub)
-	ActionNightKill        = "night_kill"          // public death record inserted when any player dies at night
-	ActionStory            = "story"               // AI-generated story shown in history after deaths
-	ActionNightSurvey      = "night_survey"        // one per player when they press Continue (visibility=resolved)
+	ActionWerewolfKill      = "werewolf_kill"
+	ActionDayVote           = "day_vote"
+	ActionElimination       = "elimination"
+	ActionSeerInvestigate   = "seer_investigate"
+	ActionDoctorProtect     = "doctor_protect"
+	ActionGuardProtect      = "guard_protect"
+	ActionHunterRevenge     = "hunter_revenge"
+	ActionWitchSelectHeal   = "witch_select_heal"   // pending heal selection (toggled, committed on Apply)
+	ActionWitchSelectPoison = "witch_select_poison" // pending poison selection (toggled, committed on Apply)
+	ActionWitchHeal         = "witch_heal"          // committed heal (written by witch_apply)
+	ActionWitchKill         = "witch_kill"          // committed kill (written by witch_apply)
+	ActionWitchApply        = "witch_apply"         // witch presses Done; replaces witch_pass
+	ActionWerewolfKill2     = "werewolf_kill_2"     // second kill on Wolf Cub death night
+	ActionCupidLink         = "cupid_link"          // tracks Cupid's step-1 lover choice (Night 1 only)
+	ActionCupidLink2        = "cupid_link_2"        // tracks Cupid's step-2 lover choice (Night 1 only)
+	ActionLoverHeartbreak   = "lover_heartbreak"    // partner dies of heartbreak when their lover is killed
+	ActionWerewolfEndVote   = "werewolf_end_vote"   // one wolf presses End Vote to lock in first kill
+	ActionWerewolfEndVote2  = "werewolf_end_vote_2" // one wolf presses End Vote to lock in second kill (Wolf Cub)
+	ActionNightKill         = "night_kill"          // public death record inserted when any player dies at night
+	ActionStory             = "story"               // AI-generated story shown in history after deaths
+	ActionNightSurvey       = "night_survey"        // one per player when they press Continue (visibility=resolved)
 )
 
 // Visibility types
@@ -312,6 +315,17 @@ func initDB() error {
 		FOREIGN KEY (actor_player_id) REFERENCES player(rowid),
 		FOREIGN KEY (target_player_id) REFERENCES player(rowid),
 		UNIQUE(game_id, round, phase, actor_player_id, action_type)
+	);
+	CREATE TABLE IF NOT EXISTS cupid_selection (
+		game_id INTEGER NOT NULL,
+		cupid_player_id INTEGER NOT NULL,
+		first_player_id INTEGER,
+		second_player_id INTEGER,
+		FOREIGN KEY (game_id) REFERENCES game(rowid),
+		FOREIGN KEY (cupid_player_id) REFERENCES player(rowid),
+		FOREIGN KEY (first_player_id) REFERENCES player(rowid),
+		FOREIGN KEY (second_player_id) REFERENCES player(rowid),
+		UNIQUE(game_id, cupid_player_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_game_action_lookup ON game_action(game_id, round, phase, visibility);
 

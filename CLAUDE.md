@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 A werewolf (social deduction) game implemented in Go.
@@ -48,14 +44,14 @@ Night actions occur in the following order:
 
 ### 3. Day Phase
 1. **Morning Announcement** - Reveal who died during the night (if anyone)
-2. **Lovers Check** - If one lover dies, the other dies immediately from heartbreak
-6. **Win Condition Check** - Check if either team has won
-3. **Discussion Period** - Players discuss and debate who might be a werewolf
-4. **Voting Period** - Players vote to eliminate one player (majority vote required)
-5. **Elimination** - The player with most votes is eliminated and their role is revealed
-2. **Lovers Check** - If one lover dies, the other dies immediately from heartbreak
-6. **Win Condition Check** - Check if either team has won
-7. **Transition to Night** - If game continues, return to Night Phase
+2. **Lovers Check** - If a killed player's lover is alive, they die from heartbreak
+3. **Win Condition Check** - Check if either team has won
+4. **Discussion Period** - Players discuss and debate who might be a werewolf
+5. **Voting Period** - Players vote to eliminate one player (majority vote required)
+6. **Elimination** - The player with most votes is eliminated and their role is revealed
+7. **Lovers Check** - If the eliminated player's lover is alive, they die from heartbreak
+8. **Win Condition Check** - Check again after elimination
+9. **Transition to Night** - If game continues, return to Night Phase
 
 ### 4. Game End
 - Announce winning team
@@ -239,6 +235,41 @@ go fmt ./...
 go vet ./...
 ```
 
+## Configuration
+
+All configuration goes through `AppConfig` in `config.go`. Three layers apply in order (highest wins):
+
+1. **Defaults** — set in `defaultConfig()`
+2. **Environment variables** — uppercase, underscores (e.g. `LOG_DEBUG=true`)
+3. **JSON config file** — `config.json` by default; only keys present in the file override env vars
+4. **CLI flags** — explicitly passed flags win over everything else
+
+Config file path is set via `-config <path>` CLI flag (no env var for this one).
+Bool env vars accept `1`, `true`, or `yes`.
+
+**IMPORTANT: When adding a new config field, update `AppConfig`, `defaultConfig`, `loadConfig`, `applyJSONOverlay`, `registerFlags`, `applyTo` in `config.go` AND add a row to this table.**
+
+| Field | Env Var | JSON key | CLI flag | Default | Description |
+|-------|---------|----------|----------|---------|-------------|
+| Config file | — | — | `-config` | `config.json` | Path to JSON config file |
+| DB | `DB` | `db` | `-db` | `file::memory:?cache=shared` | SQLite connection string |
+| Dev mode | `DEV` | `dev` | `-dev` | `false` | Verbose logging, DB dumps on errors |
+| Listen address | `ADDR` | `addr` | `-addr` | `:8080` | HTTP listen address |
+| Log output dir | `LOG_OUTPUT_DIR` | `log_output_dir` | `-log-output-dir` | — | Directory for extended log files |
+| Log requests | `LOG_REQUESTS` | `log_requests` | `-log-requests` | `false` | Log HTTP requests/responses |
+| Log HTML | `LOG_HTML` | `log_html` | `-log-html` | `false` | Log HTML states |
+| Log DB | `LOG_DB` | `log_db` | `-log-db` | `false` | Log database dumps |
+| Log WS | `LOG_WS` | `log_ws` | `-log-ws` | `false` | Log WebSocket messages |
+| Log debug | `LOG_DEBUG` | `log_debug` | `-log-debug` | `false` | Enable debug logging |
+| Storyteller provider | `STORYTELLER_PROVIDER` | `storyteller_provider` | `-storyteller-provider` | — | `ollama\|openai\|claude\|gemini\|groq\|openai-compatible` |
+| Storyteller model | `STORYTELLER_MODEL` | `storyteller_model` | `-storyteller-model` | — | Model name |
+| Ollama URL | `STORYTELLER_OLLAMA_URL` | `storyteller_ollama_url` | `-storyteller-ollama-url` | `http://localhost:11434` | Ollama server URL |
+| Storyteller URL | `STORYTELLER_URL` | `storyteller_url` | `-storyteller-url` | — | Base URL for openai-compatible provider |
+| Storyteller API key | `STORYTELLER_API_KEY` | `storyteller_api_key` | `-storyteller-api-key` | — | API key for storyteller |
+| Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
+| Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` |
+| Groq API key | `GROQ_API_KEY` | `groq_api_key` | `-groq-api-key` | — | Groq API key |
+
 ## Agent Tools & Claude Skills
 
 The `agent_tools/` directory contains bash scripts for common development tasks. These are also available as Claude skills in `.claude/commands/`.
@@ -305,11 +336,26 @@ Test files are organized by feature and contain all tests and helpers for that f
 | `./auth_test.go` | Tests for authentication and session management |
 | `./hub_test.go` | Tests for WebSocket connection and message handling |
 
+### Template Files
+
+| Path | Purpose |
+|------|---------|
+| `templates/index.html` | Login/signup page (standard HTTP, no WebSocket) |
+| `templates/game.html` | Main game shell (includes sidebar + content area) |
+| `templates/sidebar.html` | Player list, history, role display |
+| `templates/lobby_content.html` | Role card grid, player list, start button |
+| `templates/night_content.html` | Night phase actions per role |
+| `templates/day_content.html` | Day voting UI |
+| `templates/finished_content.html` | Win screen |
+| `templates/history.html` | Game action history entries |
+| `templates/toast.html` | Toast notification fragment |
+| `templates/error.html` | Error display fragment |
+
 ## Architecture
-- The app should be a go backend with sqlite as a database and an htmx page as a frontend
-- The signup/login should be 
-- It should be a single page application with only one endpoint
-- All communtion shoud be over websockets
+- Go backend, SQLite database, HTMX frontend
+- Signup/login page uses standard HTTP (no WebSockets)
+- After joining a game, all communication is over WebSockets (one persistent connection per player)
+- Single page app: the game view is one HTML shell updated via HTMX OOB swaps over the WebSocket
 
 ### Used technologies
 - Programming language go
@@ -320,8 +366,8 @@ Test files are organized by feature and contain all tests and helpers for that f
 ### Dependencies
 - You are only allowed to use certain dependencies mentioned here
 - if you want to add dependency ask before adding it, give a good reason and update this list if the user allows it
-- you are not allowed to add depencencies on your own
-- all frontend dependencies shoud be minified and locally served
+- you are not allowed to add dependencies on your own
+- all frontend dependencies should be minified and locally served
   - backend
     - packages in the go standard library
     - sqlite github.com/mattn/go-sqlite3
@@ -402,6 +448,7 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Type into textarea: `MustElement("textarea[name='...']").MustInput(text)`
 - `Page.Element()` BLOCKS up to 30s — use `Page.Has()` for non-blocking "current state" checks
 - Disabled buttons are NOT test-safe: go-rod `.click()` fires on disabled elements; always add server-side validation too
+- **CSS transition + click gotcha**: `MustClick()` calls `scrollIntoViewIfNeeded` → scroll triggers CSS animations → layout shifts during click → click misses → 5s timeout. Use `clickAndWait(selector)` (JS `element.click()`) instead of `clickElementAndWait(btn)` for buttons that may require scrolling alongside active CSS transitions.
 
 ### Logging
 - Log generously.
@@ -414,8 +461,8 @@ You are a senior developer with many years of hard-won experience. You think lik
 ### Errorhandling
 - Handle all errors gracefully if possible
 - Log errors extensively with a short summary, the error itself prettyprinted
-- If run as a test or in development log the whole database dump when an error occures
-- Show the error in the userr interface without redirecting the page
+- If run as a test or in development log the whole database dump when an error occurs
+- Show the error in the user interface without redirecting the page
 
 ### Concurrency
 - Fear it. Use the simplest model possible: stateless request handlers, independent job queues, optimistic concurrency.
@@ -440,15 +487,15 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Have a sense of humor about the absurdity of software development.
 
 ### How to Debug issues
-- before you try to find a solition.
-- First observe the Program, gather information
-- then question what the real Problem and the real Cause
-- and then think about what the approprand then try to find a solution
-- sometimes the problem can be structural or architectual instead of local
-- If a solution adds Comlexity, question if its necessary and the ask the user
+- Before you try to find a solution.
+- First observe the program, gather information
+- Then question what the real problem and the real cause is
+- Then think about what the appropriate solution is
+- Sometimes the problem can be structural or architectural instead of local
+- If a solution adds complexity, question if it's necessary and ask the user
 
 #### Gather information
-- Run the application and read the outout
+- Run the application and read the output
 - Read the Logs
 - If it is a Webpage run it and visit it
 - write tests that log errors

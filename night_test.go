@@ -13,7 +13,7 @@ import (
 // isInNightPhase checks if the player sees the night phase UI
 func (tp *TestPlayer) isInNightPhase() bool {
 	res, err := tp.Page.Eval(`() => {
-		const h = document.querySelector('#topbar-phase');
+		const h = document.querySelector('#topbar-phase-label');
 		return !!(h && h.textContent.trim().startsWith('Night'));
 	}`)
 	isNight := err == nil && res != nil && res.Value.Bool()
@@ -26,7 +26,7 @@ func (tp *TestPlayer) isInNightPhase() bool {
 // isInDayPhase checks if the player sees the day phase UI
 func (tp *TestPlayer) isInDayPhase() bool {
 	res, err := tp.Page.Eval(`() => {
-		const h = document.querySelector('#topbar-phase');
+		const h = document.querySelector('#topbar-phase-label');
 		return !!(h && h.textContent.trim().startsWith('Day'));
 	}`)
 	isDay := err == nil && res != nil && res.Value.Bool()
@@ -39,7 +39,7 @@ func (tp *TestPlayer) isInDayPhase() bool {
 // waitForDayPhase waits for the player to transition to day phase by listening to WebSocket messages
 func (tp *TestPlayer) waitForDayPhase() error {
 	checkJS := `(() => {
-		const heading = document.querySelector('#topbar-phase');
+		const heading = document.querySelector('#topbar-phase-label');
 		return heading && heading.textContent.trim().startsWith('Day');
 	})`
 	return tp.waitUntilCondition(checkJS, "day phase")
@@ -48,7 +48,7 @@ func (tp *TestPlayer) waitForDayPhase() error {
 // waitForNightPhase waits for the player to transition to night phase by listening to WebSocket messages
 func (tp *TestPlayer) waitForNightPhase() error {
 	checkJS := `(() => {
-		const heading = document.querySelector('#topbar-phase');
+		const heading = document.querySelector('#topbar-phase-label');
 		return heading && heading.textContent.trim().startsWith('Night');
 	})`
 	return tp.waitUntilCondition(checkJS, "night phase")
@@ -125,91 +125,76 @@ func (tp *TestPlayer) canSeeWerewolfPack() bool {
 
 // getVoteButtons returns the names of players that can be voted for
 func (tp *TestPlayer) getVoteButtons() []string {
-
-	var names []string
-	elements, err := tp.p().Elements(".vote-button")
+	result, err := tp.p().Eval(`() => {
+		const cards = document.querySelectorAll("[id^='vote-form-'] player-card");
+		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
+	}`)
 	if err != nil {
-		return names
+		return nil
 	}
-	for _, el := range elements {
-		text := strings.TrimSpace(el.MustText())
-		// Remove wolf emoji if present
-		text = strings.TrimSuffix(text, " 🐺")
-		text = strings.TrimSuffix(text, "🐺")
-		text = strings.TrimSpace(text)
-		if text != "" {
-			names = append(names, text)
-		}
+	raw := result.Value.String()
+	if raw == "" {
+		return nil
 	}
+	names := strings.Split(raw, "\n")
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Vote buttons: %v", tp.Name, names)
 	}
 	return names
 }
 
-// voteForPlayer clicks the vote button for a specific player
+// voteForPlayer clicks the vote card for a specific player
 func (tp *TestPlayer) voteForPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Voting for: %s", tp.Name, targetName)
 	}
-
-	// Find the button that contains this player's name
-	buttons, err := tp.p().Elements(".vote-button")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find vote buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			// Click and wait for WebSocket response
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after voting for " + targetName)
-			// Auto-press End Vote if all werewolves have now voted
-			if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn"); has {
-				tp.clickElementAndWait(endVoteBtn)
-			}
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find vote button for: %s", tp.Name, targetName)
+	tp.clickAndWait("[id^='vote-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML("after voting for " + targetName)
+	// Auto-press End Vote if all werewolves have now voted
+	if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn"); has {
+		tp.clickElementAndWait(endVoteBtn)
 	}
 }
 
 // getCurrentVoteTarget returns who this player has currently voted for (from UI)
 func (tp *TestPlayer) getCurrentVoteTarget() string {
-
-	// Look for a selected button (non-blocking check)
-	found, el, err := tp.p().Has(".vote-button.selected")
+	found, el, err := tp.p().Has("[id^='vote-form-'] player-card[selected]")
 	if err != nil || !found {
 		return ""
 	}
-	text := strings.TrimSpace(el.MustText())
-	text = strings.TrimSuffix(text, " 🐺")
-	text = strings.TrimSuffix(text, "🐺")
-	text = strings.TrimSpace(text)
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Current vote target: %s", tp.Name, text)
+	name, err := el.Attribute("player-name")
+	if err != nil || name == nil {
+		return ""
 	}
-	return text
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Current vote target: %s", tp.Name, *name)
+	}
+	return *name
 }
 
-// getDeathAnnouncement returns the death announcement text if any
+// getDeathAnnouncement returns the death announcement text if any.
+// Reads player-name and role-name from player-card attributes (shadow DOM is not traversable via MustText).
 func (tp *TestPlayer) getDeathAnnouncement() string {
 	found, el, err := tp.p().Has(".death-announcement")
 	if err != nil || !found {
 		return ""
 	}
-	text := el.MustText()
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Death announcement: %s", tp.Name, text)
+	cards, _ := el.Elements("player-card")
+	var parts []string
+	for _, card := range cards {
+		name, _ := card.Attribute("player-name")
+		role, _ := card.Attribute("role-name")
+		if name != nil && role != nil {
+			parts = append(parts, *name+" ("+*role+")")
+		} else if name != nil {
+			parts = append(parts, *name)
+		}
 	}
-	return text
+	result := strings.Join(parts, ", ")
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Death announcement: %s", tp.Name, result)
+	}
+	return result
 }
 
 // getGameContent returns the full game content HTML for debugging
@@ -564,11 +549,11 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 		t.Errorf("Death announcement should mention %s, got: %s", target.Name, announcement)
 	}
 
-	// Check that the target shows as dead in the sidebar using #is-dead-{playerID}
+	// Check that the target shows as dead in the sidebar (alive="false" on the player-card)
 	if targetID == "" {
 		t.Error("Could not determine target player ID")
 	} else {
-		deadSelector := "#is-dead-" + targetID
+		deadSelector := "player-card[data-player-id='" + targetID + "'][alive=false]"
 		has, _, _ := werewolves[0].p().Has(deadSelector)
 		if !has {
 			ctx.logger.LogDB("FAIL: victim not marked as dead in sidebar")
@@ -751,16 +736,15 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	werewolves[1].voteForPlayer(targetVillager.Name)
 
 	// Witch should see the victim name
-	gameContent := witch.getGameContent()
-	if !strings.Contains(gameContent, targetVillager.Name) {
+	if !witch.witchCanSeeVictim(targetVillager.Name) {
 		t.Errorf("Witch should see werewolf target name: %s", targetVillager.Name)
 	}
 
-	// Send heal action — click the first heal button
-	witch.clickAndWait(".witch-heal-button")
+	// Select heal target by clicking the victim's card in the heal section
+	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + targetVillager.Name + "']")
 
-	// Witch passes to end night
-	witch.clickAndWait("#witch-pass-button")
+	// Witch clicks Done to apply and end night
+	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -849,26 +833,16 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
 
-	// Find poison button for otherVillager
-	buttons, err := witch.p().Elements(".witch-kill-button")
-	if err != nil {
-		t.Fatalf("Failed to find poison buttons: %v", err)
-	}
-	for _, btn := range buttons {
-		text := btn.MustText()
-		if strings.Contains(text, otherVillager.Name) {
-			witch.clickElementAndWait(btn)
-			break
-		}
-	}
+	// Select poison target by clicking the player's card in the poison section
+	witch.clickAndWait("[id^='witch-select-poison-form-'] player-card[player-name='" + otherVillager.Name + "']")
 
-	// Witch passes - click the button by id
-	witch.clickAndWait("#witch-pass-button")
+	// Witch clicks Done to apply and end night
+	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
 
 	// Wait for phase transition to day (use a living player, not the poisoned one)
-	err = witch.waitForDayPhase()
+	err := witch.waitForDayPhase()
 	if err != nil {
 		ctx.logger.Debug("Warning: timeout waiting for day phase: %v", err)
 	}
@@ -978,8 +952,8 @@ func TestWitchPassEndNight(t *testing.T) {
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
 
-	// Witch just passes without using potions
-	witch.clickAndWait("#witch-pass-button")
+	// Witch clicks Done without using any potions
+	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -995,15 +969,15 @@ func TestWitchPassEndNight(t *testing.T) {
 		t.Error("Should transition to day after witch passes")
 	}
 
-	// History: witch pass is actor-only — only the witch sees it
-	passEntry := "Witch " + witch.Name + " passed"
-	if !witch.historyContains(passEntry) {
-		ctx.logger.LogDB("FAIL: witch cannot see own pass in history")
-		t.Errorf("Witch should see their pass in history, got: %s", witch.getHistoryText())
+	// History: witch apply is actor-only — only the witch sees it
+	applyEntry := "Witch " + witch.Name + " confirmed her actions"
+	if !witch.historyContains(applyEntry) {
+		ctx.logger.LogDB("FAIL: witch cannot see own apply in history")
+		t.Errorf("Witch should see their apply in history, got: %s", witch.getHistoryText())
 	}
-	if werewolves[0].historyContains(passEntry) {
-		ctx.logger.LogDB("FAIL: werewolf can see witch pass in history")
-		t.Errorf("Werewolf should not see witch pass in history")
+	if werewolves[0].historyContains(applyEntry) {
+		ctx.logger.LogDB("FAIL: werewolf can see witch apply in history")
+		t.Errorf("Werewolf should not see witch apply in history")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1028,10 +1002,24 @@ func findPlayersByRoleWithMason(players []*TestPlayer) (werewolves, villagers, m
 	return
 }
 
-// canSeeMasonList checks if the player's page shows any mason-player elements
+// canSeeMasonList checks if the player's page shows the mason card list
 func (tp *TestPlayer) canSeeMasonList() bool {
-	elements, err := tp.p().Elements(".mason-player")
-	return err == nil && len(elements) > 0
+	found, _, err := tp.p().Has("#mason-card-list")
+	return err == nil && found
+}
+
+// canSeeMasonInList checks if a specific player appears as a card in the mason list
+func (tp *TestPlayer) canSeeMasonInList(name string) bool {
+	found, _, err := tp.p().Has("#mason-card-list player-card[player-name='" + name + "']")
+	return err == nil && found
+}
+
+// witchCanSeeVictim waits for the witch's heal targets section to contain the named player.
+// The victim only appears after werewolves press End Vote, so we poll until it shows up.
+func (tp *TestPlayer) witchCanSeeVictim(name string) bool {
+	checkJS := fmt.Sprintf(`(() => !!document.querySelector("#witch-heal-targets player-card[player-name='%s']"))`, name)
+	err := tp.waitUntilCondition(checkJS, "witch victim "+name)
+	return err == nil
 }
 
 // ============================================================================
@@ -1072,21 +1060,20 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	mason1 := masons[0]
 	mason2 := masons[1]
 
-	// Mason1 should see mason2's name
-	content1 := mason1.getGameContent()
-	if !strings.Contains(content1, mason2.Name) {
-		ctx.logger.LogDB("FAIL: mason1 cannot see mason2")
-		t.Errorf("Mason '%s' should see fellow mason '%s'. Content: %s", mason1.Name, mason2.Name, content1)
-	}
+	// Mason1 should see mason2 in the mason card list
 	if !mason1.canSeeMasonList() {
+		ctx.logger.LogDB("FAIL: mason1 cannot see mason list")
 		t.Errorf("Mason '%s' should see mason list", mason1.Name)
 	}
+	if !mason1.canSeeMasonInList(mason2.Name) {
+		ctx.logger.LogDB("FAIL: mason1 cannot see mason2")
+		t.Errorf("Mason '%s' should see fellow mason '%s' in the list", mason1.Name, mason2.Name)
+	}
 
-	// Mason2 should see mason1's name
-	content2 := mason2.getGameContent()
-	if !strings.Contains(content2, mason1.Name) {
+	// Mason2 should see mason1 in the mason card list
+	if !mason2.canSeeMasonInList(mason1.Name) {
 		ctx.logger.LogDB("FAIL: mason2 cannot see mason1")
-		t.Errorf("Mason '%s' should see fellow mason '%s'. Content: %s", mason2.Name, mason1.Name, content2)
+		t.Errorf("Mason '%s' should see fellow mason '%s' in the list", mason2.Name, mason1.Name)
 	}
 
 	// A regular villager should NOT see mason list
@@ -1258,19 +1245,13 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	// First kill vote
 	werewolf.voteForPlayer(victim1.Name)
 
-	// Second kill vote — click vote2 button
-	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
-	if err != nil || len(vote2Buttons) == 0 {
-		ctx.logger.LogDB("FAIL: no vote2 buttons found")
+	// Second kill vote — click vote2 card
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	if !found2 {
+		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	for _, btn := range vote2Buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, victim2.Name) {
-			werewolf.clickElementAndWait(btn)
-			break
-		}
-	}
+	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
 	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
 		werewolf.clickElementAndWait(endVote2Btn)
 	}
@@ -1354,8 +1335,8 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	// Night 1: Both wolf-team members kill the Wolf Cub (triggers double kill next night)
 	wolfCub.voteForPlayer(wolfCub.Name)
 	werewolf.voteForPlayer(wolfCub.Name)
-	// Witch passes to end the night
-	witch.clickAndWait("#witch-pass-button")
+	// Witch clicks Done without using any potions
+	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -1379,52 +1360,35 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 
 	werewolf.voteForPlayer(victim1.Name)
 
-	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
-	if err != nil || len(vote2Buttons) == 0 {
-		ctx.logger.LogDB("FAIL: no vote2 buttons found")
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	if !found2 {
+		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	for _, btn := range vote2Buttons {
-		if strings.Contains(strings.TrimSpace(btn.MustText()), victim2.Name) {
-			werewolf.clickElementAndWait(btn)
-			break
-		}
-	}
+	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
 	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
 		werewolf.clickElementAndWait(endVote2Btn)
 	}
 
 	// Witch should see both victims listed
-	witchContent := witch.getGameContent()
-	if !strings.Contains(witchContent, victim1.Name) {
+	if !witch.witchCanSeeVictim(victim1.Name) {
 		ctx.logger.LogDB("FAIL: witch cannot see victim1")
 		t.Errorf("Witch should see victim1 '%s'", victim1.Name)
 	}
-	if !strings.Contains(witchContent, victim2.Name) {
+	if !witch.witchCanSeeVictim(victim2.Name) {
 		ctx.logger.LogDB("FAIL: witch cannot see victim2")
 		t.Errorf("Witch should see victim2 '%s'", victim2.Name)
 	}
 
-	// Witch saves victim2 specifically by clicking their heal button
-	healButtons, err := witch.p().Elements(".witch-heal-button")
-	if err != nil || len(healButtons) == 0 {
-		ctx.logger.LogDB("FAIL: no heal buttons found")
-		t.Fatal("Witch should see heal buttons")
+	// Witch selects victim2 to heal by clicking their card in the heal section
+	if !witch.witchCanSeeVictim(victim2.Name) {
+		ctx.logger.LogDB("FAIL: witch cannot see victim2 heal card")
+		t.Fatalf("Witch should see heal card for victim2 '%s'", victim2.Name)
 	}
-	savedVictim2 := false
-	for _, btn := range healButtons {
-		if strings.Contains(strings.TrimSpace(btn.MustText()), victim2.Name) {
-			witch.clickElementAndWait(btn)
-			savedVictim2 = true
-			break
-		}
-	}
-	if !savedVictim2 {
-		t.Fatalf("Could not find heal button for victim2 '%s'", victim2.Name)
-	}
+	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + victim2.Name + "']")
 
-	// Witch passes to end the night
-	witch.clickAndWait("#witch-pass-button")
+	// Witch clicks Done to apply and end night
+	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -1512,18 +1476,12 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 
 	werewolf.voteForPlayer(victim1.Name)
 
-	vote2Buttons, err := werewolf.p().Elements("[id^='vote2-btn-']")
-	if err != nil || len(vote2Buttons) == 0 {
-		ctx.logger.LogDB("FAIL: no vote2 buttons found")
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	if !found2 {
+		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	for _, btn := range vote2Buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, victim2.Name) {
-			werewolf.clickElementAndWait(btn)
-			break
-		}
-	}
+	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
 	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
 		werewolf.clickElementAndWait(endVote2Btn)
 	}
@@ -1572,37 +1530,41 @@ func (tp *TestPlayer) canSeeCupidUI() bool {
 	return strings.Contains(html, "Link Two Lovers")
 }
 
-// getLoverInfo returns the sidebar player entry text for the viewer's lover.
-// The entry is identified by a span with id "lover-of-{partnerID}".
-// Returns "" if no lover is visible in the sidebar.
+// getLoverInfo returns the player-name of the sidebar card marked as the viewer's lover.
+// The card is identified by the boolean "lover" attribute set in the sidebar template.
+// Returns "" if no lover card is visible.
 func (tp *TestPlayer) getLoverInfo() string {
-	lis, err := tp.p().Elements("#player-list li")
-	if err != nil {
+	found, el, _ := tp.p().Has("#player-list player-card[lover]")
+	if !found {
 		return ""
 	}
-	for _, li := range lis {
-		found, _, _ := li.Has("span[id^='lover-of-']")
-		if found {
-			return strings.TrimSpace(li.MustText())
-		}
+	name, _ := el.Attribute("player-name")
+	if name == nil {
+		return ""
 	}
-	return ""
+	return *name
 }
 
-// cupidPickLover clicks the cupid button to pick a lover
+// cupidPickLover clicks the cupid card to pick a lover
 func (tp *TestPlayer) cupidPickLover(targetName string) {
-	elements, err := tp.p().Elements(".cupid-button")
-	if err != nil {
-		return
+	tp.clickAndWait("[id^='cupid-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML(fmt.Sprintf("after cupid pick: %s", targetName))
+}
+
+// cupidLinkLovers clicks Cupid's confirm button to finalize the selected lovers.
+func (tp *TestPlayer) cupidLinkLovers() {
+	tp.clickAndWait("#cupid-link-button")
+	tp.logHTML("after cupid link")
+}
+
+// isCupidLinkButtonEnabled returns true when Cupid's link button is present and enabled.
+func (tp *TestPlayer) isCupidLinkButtonEnabled() bool {
+	found, el, _ := tp.p().Has("#cupid-link-button")
+	if !found {
+		return false
 	}
-	for _, el := range elements {
-		text := strings.TrimSpace(el.MustText())
-		if text == targetName {
-			tp.clickElementAndWait(el)
-			tp.logHTML(fmt.Sprintf("after cupid pick: %s", targetName))
-			return
-		}
-	}
+	disabled, _ := el.Attribute("disabled")
+	return disabled == nil
 }
 
 // ============================================================================
@@ -1668,9 +1630,22 @@ func TestCupidLinksLovers(t *testing.T) {
 	if werewolves[0].isInDayPhase() {
 		t.Fatal("Night should not resolve after only first lover is picked")
 	}
+	if cupid.isCupidLinkButtonEnabled() {
+		t.Fatal("Cupid link button should be disabled until two lovers are selected")
+	}
 
 	// Cupid picks second lover
 	cupid.cupidPickLover(lover2.Name)
+	if !cupid.isCupidLinkButtonEnabled() {
+		t.Fatal("Cupid link button should be enabled after two lovers are selected")
+	}
+
+	// Night should still not resolve until Cupid confirms link
+	if werewolves[0].isInDayPhase() {
+		t.Fatal("Night should not resolve until Cupid confirms linking")
+	}
+
+	cupid.cupidLinkLovers()
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -1750,6 +1725,7 @@ func TestHeartbreakOnNightKill(t *testing.T) {
 	// Cupid links the two villagers as lovers
 	cupid.cupidPickLover(lover1.Name)
 	cupid.cupidPickLover(lover2.Name)
+	cupid.cupidLinkLovers()
 
 	// Werewolves kill lover1
 	for _, w := range werewolves {
@@ -1822,6 +1798,7 @@ func TestLoversWinCondition(t *testing.T) {
 	// Cupid links the villager and the werewolf as lovers
 	cupid.cupidPickLover(villager.Name)
 	cupid.cupidPickLover(werewolf.Name)
+	cupid.cupidLinkLovers()
 
 	// Werewolf kills Cupid (the non-lover)
 	werewolf.voteForPlayer(cupid.Name)
