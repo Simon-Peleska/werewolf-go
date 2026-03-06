@@ -192,6 +192,22 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	DebugLog("handleWebSocket", "WebSocket upgraded successfully for player '%s' (ID: %d)", playerName, playerID)
+
+	// Check if the player still exists in the current game.
+	// On reconnect after a disconnect, the player may have been removed.
+	var game Game
+	err = currentDB.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
+	if err == nil && game.Status != "lobby" {
+		var count int
+		currentDB.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
+		if count == 0 {
+			DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
+			conn.WriteMessage(websocket.TextMessage, []byte(`<div id="game-content" hx-swap-oob="innerHTML" hx-on::load="window.location.href='/'"></div>`))
+			conn.Close()
+			return
+		}
+	}
+
 	client := &Client{conn: conn, playerID: playerID}
 	currentHub.register <- client
 

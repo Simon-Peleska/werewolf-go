@@ -32,6 +32,8 @@
       margin: var(--pico-spacing) 0;
       place-items: center;
     }
+    /* Forms inside card-list are invisible to the grid layout */
+    card-list > form { display: contents; }
     @media (max-width: 480px) {
       card-list, card-list.win-list { grid-template-columns: 1fr; }
     }
@@ -86,6 +88,11 @@
     :host([active]) .pc-card {
       border-color: var(--c-flame);
       box-shadow: 0 0 0 1px var(--c-card-active-ring), 0 4px 16px var(--c-card-active-shadow);
+    }
+    :host([selectable]) .pc-card { cursor: pointer; }
+    :host([selected]) .pc-card {
+      border-color: var(--c-flame);
+      box-shadow: 0 0 0 2px var(--c-card-active-ring), 0 0 28px var(--c-card-active-shadow);
     }
     .pc-card.pc-collapsed { border-radius: 0.75rem; }
     .pc-card.pc-collapsed::before { display: none; }
@@ -163,8 +170,8 @@
     }
     .pc-count.pc-zero { color: var(--c-muted); text-shadow: none; }
 
-    /* ── ± buttons and count badge — circular overlays on seal wrap ─────── */
-    .pc-btn-wrap, .pc-count-wrap {
+    /* ── ± buttons, count badge, and heart badge — circular overlays on seal wrap */
+    .pc-btn-wrap, .pc-count-wrap, .pc-heart-wrap {
       --bsz: calc(var(--pico-spacing) * 2.2);
       position: absolute; bottom: 0;
       width: var(--bsz); height: var(--bsz);
@@ -235,6 +242,22 @@
       box-shadow: 0 0 0 1px var(--c-vote-selected-ring), 0 4px 16px var(--c-card-hover-shadow);
     }
 
+    /* ── Lover styling ───────────────────────────────────────────────────── */
+    :host([lover]) .pc-card {
+      border-color: var(--c-lover-border);
+      box-shadow: 0 0 0 1px var(--c-lover-ring), 0 4px 16px var(--c-lover-shadow);
+    }
+    .pc-heart-wrap { right: 0; }
+    .pc-heart {
+      flex: 1; text-align: center; align-content: center;
+      font-size: 1.1em; pointer-events: none; color: var(--c-lover-heart);
+    }
+    :host([lover]) .pc-heart-wrap {
+      background: var(--c-lover-badge-bg);
+      border-color: var(--c-lover-border);
+    }
+    .pc-col .pc-heart-wrap { position: static; --bsz: 28px; flex-shrink: 0; }
+
     /* ── Collapsed layer descendant overrides ──────────────────────────── */
     .pc-col .pc-seal-wrap {
       height: 44px !important; width: 44px !important;
@@ -291,7 +314,7 @@
       return [
         'role-name', 'role-desc', 'team', 'player-name',
         'count', 'role-id', 'lobby', 'total-roles', 'player-count', 'active',
-        'winner', 'loser', 'alive', 'collapsible',
+        'winner', 'loser', 'alive', 'lover', 'selected', 'selectable',
       ];
     }
 
@@ -305,7 +328,7 @@
     connectedCallback() {
       if (!this._ready) {
         this._ready = true;
-        if (window.innerWidth < 576 && this.hasAttribute('collapsible')) {
+        if (this.hasAttribute('collapsed') || window.innerWidth < 576) {
           this._collapsed = true;
         }
         const shadow = this.attachShadow({ mode: 'open' });
@@ -332,11 +355,13 @@
       const totRoles   = parseInt(this.getAttribute('total-roles')  || '0');
       const plrCount   = parseInt(this.getAttribute('player-count') || '0');
       const aliveAttr  = this.getAttribute('alive');
+      const isLover    = this.hasAttribute('lover');
 
       const addDis = (plrCount > 0 && totRoles >= plrCount) ? ' disabled' : '';
       const remDis = count === '0' ? ' disabled' : '';
       const seal   = roleSeal(roleName);
       const toggleCall = `this.getRootNode().host._toggle()`;
+      const heartBadge = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
 
       let h = '';
 
@@ -355,11 +380,10 @@
              +   `<button class="pc-btn"${addDis} onclick="window.wsSend({action:'update_role',role_id:'${esc(roleId)}',delta:'1'})">+</button>`
              + `</div>`;
         }
-        if (this.hasAttribute('collapsible')) {
-          h += `<div class="pc-btn-wrap pc-btn-collapse">`
-             +   `<button class="pc-collapse pc-btn" onclick="${toggleCall}" aria-label="Collapse">&#9650;</button>`
-             + `</div>`;
-        }
+        if (isLover) h += heartBadge;
+        h += `<div class="pc-btn-wrap pc-btn-collapse">`
+           +   `<button class="pc-collapse pc-btn" onclick="event.stopPropagation();${toggleCall}" aria-label="Collapse">&#9650;</button>`
+           + `</div>`;
         h += `</div>`;
         if (playerName) h += `<span class="pc-name">${esc(playerName)}</span>`;
         if (roleName)   h += `<span class="pc-role">${esc(roleName)}</span>`;
@@ -380,9 +404,8 @@
              +   `<span class="pc-count${count === '0' ? ' pc-zero' : ''}">${esc(count)}</span>`
              + `</div>`;
         }
-        if (this.hasAttribute('collapsible')) {
-          h += `<button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();${toggleCall}" aria-label="Expand">&#9660;</button>`;
-        }
+        if (isLover) h += heartBadge;
+        h += `<button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();${toggleCall}" aria-label="Expand">&#9660;</button>`;
       }
 
       return h;

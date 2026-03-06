@@ -34,6 +34,7 @@ type NightData struct {
 	NightNumber           int
 	IsSeer                bool
 	HasInvestigated       bool
+	SeerSelectedID        int64 // Pending investigation target this night (0 = none selected)
 	SeerResults           []SeerResult
 	IsDoctor              bool
 	HasProtected          bool
@@ -455,6 +456,74 @@ func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+// handleWSSeerSelect toggles the seer's pending investigation selection.
+// Clicking the same player again deselects; clicking a different player replaces the selection.
+func handleWSSeerSelect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSSeerSelect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only act during night phase")
+		return
+	}
+	investigator, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSSeerSelect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if investigator.RoleName != "Seer" {
+		sendErrorToast(client.playerID, "Only the Seer can select an investigation target")
+		return
+	}
+	if !investigator.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+	// Don't allow re-selection if already investigated
+	var existingCount int
+	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already investigated this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionSeerSelect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// Same player clicked again → deselect
+		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			game.ID, game.Round, client.playerID, ActionSeerSelect)
+		log.Printf("Seer '%s' deselected investigation target", investigator.Name)
+	} else {
+		// Select (or replace prior selection)
+		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, client.playerID, ActionSeerSelect, targetID, VisibilityActor)
+		log.Printf("Seer '%s' selected investigation target %d", investigator.Name, targetID)
+	}
+
+	broadcastGameUpdate()
+}
+
 func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
@@ -496,11 +565,17 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 		return
 	}
 
-	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
-	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+	// Read the pending selection from DB
+	var selectAction GameAction
+	if err := db.Get(&selectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionSeerSelect); err != nil || selectAction.TargetPlayerID == nil {
+		sendErrorToast(client.playerID, "Select a player to investigate first")
 		return
 	}
+	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(game.ID, targetID)
 	if err != nil {
@@ -512,6 +587,10 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 		sendErrorToast(client.playerID, "Cannot investigate a dead player")
 		return
 	}
+
+	// Remove the pending selection
+	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionSeerSelect)
 
 	result := "not a werewolf"
 	if target.Team == "werewolf" {

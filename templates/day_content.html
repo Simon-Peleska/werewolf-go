@@ -1,21 +1,21 @@
-<div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label topbar-phase-day">Day {{.NightNumber}}</span></div>
+<div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label topbar-phase-day" id="topbar-phase-label">Day {{.NightNumber}}</span></div>
 <div id="page-theme" data-theme="light" hx-swap-oob="morph" hidden></div>
 
 <div class="game-content" id="game-content" hx-swap-oob="morph">
     <section>
-        <div class="phase-action-layout">
-            <player-card id="phase-role-card"
-                role-name="{{.RoleName}}"
-                role-desc="{{.RoleDescription}}"
-                player-name="{{.PlayerName}}"
-                team="{{.RoleTeam}}"></player-card>
-
-            <div class="phase-action-panel">
+        <div class="phase-action-panel">
                 {{if .NightVictims}}
                 <div class="death-announcement" id="death-announcement">
+                    <card-list>
                     {{range .NightVictims}}
-                    <p>💀 <strong>{{.Name}}</strong> was found dead. They were a <strong>{{.Role}}</strong>.</p>
+                    <player-card
+                        player-name="{{.Name}}"
+                        role-name="{{.Role}}"
+                        team="{{.Team}}"
+                        alive="false"
+                    ></player-card>
                     {{end}}
+                    </card-list>
                 </div>
                 {{else}}
                 <p id="no-death-message">The village awakens. No one died last night.</p>
@@ -34,21 +34,27 @@
                         <h3 style="margin:0">Your Last Shot</h3>
                     </div>
                     <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
-                    <div class="vote-grid">
+                    <card-list>
                     {{range .HunterTargets}}
-                    <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form">
+                    {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
+                    <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
                         <input type="hidden" name="action" value="hunter_revenge">
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                        <button type="submit" id="hunter-btn-{{.PlayerID}}" class="hunter-button">{{.Name}}</button>
+                        <player-card
+                            player-name="{{.Name}}"
+                            role-name="{{if $seerKnows}}Werewolf{{else}}Unknown{{end}}"
+                            team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
+                            alive="true"
+                            selectable
+                        ></player-card>
                     </form>
                     {{end}}
-                    </div>
+                    </card-list>
                     {{else}}
                     <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
                     {{end}}
                 </div>
                 {{end}}
-            </div>
         </div>
     </section>
 
@@ -60,21 +66,27 @@
 
         {{$currentVote := .CurrentVote}}
         {{$hasVoted := .HasVoted}}
-        <div class="vote-grid">
+        <card-list>
         {{range .AliveTargets}}
-        <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form">
+        {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
+        <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
             <input type="hidden" name="action" value="day_vote">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <button type="submit" id="day-vote-btn-{{.PlayerID}}" class="vote-button{{if eq $currentVote .PlayerID}} selected{{end}}">
-                {{.Name}}
-            </button>
+            <player-card
+                player-name="{{.Name}}"
+                role-name="{{if $seerKnows}}Werewolf{{else}}Unknown{{end}}"
+                team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
+                alive="true"
+                selectable
+                {{if eq $currentVote .PlayerID}}selected{{end}}
+            ></player-card>
         </form>
         {{end}}
+        </card-list>
         <form ws-send id="day-pass-form" class="vote-form">
             <input type="hidden" name="action" value="day_pass">
             <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">Pass</button>
         </form>
-        </div>
 
         {{if .AllActed}}
         <form ws-send id="day-end-vote-form">

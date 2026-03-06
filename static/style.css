@@ -65,6 +65,11 @@ h1, h2, h3, h4, h5, h6 {
   --c-winner-lovers-bg:      rgba(157, 181, 204, 0.08);
   --c-team-villager-label:   rgba(140, 188, 228, 0.85);
   --c-team-werewolf-label:   rgba(200,  80,  40, 0.85);
+  --c-lover-border:          rgba(220,  90, 150, 0.65);
+  --c-lover-ring:            rgba(220,  90, 150, 0.18);
+  --c-lover-shadow:          rgba(220,  90, 150, 0.20);
+  --c-lover-badge-bg:        rgba( 60,  10,  28, 0.90);
+  --c-lover-heart:           #e878b4;
 
   /* ─ Background image ─ */
   background-image: linear-gradient(rgba(7, 8, 13, 0.82), rgba(7, 8, 13, 0.82)),
@@ -182,6 +187,11 @@ h1, h2, h3, h4, h5, h6 {
   --c-winner-lovers-bg:      rgba(62,  110, 158, 0.08);
   --c-team-villager-label:   rgba(40,   90, 150, 0.9);
   --c-team-werewolf-label:   rgba(150,  48,  24, 0.9);
+  --c-lover-border:          rgba(200,  80, 130, 0.55);
+  --c-lover-ring:            rgba(200,  80, 130, 0.14);
+  --c-lover-shadow:          rgba(200,  80, 130, 0.14);
+  --c-lover-badge-bg:        rgba(255, 230, 240, 0.92);
+  --c-lover-heart:           #c0306a;
 
   /* ─ Pico overrides ─ */
   --pico-background-color:      var(--c-bg);

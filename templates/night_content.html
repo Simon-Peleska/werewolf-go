@@ -124,12 +124,13 @@
                 </card-list>
                 {{end}}
                 {{else}}
-                <p><small>Choose a player to investigate. You will learn if they are a werewolf.</small></p>
+                <p><small>Choose a player to investigate, then confirm your choice.</small></p>
+                {{$seerSelected := .SeerSelectedID}}
                 <card-list>
                 {{range .AliveTargets}}
                 {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
-                <form ws-send id="seer-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
-                    <input type="hidden" name="action" value="seer_investigate">
+                <form ws-send id="seer-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                    <input type="hidden" name="action" value="seer_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         player-name="{{.Name}}"
@@ -137,10 +138,15 @@
                         team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
                         alive="true"
                         selectable
+                        {{if eq $seerSelected .PlayerID}}selected{{end}}
                     ></player-card>
                 </form>
                 {{end}}
                 </card-list>
+                <form ws-send id="seer-investigate-form" class="vote-form" style="display:block;margin-top:1rem">
+                    <input type="hidden" name="action" value="seer_investigate">
+                    <button type="submit" id="seer-investigate-button" {{if eq $seerSelected 0}}disabled{{end}}>🔮 Investigate</button>
+                </form>
                 {{end}}
 
                 {{else if .IsDoctor}}

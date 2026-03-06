@@ -439,6 +439,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSWerewolfEndVote(client, msg)
 	case "werewolf_end_vote_2":
 		handleWSWerewolfEndVote2(client, msg)
+	case "seer_select":
+		handleWSSeerSelect(client, msg)
 	case "seer_investigate":
 		handleWSSeerInvestigate(client, msg)
 	case "doctor_protect":
@@ -583,6 +585,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		var hasInvestigated bool
 		var seerResults []SeerResult
 
+		var seerSelectedID int64
 		if isSeer {
 			// Only show the current night's investigation result
 			var action GameAction
@@ -605,6 +608,16 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 					TargetName: targetName,
 					IsWerewolf: targetTeam == "werewolf",
 				}}
+			} else {
+				// Check for pending selection
+				var selectAction GameAction
+				if db.Get(&selectAction, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+					game.ID, game.Round, playerID, ActionSeerSelect) == nil && selectAction.TargetPlayerID != nil {
+					seerSelectedID = *selectAction.TargetPlayerID
+				}
 			}
 		}
 
@@ -937,6 +950,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			NightNumber:           game.Round,
 			IsSeer:                isSeer,
 			HasInvestigated:       hasInvestigated,
+			SeerSelectedID:        seerSelectedID,
 			SeerResults:           seerResults,
 			IsDoctor:              isDoctor,
 			HasProtected:          hasProtected,

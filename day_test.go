@@ -14,48 +14,28 @@ func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Day voting for: %s", tp.Name, targetName)
 	}
-
-	// Find the button that contains this player's name
-	buttons, err := tp.p().Elements("[id^='day-vote-btn-']")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find day vote buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			// Click and wait for WebSocket response
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after day voting for " + targetName)
-			// Auto-press End Vote if all players have now voted
-			if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn"); has {
-				tp.clickElementAndWait(endVoteBtn)
-			}
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find day vote button for: %s", tp.Name, targetName)
+	tp.clickAndWait("[id^='day-vote-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML("after day voting for " + targetName)
+	// Auto-press End Vote if all players have now voted
+	if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn"); has {
+		tp.clickElementAndWait(endVoteBtn)
 	}
 }
 
 // getDayVoteButtons returns the names of players that can be voted for during day
 func (tp *TestPlayer) getDayVoteButtons() []string {
-	var names []string
-	elements, err := tp.p().Elements("[id^='day-vote-btn-']")
+	result, err := tp.p().Eval(`() => {
+		const cards = document.querySelectorAll("[id^='day-vote-form-'] player-card");
+		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
+	}`)
 	if err != nil {
-		return names
+		return nil
 	}
-	for _, el := range elements {
-		text := strings.TrimSpace(el.MustText())
-		if text != "" {
-			names = append(names, text)
-		}
+	raw := result.Value.String()
+	if raw == "" {
+		return nil
 	}
+	names := strings.Split(raw, "\n")
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Day vote buttons: %v", tp.Name, names)
 	}
@@ -64,23 +44,25 @@ func (tp *TestPlayer) getDayVoteButtons() []string {
 
 // isGameFinished checks if the game has ended
 func (tp *TestPlayer) isGameFinished() bool {
-	html, _ := tp.Page.HTML()
-	isFinished := strings.Contains(html, "winner-announcement")
+	found, _, err := tp.p().Has(".win-hero")
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] Is game finished: %v", tp.Name, isFinished)
+		tp.logger.Debug("[%s] Is game finished: %v", tp.Name, found)
 	}
-	return isFinished
+	return found && err == nil
 }
 
 // getWinner returns the winner if game is finished
 func (tp *TestPlayer) getWinner() string {
-	html, _ := tp.Page.HTML()
-	if strings.Contains(html, "Villagers Win") {
+	found, _, _ := tp.p().Has(".win-seal-villagers")
+	if found {
 		return "villagers"
 	}
-	if strings.Contains(html, "Werewolves Win") {
+
+	found, _, _ = tp.p().Has(".win-seal-werewolves")
+	if found {
 		return "werewolves"
 	}
+
 	return ""
 }
 
@@ -481,51 +463,50 @@ func findPlayersByRoleExtended(players []*TestPlayer) (werewolves, villagers, se
 	return
 }
 
-// seerInvestigatePlayer clicks the seer investigate button for a specific player
+// seerInvestigatePlayer selects a target for the seer and clicks the Investigate button.
 func (tp *TestPlayer) seerInvestigatePlayer(targetName string) {
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] Seer investigating: %s", tp.Name, targetName)
+		tp.logger.Debug("[%s] Seer selecting target: %s", tp.Name, targetName)
 	}
-
-	buttons, err := tp.p().Elements(".seer-button")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find seer buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after seer investigation of " + targetName)
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find seer button for: %s", tp.Name, targetName)
-	}
+	// Select the player (toggles; no WS response expected, just a broadcastGameUpdate)
+	tp.doWithWSWait(func() {
+		tp.p().MustElement("[id^='seer-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
+	})
+	tp.logHTML("after seer select of " + targetName)
+	// Click Investigate button to commit
+	tp.clickAndWait("#seer-investigate-button")
+	tp.logHTML("after seer investigation of " + targetName)
 }
 
-// getSeerResult returns the text of the seer's investigation result for the current night
+// getSeerResult returns a description of the seer's investigation result for the current night.
+// Reads from player-card attributes (shadow DOM text is not accessible via MustText).
+// Returns a string like "Alice is a Werewolf" or "Bob is Not a Werewolf".
 func (tp *TestPlayer) getSeerResult() string {
-	el, err := tp.p().Element("#seer-result")
-	if err != nil {
+	found, el, err := tp.p().Has("player-card#seer-result")
+	if err != nil || !found {
 		return ""
 	}
-	text := el.MustText()
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Seer result: %s", tp.Name, text)
+	name, _ := el.Attribute("player-name")
+	team, _ := el.Attribute("team")
+	if name == nil {
+		return ""
 	}
-	return text
+	var result string
+	if team != nil && *team == "werewolf" {
+		result = *name + " is a Werewolf"
+	} else {
+		result = *name + " is Not a Werewolf"
+	}
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Seer result: %s", tp.Name, result)
+	}
+	return result
 }
 
-// canSeeSeerButtons checks if the seer investigation buttons are visible
+// canSeeSeerButtons checks if the seer investigation cards are visible
 func (tp *TestPlayer) canSeeSeerButtons() bool {
-	elements, err := tp.p().Elements(".seer-button")
-	canSee := err == nil && len(elements) > 0
+	found, _, err := tp.p().Has("[id^='seer-select-form-'] player-card")
+	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see seer buttons: %v", tp.Name, canSee)
 	}
@@ -901,27 +882,8 @@ func (tp *TestPlayer) doctorProtectPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Doctor protecting: %s", tp.Name, targetName)
 	}
-
-	buttons, err := tp.p().Elements(".doctor-button")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find doctor buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after doctor protection of " + targetName)
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find doctor button for: %s", tp.Name, targetName)
-	}
+	tp.clickAndWait("[id^='doctor-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML("after doctor protection of " + targetName)
 }
 
 // getDoctorResult returns the text of the doctor's protection confirmation
@@ -937,10 +899,10 @@ func (tp *TestPlayer) getDoctorResult() string {
 	return text
 }
 
-// canSeeDoctorButtons checks if the doctor protection buttons are visible
+// canSeeDoctorButtons checks if the doctor protection cards are visible
 func (tp *TestPlayer) canSeeDoctorButtons() bool {
-	elements, err := tp.p().Elements(".doctor-button")
-	canSee := err == nil && len(elements) > 0
+	found, _, err := tp.p().Has("[id^='doctor-form-'] player-card")
+	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see doctor buttons: %v", tp.Name, canSee)
 	}
@@ -1148,10 +1110,10 @@ func TestDoctorDoesNotSaveWrongPlayer(t *testing.T) {
 		t.Error("Doctor protected wrong player, villager1 should have died")
 	}
 
-	content := werewolf.getGameContent()
-	if !strings.Contains(content, villager1.Name) {
+	announcement := werewolf.getDeathAnnouncement()
+	if !strings.Contains(announcement, villager1.Name) {
 		ctx.logger.LogDB("FAIL: death announcement missing victim name")
-		t.Errorf("Day announcement should mention %s (the victim), got: %s", villager1.Name, content)
+		t.Errorf("Day announcement should mention %s (the victim), got: %s", villager1.Name, announcement)
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1339,27 +1301,8 @@ func (tp *TestPlayer) guardProtectPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Guard protecting: %s", tp.Name, targetName)
 	}
-
-	buttons, err := tp.p().Elements(".guard-button")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find guard buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after guard protection of " + targetName)
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find guard button for: %s", tp.Name, targetName)
-	}
+	tp.clickAndWait("[id^='guard-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML("after guard protection of " + targetName)
 }
 
 // getGuardResult returns the text of the guard's protection confirmation
@@ -1375,29 +1318,30 @@ func (tp *TestPlayer) getGuardResult() string {
 	return text
 }
 
-// canSeeGuardButtons checks if the guard protection buttons are visible
+// canSeeGuardButtons checks if the guard protection cards are visible
 func (tp *TestPlayer) canSeeGuardButtons() bool {
-	elements, err := tp.p().Elements(".guard-button")
-	canSee := err == nil && len(elements) > 0
+	found, _, err := tp.p().Has("[id^='guard-form-'] player-card")
+	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see guard buttons: %v", tp.Name, canSee)
 	}
 	return canSee
 }
 
-// getGuardButtonNames returns the names shown on guard protection buttons
+// getGuardButtonNames returns the names shown on guard protection cards
 func (tp *TestPlayer) getGuardButtonNames() []string {
-	var names []string
-	elements, err := tp.p().Elements(".guard-button")
+	result, err := tp.p().Eval(`() => {
+		const cards = document.querySelectorAll("[id^='guard-form-'] player-card");
+		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
+	}`)
 	if err != nil {
-		return names
+		return nil
 	}
-	for _, el := range elements {
-		text := strings.TrimSpace(el.MustText())
-		if text != "" {
-			names = append(names, text)
-		}
+	raw := result.Value.String()
+	if raw == "" {
+		return nil
 	}
+	names := strings.Split(raw, "\n")
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Guard button names: %v", tp.Name, names)
 	}
@@ -1865,33 +1809,14 @@ func (tp *TestPlayer) hunterShootPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Hunter shooting: %s", tp.Name, targetName)
 	}
-
-	buttons, err := tp.p().Elements(".hunter-button")
-	if err != nil {
-		if tp.logger != nil {
-			tp.logger.Debug("[%s] Failed to find hunter buttons: %v", tp.Name, err)
-		}
-		return
-	}
-
-	for _, btn := range buttons {
-		text := strings.TrimSpace(btn.MustText())
-		if strings.Contains(text, targetName) {
-			tp.clickElementAndWait(btn)
-			tp.logHTML("after hunter shooting " + targetName)
-			return
-		}
-	}
-
-	if tp.logger != nil {
-		tp.logger.Debug("[%s] Could not find hunter button for: %s", tp.Name, targetName)
-	}
+	tp.clickAndWait("[id^='hunter-form-'] player-card[player-name='" + targetName + "']")
+	tp.logHTML("after hunter shooting " + targetName)
 }
 
-// canSeeHunterButtons checks if the hunter revenge buttons are visible
+// canSeeHunterButtons checks if the hunter revenge cards are visible
 func (tp *TestPlayer) canSeeHunterButtons() bool {
-	elements, err := tp.p().Elements(".hunter-button")
-	canSee := err == nil && len(elements) > 0
+	found, _, err := tp.p().Has("[id^='hunter-form-'] player-card")
+	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see hunter buttons: %v", tp.Name, canSee)
 	}

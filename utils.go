@@ -706,7 +706,7 @@ func startTestServer(t *testing.T) (baseURL string, cleanup func()) {
 }
 
 // Default timeout for browser operations
-const browserTimeout = 30 * time.Second
+const browserTimeout = 10 * time.Second
 
 // TestBrowser wraps browser setup for tests
 type TestBrowser struct {
@@ -1079,23 +1079,27 @@ func (tp *TestPlayer) getSecretCode() string {
 	return code
 }
 
-// getPlayerList returns the player list text
+// getPlayerList returns the player names in the sidebar player list, newline-separated.
+// player-card uses shadow DOM so text content is not accessible; we read attributes via JS.
 func (tp *TestPlayer) getPlayerList() string {
-	el, err := tp.p().Element("#player-list")
+	result, err := tp.p().Eval(`() => {
+		const cards = document.querySelectorAll('#player-list player-card');
+		return Array.from(cards).map(c => c.getAttribute('player-name') || '').join('\n');
+	}`)
 	if err != nil {
 		return ""
 	}
-	list := el.MustText()
+	list := result.Value.String()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Player list: %s", tp.Name, strings.ReplaceAll(list, "\n", ", "))
 	}
 	return list
 }
 
-// isShownAsWerewolf returns true if the player with the given playerID is shown with the
-// wolf indicator (🐺) in the viewer's sidebar. Uses the stable #wolf-indicator-{playerID} span.
+// isShownAsWerewolf returns true if the player-card with the given data-player-id is
+// rendered with team="werewolf" in the viewer's sidebar.
 func (tp *TestPlayer) isShownAsWerewolf(playerID string) bool {
-	found, _, _ := tp.p().Has("#wolf-indicator-" + playerID)
+	found, _, _ := tp.p().Has("player-card[data-player-id='" + playerID + "'][team=werewolf]")
 	return found
 }
 
@@ -1115,13 +1119,20 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 		tp.logger.LogWebSocket("OUT", tp.Name, fmt.Sprintf(`{"action":"update_role","role_id":"%s","delta":"1"}`, roleID))
 	}
 	// Click and wait for WebSocket response
-	tp.clickAndWait("#btn-add-" + roleID)
+	host := tp.p().MustElement("#role-" + roleID)
+	shadow := host.MustShadowRoot()
+	el := shadow.MustElement(".pc-btn-plus .pc-btn")
+
+	tp.clickElementAndWait(el)
 	tp.logHTML(fmt.Sprintf("after adding role %s", roleID))
 }
 
 // getRoleCountByID returns the count for a specific role by ID
 func (tp *TestPlayer) getRoleCountByID(roleID string) string {
-	el := tp.p().MustElement("#count-" + roleID)
+	host := tp.p().MustElement("#role-" + roleID)
+	shadow := host.MustShadowRoot()
+	el := shadow.MustElement(".pc-count")
+
 	count := strings.TrimSpace(el.MustText())
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Role %s count: %s", tp.Name, roleID, count)
@@ -1157,7 +1168,9 @@ func (tp *TestPlayer) startGame() {
 
 // getRole returns the player's assigned role from character-info
 func (tp *TestPlayer) getRole() string {
-	el := tp.p().MustElement("#role")
+	host := tp.p().MustElement("#sidebar-role-card")
+	shadow := host.MustShadowRoot()
+	el := shadow.MustElement(".pc-role")
 	return el.MustText()
 }
 

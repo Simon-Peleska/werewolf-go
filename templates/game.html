@@ -324,8 +324,15 @@
     // Global helper: send a WS message from inside shadow DOM where htmx
     // ws-send can't reach the [ws-connect] ancestor across the shadow boundary.
     var _wsSocket = null;
+    var _wsConnected = false;
     document.body.addEventListener('htmx:wsOpen', function (e) {
       _wsSocket = e.detail.socketWrapper;
+      if (_wsConnected) {
+        // Reconnected after a drop — reload to get fresh state.
+        location.reload();
+        return;
+      }
+      _wsConnected = true;
     });
     window.wsSend = function (params) {
       if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);

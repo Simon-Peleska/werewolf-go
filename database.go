@@ -150,6 +150,7 @@ const (
 	ActionWerewolfKill      = "werewolf_kill"
 	ActionDayVote           = "day_vote"
 	ActionElimination       = "elimination"
+	ActionSeerSelect        = "seer_select" // pending investigation selection (toggled, committed on Investigate)
 	ActionSeerInvestigate   = "seer_investigate"
 	ActionDoctorProtect     = "doctor_protect"
 	ActionGuardProtect      = "guard_protect"

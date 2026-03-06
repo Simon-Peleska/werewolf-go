@@ -16,6 +16,7 @@ type DayVote struct {
 type NightVictim struct {
 	Name string `db:"name"`
 	Role string `db:"role"`
+	Team string `db:"team"`
 }
 
 // DayData holds all data needed to render the day phase
@@ -27,17 +28,18 @@ type DayData struct {
 	Votes               []DayVote
 	CurrentVote         int64 // 0 means no vote
 	IsAlive             bool
-	HunterRevengeNeeded bool     // Night victim was a Hunter who hasn't shot yet
-	HunterRevengeDone   bool     // Hunter has taken their shot
-	HunterName          string   // Name of the dead Hunter
-	HunterVictim        string   // Who the Hunter shot (after revenge)
-	HunterVictimRole    string   // Role of Hunter's target
-	IsTheHunter         bool     // Is this player the dead Hunter needing to shoot?
-	HunterTargets       []Player // Alive targets for the Hunter to pick from
-	IsLover             bool     // Is this player one of the two lovers?
-	LoverName           string   // Name of their partner
-	AllActed            bool     // All alive players have voted or passed this round
-	HasVoted            bool     // This player has a day_vote record (including pass)
+	HunterRevengeNeeded bool           // Night victim was a Hunter who hasn't shot yet
+	HunterRevengeDone   bool           // Hunter has taken their shot
+	HunterName          string         // Name of the dead Hunter
+	HunterVictim        string         // Who the Hunter shot (after revenge)
+	HunterVictimRole    string         // Role of Hunter's target
+	IsTheHunter         bool           // Is this player the dead Hunter needing to shoot?
+	HunterTargets       []Player       // Alive targets for the Hunter to pick from
+	IsLover             bool           // Is this player one of the two lovers?
+	LoverName           string         // Name of their partner
+	AllActed            bool           // All alive players have voted or passed this round
+	HasVoted            bool           // This player has a day_vote record (including pass)
+	SeerFoundWerewolves map[int64]bool // player IDs the current player (as Seer) confirmed as wolves
 	// Card display fields
 	PlayerName      string
 	RoleName        string
