@@ -1,18 +1,17 @@
 # Todos
+- add docker build to nix
+- add nix build to claude.md
+- add readme.md
+- fix autocomplete for tools
+- fix unselect during vote
+- fix uncollapse during select
+- fix card view privileges
+- add an elevenlabs voice moderator
 - styling
-  - chage layouts of day and night
-  - change color scheme
-    -  
-      /* Color Theme Swatches in Hex */
-      .an-old-kerosene-lamp-in-a-dark-forest-1-hex { color: #1D2610; }
-      .an-old-kerosene-lamp-in-a-dark-forest-2-hex { color: #F2B263; }
-      .an-old-kerosene-lamp-in-a-dark-forest-3-hex { color: #F26716; }
-      .an-old-kerosene-lamp-in-a-dark-forest-4-hex { color: #591902; }
-      .an-old-kerosene-lamp-in-a-dark-forest-5-hex { color: #0D0D0D; }
-  - add icons
+  - change color scheme day
 - deploy on host provider
-- create nix flake for setup build and testing 
 - add multigame support
 - add i18n support
 - add different scenario support
+- add licence
  

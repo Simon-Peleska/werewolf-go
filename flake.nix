@@ -22,13 +22,29 @@
           version = "0.0.1";
           src = ./.;
 
-          CGO_ENABLED = "1";
+          env.CGO_ENABLED = "1";
           nativeBuildInputs = cgoNativeBuildInputs;
           buildInputs = cgoBuildInputs;
 
           # Run `nix build` once — it will print the correct hash.
           # Replace the placeholder below with the "got:" hash from the error.
-          vendorHash = pkgs.lib.fakeHash;
+          vendorHash = "sha256-7L92A2x0TNbnPFgPQzIGZApHzUe6nYOIi3HqxxxtLBs=";
+        };
+
+        # `nix build .#docker && docker load < result`
+        packages.docker = pkgs.dockerTools.buildLayeredImage {
+          name = "werewolf";
+          tag = "latest";
+          contents = with pkgs; [
+            self.packages.${system}.default
+            sqlite
+            glibc
+            cacert  # for outbound HTTPS (e.g. AI storyteller providers)
+          ];
+          config = {
+            Cmd = [ "/bin/werewolf" ];
+            ExposedPorts = { "8080/tcp" = {}; };
+          };
         };
 
         apps.default = {
