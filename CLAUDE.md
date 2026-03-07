@@ -235,6 +235,37 @@ go fmt ./...
 go vet ./...
 ```
 
+## Packaging
+
+The project uses a Nix flake (`flake.nix`) for reproducible builds and Docker image creation.
+
+### Nix outputs
+
+| Output | Command | Description |
+|--------|---------|-------------|
+| `packages.default` | `nix build` | Go binary via `buildGoModule` (CGO enabled) |
+| `packages.docker` | `nix build .#docker` | Docker image via `dockerTools.buildLayeredImage` |
+| `apps.default` | `nix run` | Run the binary directly |
+| `devShells.default` | `nix develop` | Dev shell with all tooling |
+
+```bash
+# Build binary
+nix build
+
+# Build Docker image and load it
+nix build .#docker
+docker load < result
+docker run -p 8080:8080 werewolf
+
+# Enter dev shell (Go, GCC, pkg-config, sqlite, inotify-tools, chromium)
+nix develop
+```
+
+### Nix gotchas
+- CGO is required for go-sqlite3 — `env.CGO_ENABLED = "1"` must be set inside `env {}` (not top-level) in newer nixpkgs
+- After updating Go dependencies, recompute `vendorHash` by setting `pkgs.lib.fakeHash`, running `nix build`, and replacing with the hash from the error output
+- Docker image includes: binary, `sqlite`, `glibc`, `cacert` (for outbound HTTPS to AI providers)
+
 ## Configuration
 
 All configuration goes through `AppConfig` in `config.go`. Three layers apply in order (highest wins):
@@ -390,6 +421,14 @@ Test files are organized by feature and contain all tests and helpers for that f
     - IM Fell Great Primer Google font https://fonts.google.com/specimen/IM+Fell+Great+Primer
   - testing
     - go-rod github.com/go-rod/rod
+  - packaging / dev tooling (via flake.nix)
+    - go (Go toolchain)
+    - gcc + pkg-config (CGO build deps)
+    - sqlite (runtime lib for CGO and Docker image)
+    - glibc (Docker image runtime)
+    - cacert (Docker image, for outbound HTTPS)
+    - inotify-tools (run_server.sh --watch)
+    - chromium (start_chromium.sh manual testing)
 
 You are a senior developer with many years of hard-won experience. You think like "grug brain developer": you are pragmatic, humble, and deeply suspicious of unnecessary complexity. You write code that works, is readable, and is maintainable by normal humans — not just the person who wrote it.
 
