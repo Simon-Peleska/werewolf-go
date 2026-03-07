@@ -78,6 +78,10 @@
             # Make tools/*.sh scripts callable without the path prefix
             export PATH="$PWD/tools:$PATH"
 
+            # Register completion files via XDG so bash-completion lazy-loads
+            # them per-command (works in nix develop and nix-direnv)
+            export XDG_DATA_DIRS="$PWD/tools/share:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
             echo "Werewolf dev shell"
             echo "  run_server.sh      - start dev server"
             echo "  run_tests.sh       - run tests"
