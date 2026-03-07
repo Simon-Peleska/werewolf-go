@@ -28,9 +28,10 @@ type NightData struct {
 	IsWerewolf            bool
 	Werewolves            []Player
 	Votes                 []WerewolfVote
-	CurrentVote           int64 // 0 means no vote
-	WolfCubDoubleKill     bool  // werewolves must kill two this night
-	CurrentVote2          int64 // this werewolf's second vote (0 = none)
+	WerewolfVoteCounts    map[int64]int // vote count per target player ID
+	CurrentVote           int64         // 0 means no vote
+	WolfCubDoubleKill     bool          // werewolves must kill two this night
+	CurrentVote2          int64         // this werewolf's second vote (0 = none)
 	NightNumber           int
 	IsSeer                bool
 	HasInvestigated       bool
@@ -38,9 +39,11 @@ type NightData struct {
 	SeerResults           []SeerResult
 	IsDoctor              bool
 	HasProtected          bool
+	DoctorSelectedID      int64  // Pending protection target this night (0 = none selected)
 	DoctorProtecting      string // Name of player being protected this night
 	IsGuard               bool
 	GuardHasProtected     bool
+	GuardSelectedID       int64    // Pending protection target this night (0 = none selected)
 	GuardProtecting       string   // Name of player being protected this night
 	GuardTargets          []Player // Alive targets excluding self and last night's target
 	IsWitch               bool
@@ -620,6 +623,74 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	resolveWerewolfVotes(game)
 }
 
+// handleWSDoctorSelect toggles the doctor's pending protection target selection.
+// Clicking the same player again deselects; clicking a different player replaces the selection.
+func handleWSDoctorSelect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSDoctorSelect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only act during night phase")
+		return
+	}
+	doctor, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSDoctorSelect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if doctor.RoleName != "Doctor" {
+		sendErrorToast(client.playerID, "Only the Doctor can select a protection target")
+		return
+	}
+	if !doctor.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+	// Don't allow re-selection if already protected
+	var existingCount int
+	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionDoctorProtect)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already protected someone this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionDoctorSelect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// Same player clicked again → deselect
+		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			game.ID, game.Round, client.playerID, ActionDoctorSelect)
+		log.Printf("Doctor '%s' deselected protection target", doctor.Name)
+	} else {
+		// Select (or replace prior selection)
+		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, client.playerID, ActionDoctorSelect, targetID, VisibilityActor)
+		log.Printf("Doctor '%s' selected protection target %d", doctor.Name, targetID)
+	}
+
+	broadcastGameUpdate()
+}
+
 func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
@@ -661,11 +732,17 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 		return
 	}
 
-	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
-	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+	// Read the pending selection from DB
+	var selectAction GameAction
+	if err := db.Get(&selectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionDoctorSelect); err != nil || selectAction.TargetPlayerID == nil {
+		sendErrorToast(client.playerID, "Select a player to protect first")
 		return
 	}
+	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(game.ID, targetID)
 	if err != nil {
@@ -677,6 +754,10 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 		sendErrorToast(client.playerID, "Cannot protect a dead player")
 		return
 	}
+
+	// Remove the pending selection
+	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionDoctorSelect)
 
 	doctorDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
 	_, err = db.Exec(`
@@ -694,6 +775,78 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	LogDBState("after doctor protect")
 
 	resolveWerewolfVotes(game)
+}
+
+// handleWSGuardSelect toggles the guard's pending protection target selection.
+// Clicking the same player again deselects; clicking a different player replaces the selection.
+func handleWSGuardSelect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSGuardSelect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		sendErrorToast(client.playerID, "Can only act during night phase")
+		return
+	}
+	guard, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSGuardSelect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if guard.RoleName != "Guard" {
+		sendErrorToast(client.playerID, "Only the Guard can select a protection target")
+		return
+	}
+	if !guard.IsAlive {
+		sendErrorToast(client.playerID, "Dead players cannot act")
+		return
+	}
+	// Don't allow re-selection if already protected
+	var existingCount int
+	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionGuardProtect)
+	if existingCount > 0 {
+		sendErrorToast(client.playerID, "You have already protected someone this night")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	if targetID == client.playerID {
+		sendErrorToast(client.playerID, "Guard cannot protect themselves")
+		return
+	}
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionGuardSelect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// Same player clicked again → deselect
+		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			game.ID, game.Round, client.playerID, ActionGuardSelect)
+		log.Printf("Guard '%s' deselected protection target", guard.Name)
+	} else {
+		// Select (or replace prior selection)
+		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, client.playerID, ActionGuardSelect, targetID, VisibilityActor)
+		log.Printf("Guard '%s' selected protection target %d", guard.Name, targetID)
+	}
+
+	broadcastGameUpdate()
 }
 
 func handleWSGuardProtect(client *Client, msg WSMessage) {
@@ -737,13 +890,19 @@ func handleWSGuardProtect(client *Client, msg WSMessage) {
 		return
 	}
 
-	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
-	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+	// Read the pending selection from DB
+	var selectAction GameAction
+	if err := db.Get(&selectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionGuardSelect); err != nil || selectAction.TargetPlayerID == nil {
+		sendErrorToast(client.playerID, "Select a player to protect first")
 		return
 	}
+	targetID := *selectAction.TargetPlayerID
 
-	// Guard cannot protect themselves
+	// Guard cannot protect themselves (defensive re-check)
 	if targetID == client.playerID {
 		sendErrorToast(client.playerID, "Guard cannot protect themselves")
 		return
@@ -759,6 +918,10 @@ func handleWSGuardProtect(client *Client, msg WSMessage) {
 		sendErrorToast(client.playerID, "Cannot protect a dead player")
 		return
 	}
+
+	// Remove the pending selection
+	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionGuardSelect)
 
 	// Guard cannot protect the same player as last night
 	if game.Round > 1 {

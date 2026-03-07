@@ -4,17 +4,18 @@ Start the werewolf development server with automatic cleanup and optional extens
 
 ## Usage
 
-Run the server with default settings (10 second timeout, port 8080):
+Run the server (runs until Ctrl+C by default):
 
 ```bash
-./agent_tools/run_server.sh
+./tools/run_server.sh
 ```
 
 ### Options
 
 | Option | Description |
 |--------|-------------|
-| `--timeout SECONDS` | Kill server after SECONDS (default: 10) |
+| `--timeout SECONDS` | Kill server after SECONDS (no default; runs until Ctrl+C) |
+| `--watch` | Restart server when .go/.html/.js/.css files change (requires `inotifywait`) |
 | `--port PORT` | Port to check/use (default: 8080) |
 | `--log-requests` | Log all HTTP requests and responses |
 | `--log-html` | Capture HTML responses |
@@ -31,19 +32,22 @@ Any additional arguments are passed to `go run .`
 
 ```bash
 # Start with defaults
-./agent_tools/run_server.sh
+./tools/run_server.sh
 
-# Longer timeout
-./agent_tools/run_server.sh --timeout 60
+# Stop after 60 seconds
+./tools/run_server.sh --timeout 60
 
 # With all logging
-./agent_tools/run_server.sh --all-logs
+./tools/run_server.sh --all-logs
 
 # Request and WebSocket logging only
-./agent_tools/run_server.sh --log-requests --log-ws
+./tools/run_server.sh --log-requests --log-ws
 
-# Custom timeout and database
-./agent_tools/run_server.sh --timeout 120 -db test.db
+# Auto-stop after 120s with custom database
+./tools/run_server.sh --timeout 120 -db test.db
+
+# Watch mode: restart on source file changes
+./tools/run_server.sh --watch
 ```
 
 ## Log Files
@@ -62,12 +66,12 @@ The symlink `./server_logs/latest` always points to the most recent run.
 2. Clears the log file (werewolf.log)
 3. Sets up logging environment if logging options are enabled
 4. Starts the server with `go run .`
-5. Waits for the timeout, then stops the server
+5. Waits until Ctrl+C or `--timeout` expires, then stops the server (kills both `go run` and the compiled child binary)
 
 ## Instructions
 
 When the user asks to run or start the server:
 1. Use default settings unless they specify otherwise
 2. If they want to debug or see requests, add `--all-logs`
-3. For longer running sessions, increase `--timeout`
+3. Use `--timeout SECONDS` only when a time-limited run is needed
 4. After running, inform them of the server URL (http://localhost:8080) and log file locations

@@ -26,6 +26,7 @@
                 {{$currentVote := .CurrentVote}}
                 <card-list>
                 {{range .AliveTargets}}
+                {{$wvCount := index $.WerewolfVoteCounts .PlayerID}}
                 <form ws-send id="vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
                     <input type="hidden" name="action" value="werewolf_vote">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
@@ -35,6 +36,7 @@
                         team="{{if eq .Team "werewolf"}}werewolf{{else}}villager{{end}}"
                         alive="true"
                         selectable
+                        count="{{$wvCount}}"
                         {{if eq $currentVote .PlayerID}}selected{{end}}
                     ></player-card>
                 </form>
@@ -143,7 +145,7 @@
                 </form>
                 {{end}}
                 </card-list>
-                <form ws-send id="seer-investigate-form" class="vote-form" style="display:block;margin-top:1rem">
+                <form ws-send id="seer-investigate-form" class="vote-form">
                     <input type="hidden" name="action" value="seer_investigate">
                     <button type="submit" id="seer-investigate-button" {{if eq $seerSelected 0}}disabled{{end}}>🔮 Investigate</button>
                 </form>
@@ -154,12 +156,13 @@
                 {{if .HasProtected}}
                 <p id="doctor-result"><em>You are protecting <strong>{{.DoctorProtecting}}</strong> tonight.</em></p>
                 {{else}}
-                <p><small>Choose a player to protect from the werewolves tonight.</small></p>
+                <p><small>Choose a player to protect, then confirm.</small></p>
+                {{$doctorSelected := .DoctorSelectedID}}
                 <card-list>
                 {{range .AliveTargets}}
                 {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
-                <form ws-send id="doctor-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
-                    <input type="hidden" name="action" value="doctor_protect">
+                <form ws-send id="doctor-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                    <input type="hidden" name="action" value="doctor_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         player-name="{{.Name}}"
@@ -167,10 +170,15 @@
                         team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
                         alive="true"
                         selectable
+                        {{if eq $doctorSelected .PlayerID}}selected{{end}}
                     ></player-card>
                 </form>
                 {{end}}
                 </card-list>
+                <form ws-send id="doctor-protect-form" class="vote-form">
+                    <input type="hidden" name="action" value="doctor_protect">
+                    <button type="submit" id="doctor-protect-button" {{if eq $doctorSelected 0}}disabled{{end}}>🩺 Protect</button>
+                </form>
                 {{end}}
 
                 {{else if .IsGuard}}
@@ -178,12 +186,13 @@
                 {{if .GuardHasProtected}}
                 <p id="guard-result"><em>You are protecting <strong>{{.GuardProtecting}}</strong> tonight.</em></p>
                 {{else}}
-                <p><small>Choose a player to protect. You cannot protect yourself or the same player twice in a row.</small></p>
+                <p><small>Choose a player to protect, then confirm. You cannot protect yourself or the same player twice in a row.</small></p>
+                {{$guardSelected := .GuardSelectedID}}
                 <card-list>
                 {{range .GuardTargets}}
                 {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
-                <form ws-send id="guard-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
-                    <input type="hidden" name="action" value="guard_protect">
+                <form ws-send id="guard-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                    <input type="hidden" name="action" value="guard_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         player-name="{{.Name}}"
@@ -191,10 +200,15 @@
                         team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
                         alive="true"
                         selectable
+                        {{if eq $guardSelected .PlayerID}}selected{{end}}
                     ></player-card>
                 </form>
                 {{end}}
                 </card-list>
+                <form ws-send id="guard-protect-form" class="vote-form">
+                    <input type="hidden" name="action" value="guard_protect">
+                    <button type="submit" id="guard-protect-button" {{if eq $guardSelected 0}}disabled{{end}}>🛡️ Protect</button>
+                </form>
                 {{end}}
 
                 {{else if .IsWitch}}
@@ -272,7 +286,7 @@
                 <p><em>Your poison potion has been used.</em></p>
                 {{end}}
 
-                <form ws-send id="witch-apply-form" class="vote-form" style="display:block;margin-top:1rem">
+                <form ws-send id="witch-apply-form" class="vote-form">
                     <input type="hidden" name="action" value="witch_apply">
                     <button type="submit" id="witch-apply-button" class="witch-apply-button">✓ Done for tonight</button>
                 </form>

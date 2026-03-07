@@ -156,6 +156,22 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 	}
 }
 
+// getWerewolfVoteCount returns the vote count shown on a werewolf vote card for a given player
+func (tp *TestPlayer) getWerewolfVoteCount(targetName string) string {
+	result, err := tp.p().Eval(`() => {
+		const card = document.querySelector("[id^='vote-form-'] player-card[player-name='` + targetName + `']");
+		return card ? (card.getAttribute('count') || '0') : '0';
+	}`)
+	if err != nil {
+		return "0"
+	}
+	v := result.Value.String()
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Werewolf vote count for %s: %s", tp.Name, targetName, v)
+	}
+	return v
+}
+
 // getCurrentVoteTarget returns who this player has currently voted for (from UI)
 func (tp *TestPlayer) getCurrentVoteTarget() string {
 	found, el, err := tp.p().Has("[id^='vote-form-'] player-card[selected]")
@@ -359,6 +375,47 @@ func TestWerewolfCanVote(t *testing.T) {
 	if villagers[0].hasSoundToast("werewolves have made their choice") {
 		ctx.logger.LogDB("FAIL: sound toast fired before all werewolves voted")
 		t.Errorf("Sound toast should not appear until all werewolves have voted")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestWerewolfVoteCountsShownOnCards(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing werewolf vote counts on cards ===")
+
+	// 1 villager, 2 werewolves — first wolf's vote won't resolve night (need End Vote)
+	players := setupNightPhaseGame(ctx, browser, 1, 2)
+	werewolves, villagers := findPlayersByRole(players)
+	if len(werewolves) < 2 || len(villagers) == 0 {
+		t.Fatal("Need at least 2 werewolves and 1 villager")
+	}
+
+	targetName := villagers[0].Name
+	ctx.logger.Debug("Werewolves: %s, %s. Target: %s", werewolves[0].Name, werewolves[1].Name, targetName)
+
+	// Before any vote: count should be 0
+	if got := werewolves[0].getWerewolfVoteCount(targetName); got != "0" {
+		t.Errorf("Expected count 0 before any vote, got %s", got)
+	}
+
+	// Wolf 1 votes for villager (won't auto-resolve: wolf 2 hasn't voted yet)
+	werewolves[0].voteForPlayer(targetName)
+
+	// Both werewolves should now see count=1 on the villager's card
+	if got := werewolves[0].getWerewolfVoteCount(targetName); got != "1" {
+		ctx.logger.LogDB("FAIL: wrong vote count after wolf 1 votes")
+		t.Errorf("Wolf 1 page: expected count 1 after first vote, got %s", got)
+	}
+
+	if got := werewolves[1].getWerewolfVoteCount(targetName); got != "1" {
+		ctx.logger.LogDB("FAIL: wrong vote count on wolf 2 page")
+		t.Errorf("Wolf 2 page: expected count 1 after wolf 1 voted, got %s", got)
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

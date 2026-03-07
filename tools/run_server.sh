@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # run_server.sh - Start the werewolf server for testing
 #
-# Usage: ./agent_tools/run_server.sh [OPTIONS]
+# Usage: ./tools/run_server.sh [OPTIONS]
 #
 # Options:
-#   --timeout SECONDS   Kill server after SECONDS (default: 300)
+#   --timeout SECONDS   Kill server after SECONDS (no default; runs until Ctrl+C)
+#   --watch             Restart server when .go/.html/.js/.css files change (requires inotifywait)
+#   --test-db           Use a persistent temp DB (survives restarts, deleted on exit)
 #   --port PORT         Port to check/use (default: 8080)
 #   --log-requests      Log all HTTP requests and responses
 #   --log-html          Capture HTML responses
@@ -18,7 +20,9 @@
 
 set -e
 
-TIMEOUT=10
+TIMEOUT=""
+WATCH=""
+TEST_DB=""
 PORT=8080
 LOG_REQUESTS=""
 LOG_HTML=""
@@ -33,10 +37,12 @@ show_help() {
     cat << 'EOF'
 run_server.sh - Start the werewolf server for testing
 
-Usage: ./agent_tools/run_server.sh [OPTIONS] [GO_RUN_ARGS...]
+Usage: ./tools/run_server.sh [OPTIONS] [GO_RUN_ARGS...]
 
 Options:
-  --timeout SECONDS   Kill server after SECONDS (default: 10)
+  --timeout SECONDS   Kill server after SECONDS (no default; runs until Ctrl+C)
+  --watch             Restart server when .go/.html/.js/.css files change (requires inotifywait)
+  --test-db           Use a persistent temp DB (survives restarts, deleted on exit)
   --port PORT         Port to check/use (default: 8080)
   --log-requests      Log all HTTP requests and responses
   --log-html          Capture HTML responses
@@ -51,11 +57,11 @@ Options:
 All other arguments are passed to 'go run main.go'
 
 Examples:
-  ./agent_tools/run_server.sh
-  ./agent_tools/run_server.sh --timeout 60
-  ./agent_tools/run_server.sh --all-logs
-  ./agent_tools/run_server.sh --log-requests --log-ws
-  ./agent_tools/run_server.sh --timeout 120 -db test.db
+  ./tools/run_server.sh
+  ./tools/run_server.sh --timeout 60
+  ./tools/run_server.sh --all-logs
+  ./tools/run_server.sh --log-requests --log-ws
+  ./tools/run_server.sh --timeout 120 -db test.db
 EOF
 }
 
@@ -65,6 +71,14 @@ while [[ $# -gt 0 ]]; do
         --timeout)
             TIMEOUT="$2"
             shift 2
+            ;;
+        --watch)
+            WATCH="1"
+            shift
+            ;;
+        --test-db)
+            TEST_DB="1"
+            shift
             ;;
         --port)
             PORT="$2"
@@ -176,21 +190,34 @@ if [[ -n "$LOG_REQUESTS" || -n "$LOG_HTML" || -n "$LOG_DB" || -n "$LOG_WS" || -n
     echo ""
 fi
 
+# Set up test DB if requested
+if [[ -n "$TEST_DB" ]]; then
+    TEST_DB_PATH="/tmp/werewolf-test-$$.db"
+    ARGS+=("-db" "$TEST_DB_PATH")
+    echo "Test DB: $TEST_DB_PATH"
+fi
+
 # AI Storyteller configuration
 export STORYTELLER_PROVIDER="claude"
 export STORYTELLER_MODEL="claude-sonnet-4-6"
 
 # Start server in background
-echo "Starting server with timeout ${TIMEOUT}s..."
+echo "Starting server..."
 echo "Arguments: ${ARGS[*]}"
 
-go run . "${ARGS[@]}" &
+setsid go run . "${ARGS[@]}" &
 SERVER_PID=$!
 
 # Set up cleanup
 cleanup() {
     echo "Stopping server (PID: $SERVER_PID)"
-    kill $SERVER_PID 2>/dev/null || true
+    # Kill the entire process group (go run + compiled binary)
+    kill -- -$SERVER_PID 2>/dev/null || true
+
+    if [[ -n "$TEST_DB_PATH" ]]; then
+        rm -f "$TEST_DB_PATH"
+        echo "Test DB deleted: $TEST_DB_PATH"
+    fi
 
     if [[ -n "$HAS_LOGGING" ]]; then
         echo ""
@@ -211,9 +238,32 @@ if ! kill -0 $SERVER_PID 2>/dev/null; then
 fi
 
 echo "Server running on port $PORT (PID: $SERVER_PID)"
-echo "Will timeout in ${TIMEOUT}s"
 echo "Logs: werewolf.log"
 
-# Wait for timeout or manual interrupt
-sleep $TIMEOUT &
-wait $!
+# Wait for timeout, watch for changes, or run until interrupted
+if [[ -n "$WATCH" ]]; then
+    if ! command -v inotifywait &>/dev/null; then
+        echo "Error: inotifywait not found. Install inotify-tools."
+        exit 1
+    fi
+    echo "Watch mode: restarting on changes to .go/.html/.js/.css files"
+    while true; do
+        inotifywait -q -r -e modify,create,delete,move \
+            --include='\.(go|html|js|css)$' \
+            . || true
+        echo ""
+        echo "File changed — restarting server..."
+        kill -- -$SERVER_PID 2>/dev/null || true
+        wait $SERVER_PID 2>/dev/null || true
+        sleep 0.3
+        setsid go run . "${ARGS[@]}" &
+        SERVER_PID=$!
+        echo "Server restarted (PID: $SERVER_PID)"
+    done
+elif [[ -n "$TIMEOUT" ]]; then
+    echo "Will stop in ${TIMEOUT}s"
+    sleep "$TIMEOUT"
+else
+    echo "Running until interrupted (Ctrl+C to stop)"
+    wait $SERVER_PID
+fi

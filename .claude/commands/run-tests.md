@@ -7,7 +7,7 @@ Run tests with extensive logging options for debugging.
 Run all tests with default settings:
 
 ```bash
-./agent_tools/run_tests.sh
+./tools/run_tests.sh
 ```
 
 ### Options
@@ -31,19 +31,19 @@ Run all tests with default settings:
 
 ```bash
 # Run all tests
-./agent_tools/run_tests.sh
+./tools/run_tests.sh
 
 # Verbose output
-./agent_tools/run_tests.sh -v
+./tools/run_tests.sh -v
 
 # All logging enabled
-./agent_tools/run_tests.sh --all-logs
+./tools/run_tests.sh --all-logs
 
 # Run specific test with debugging
-./agent_tools/run_tests.sh --test TestSignup --debug --log-db
+./tools/run_tests.sh --test TestSignup --debug --log-db
 
 # Full debugging for a failing test
-./agent_tools/run_tests.sh --test TestWebSocketSync --all-logs --keep-logs --clean
+./tools/run_tests.sh --test TestWebSocketSync --all-logs --keep-logs --clean
 ```
 
 ## Log Files
@@ -63,7 +63,7 @@ The symlink `./test_logs/latest` always points to the most recent run.
 
 When the user asks to run tests:
 
-1. If they want to run all tests: `./agent_tools/run_tests.sh`
+1. If they want to run all tests: `./tools/run_tests.sh`
 2. If they want verbose output: add `-v`
 3. If they're debugging a failure: add `--all-logs --keep-logs`
 4. If they want a specific test: add `--test TestName`

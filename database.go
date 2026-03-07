@@ -152,8 +152,11 @@ const (
 	ActionElimination       = "elimination"
 	ActionSeerSelect        = "seer_select" // pending investigation selection (toggled, committed on Investigate)
 	ActionSeerInvestigate   = "seer_investigate"
+	ActionDoctorSelect      = "doctor_select" // pending protection target (toggled, committed on Protect)
 	ActionDoctorProtect     = "doctor_protect"
+	ActionGuardSelect       = "guard_select" // pending protection target (toggled, committed on Protect)
 	ActionGuardProtect      = "guard_protect"
+	ActionHunterSelect      = "hunter_select" // pending revenge target (toggled, committed on Shoot)
 	ActionHunterRevenge     = "hunter_revenge"
 	ActionWitchSelectHeal   = "witch_select_heal"   // pending heal selection (toggled, committed on Apply)
 	ActionWitchSelectPoison = "witch_select_poison" // pending poison selection (toggled, committed on Apply)

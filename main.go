@@ -443,8 +443,12 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSSeerSelect(client, msg)
 	case "seer_investigate":
 		handleWSSeerInvestigate(client, msg)
+	case "doctor_select":
+		handleWSDoctorSelect(client, msg)
 	case "doctor_protect":
 		handleWSDoctorProtect(client, msg)
+	case "guard_select":
+		handleWSGuardSelect(client, msg)
 	case "guard_protect":
 		handleWSGuardProtect(client, msg)
 	case "day_vote":
@@ -453,6 +457,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSDayPass(client, msg)
 	case "day_end_vote":
 		handleWSDayEndVote(client, msg)
+	case "hunter_select":
+		handleWSHunterSelect(client, msg)
 	case "hunter_revenge":
 		handleWSHunterRevenge(client, msg)
 	case "witch_select_heal":
@@ -557,9 +563,24 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 
 		// Get current votes for this night (werewolves only)
 		var votes []WerewolfVote
+		werewolfVoteCounts := map[int64]int{}
 		var currentVote int64
 
 		if isWerewolf {
+			type voteCountRow struct {
+				TargetPlayerID int64 `db:"target_player_id"`
+				Count          int   `db:"count"`
+			}
+			var countRows []voteCountRow
+			db.Select(&countRows, `
+				SELECT target_player_id, COUNT(*) as count FROM game_action
+				WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND target_player_id IS NOT NULL
+				GROUP BY target_player_id`,
+				game.ID, game.Round, ActionWerewolfKill)
+			for _, r := range countRows {
+				werewolfVoteCounts[r.TargetPlayerID] = r.Count
+			}
+
 			var actions []GameAction
 			db.Select(&actions, `
 				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
@@ -624,6 +645,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		// Populate doctor-specific data
 		isDoctor := currentPlayer.RoleName == "Doctor"
 		var hasProtected bool
+		var doctorSelectedID int64
 		var doctorProtecting string
 
 		if isDoctor {
@@ -636,12 +658,23 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			if err == nil && action.TargetPlayerID != nil {
 				hasProtected = true
 				db.Get(&doctorProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+			} else {
+				// Check for pending selection
+				var selectAction GameAction
+				if db.Get(&selectAction, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+					game.ID, game.Round, playerID, ActionDoctorSelect) == nil && selectAction.TargetPlayerID != nil {
+					doctorSelectedID = *selectAction.TargetPlayerID
+				}
 			}
 		}
 
 		// Populate guard-specific data
 		isGuard := currentPlayer.RoleName == "Guard"
 		var guardHasProtected bool
+		var guardSelectedID int64
 		var guardProtecting string
 		var guardTargets []Player
 
@@ -655,6 +688,16 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			if err == nil && action.TargetPlayerID != nil {
 				guardHasProtected = true
 				db.Get(&guardProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+			} else {
+				// Check for pending selection
+				var selectAction GameAction
+				if db.Get(&selectAction, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+					game.ID, game.Round, playerID, ActionGuardSelect) == nil && selectAction.TargetPlayerID != nil {
+					guardSelectedID = *selectAction.TargetPlayerID
+				}
 			}
 
 			// Build guard targets: alive players excluding self and last night's target
@@ -944,6 +987,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			IsWerewolf:            isWerewolf,
 			Werewolves:            werewolves,
 			Votes:                 votes,
+			WerewolfVoteCounts:    werewolfVoteCounts,
 			CurrentVote:           currentVote,
 			WolfCubDoubleKill:     wolfCubDoubleKill,
 			CurrentVote2:          currentVote2,
@@ -954,9 +998,11 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			SeerResults:           seerResults,
 			IsDoctor:              isDoctor,
 			HasProtected:          hasProtected,
+			DoctorSelectedID:      doctorSelectedID,
 			DoctorProtecting:      doctorProtecting,
 			IsGuard:               isGuard,
 			GuardHasProtected:     guardHasProtected,
+			GuardSelectedID:       guardSelectedID,
 			GuardProtecting:       guardProtecting,
 			GuardTargets:          guardTargets,
 			IsWitch:               isWitch,
@@ -1040,6 +1086,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		var hunterRevengeNeeded, hunterRevengeDone bool
 		var hunterName, hunterVictim, hunterVictimRole string
 		var isTheHunter bool
+		var hunterSelectedID int64
 		var hunterTargets []Player
 
 		// Step 1: Find a dead Hunter who hasn't taken revenge yet (pending — takes priority)
@@ -1057,6 +1104,17 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 				hunterName = p.Name
 				isTheHunter = (p.PlayerID == playerID)
 				hunterTargets = aliveTargets
+				// Check for pending selection from this hunter
+				if isTheHunter {
+					var selectAction GameAction
+					if db.Get(&selectAction, `
+						SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+						FROM game_action
+						WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+						game.ID, game.Round, playerID, ActionHunterSelect) == nil && selectAction.TargetPlayerID != nil {
+						hunterSelectedID = *selectAction.TargetPlayerID
+					}
+				}
 				break
 			}
 		}
@@ -1084,7 +1142,22 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 
 		// Get current votes for this day
 		var votes []DayVote
+		dayVoteCounts := map[int64]int{}
 		var currentVote int64
+
+		type voteCountRow struct {
+			TargetPlayerID int64 `db:"target_player_id"`
+			Count          int   `db:"count"`
+		}
+		var dayCountRows []voteCountRow
+		db.Select(&dayCountRows, `
+			SELECT target_player_id, COUNT(*) as count FROM game_action
+			WHERE game_id=? AND round=? AND phase='day' AND action_type=? AND target_player_id IS NOT NULL
+			GROUP BY target_player_id`,
+			game.ID, game.Round, ActionDayVote)
+		for _, r := range dayCountRows {
+			dayVoteCounts[r.TargetPlayerID] = r.Count
+		}
 
 		var actions []GameAction
 		db.Select(&actions, `
@@ -1131,6 +1204,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			NightNumber:         game.Round,
 			NightVictims:        nightVictims,
 			Votes:               votes,
+			DayVoteCounts:       dayVoteCounts,
 			CurrentVote:         currentVote,
 			IsAlive:             currentPlayer.IsAlive,
 			HunterRevengeNeeded: hunterRevengeNeeded,
@@ -1139,6 +1213,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			HunterVictim:        hunterVictim,
 			HunterVictimRole:    hunterVictimRole,
 			IsTheHunter:         isTheHunter,
+			HunterSelectedID:    hunterSelectedID,
 			HunterTargets:       hunterTargets,
 			IsLover:             isDayLover,
 			LoverName:           dayLoverName,

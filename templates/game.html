@@ -327,12 +327,16 @@
     var _wsConnected = false;
     document.body.addEventListener('htmx:wsOpen', function (e) {
       _wsSocket = e.detail.socketWrapper;
-      if (_wsConnected) {
-        // Reconnected after a drop — reload to get fresh state.
-        location.reload();
-        return;
-      }
       _wsConnected = true;
+    });
+    document.body.addEventListener('htmx:wsClose', function () {
+      if (!_wsConnected) return;
+      // Server went down — poll until it's back, then reload.
+      setTimeout(function poll() {
+        fetch('/static/htmx.js', { cache: 'no-store' })
+          .then(function () { location.reload(); })
+          .catch(function () { setTimeout(poll, 1000); });
+      }, 500);
     });
     window.wsSend = function (params) {
       if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);

@@ -196,6 +196,7 @@
       font-family: "Metal Mania", var(--pico-font-family-emoji);
       font-size: 1em; color: var(--c-amber-bright);
       text-align: center; margin: calc(var(--pico-spacing) * 0.3) 0 0; line-height: 1.2;
+      width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* Role name hidden in expanded mode (it's visible in the seal image) */
     .pc-exp .pc-role { display: none; }
@@ -233,6 +234,9 @@
     }
     .pc-toggle:hover { background: var(--c-bark); border-color: var(--c-flame); color: var(--c-amber); }
 
+    /* ── Dead player ─────────────────────────────────────────────────────── */
+    :host([alive=false]) .pc-card { opacity: 0.55; filter: grayscale(50%); }
+
     /* ── Win screen variants ────────────────────────────────────────────── */
     :host([loser]) .pc-card { opacity: 0.42; filter: grayscale(35%); }
     :host([winner][team=villager]) .pc-card {
@@ -265,20 +269,23 @@
     }
     .pc-col .pc-seal { width: 44px !important; height: 44px !important; flex-shrink: 0; }
 
-    :host([lobby]) .pc-col .pc-count { font-size: 1.1em; text-shadow: none; }
     :host([lobby]) .pc-col .pc-btn-wrap,
-    :host([lobby]) .pc-col .pc-count-wrap {
+    .pc-col .pc-count-wrap {
       position: static; --bsz: 28px; flex-shrink: 0;
     }
+    .pc-col .pc-count { font-size: 1.1em; text-shadow: none; }
 
-    .pc-col .pc-name {
-      font-size: 0.9em; text-align: left; margin: 0;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+    .pc-col .pc-info {
+      flex: 1; min-width: 0;
+      font-size: 0.82em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin: 0;
     }
-    .pc-col .pc-role {
-      flex-grow: 1; font-size: 0.75em; text-align: left; margin: 0;
-      white-space: nowrap; flex-shrink: 0;
-    }
+    .pc-col .pc-info .pc-name { color: var(--c-amber); }
+    .pc-col .pc-info .pc-sep  { color: var(--c-muted); }
+    .pc-col .pc-info .pc-role { color: var(--c-amber); }
+    :host([team=villager]) .pc-col .pc-info .pc-role { color: var(--c-team-villager-label); }
+    :host([team=werewolf]) .pc-col .pc-info .pc-role { color: var(--c-team-werewolf-label); }
     .pc-col .pc-desc { display: none; }
     .pc-col .pc-footer { width: auto; border-top: none; padding-top: 0; margin-top: 0; flex-shrink: 0; }
     .pc-col .pc-status { display: none; }
@@ -349,7 +356,8 @@
       const playerName = this.getAttribute('player-name')  || '';
       const roleDesc   = this.getAttribute('role-desc')    || '';
       const team       = this.getAttribute('team')         || '';
-      const count      = this.getAttribute('count')        || '0';
+      const countAttr  = this.getAttribute('count');
+      const count      = countAttr ?? '0';
       const roleId     = this.getAttribute('role-id')      || '';
       const isLobby    = this.hasAttribute('lobby');
       const totRoles   = parseInt(this.getAttribute('total-roles')  || '0');
@@ -379,6 +387,10 @@
           h += `<div class="pc-btn-wrap pc-btn-plus">`
              +   `<button class="pc-btn"${addDis} onclick="window.wsSend({action:'update_role',role_id:'${esc(roleId)}',delta:'1'})">+</button>`
              + `</div>`;
+        } else if (countAttr !== null) {
+          h += `<div class="pc-count-wrap${count === '0' ? ' pc-zero' : ''}">`
+             +   `<span class="pc-count${count === '0' ? ' pc-zero' : ''}">${esc(count)}</span>`
+             + `</div>`;
         }
         if (isLover) h += heartBadge;
         h += `<div class="pc-btn-wrap pc-btn-collapse">`
@@ -397,9 +409,13 @@
       } else {
         // ── Collapsed content ──
         h += `<div class="pc-seal-wrap"><img class="pc-seal" src="${seal}" alt="${esc(roleName)}"></div>`;
-        if (playerName) h += `<span class="pc-name">${esc(playerName)}</span>`;
-        if (roleName)   h += `<span class="pc-role">${esc(roleName)}</span>`;
-        if (isLobby) {
+        const sep = `<span class="pc-sep"> | </span>`;
+        let infoParts = [];
+        if (playerName) infoParts.push(`<span class="pc-name">${esc(playerName)}</span>`);
+        if (roleName && team !== 'unknown') infoParts.push(`<span class="pc-role">${esc(roleName)}</span>`);
+        if (aliveAttr !== null && aliveAttr !== 'true') infoParts.push(`<span class="pc-dead">Dead</span>`);
+        if (infoParts.length) h += `<span class="pc-info">${infoParts.join(sep)}</span>`;
+        if (countAttr !== null) {
           h += `<div class="pc-count-wrap${count === '0' ? ' pc-zero' : ''}">`
              +   `<span class="pc-count${count === '0' ? ' pc-zero' : ''}">${esc(count)}</span>`
              + `</div>`;

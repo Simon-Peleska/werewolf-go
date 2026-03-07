@@ -13,6 +13,7 @@
                         role-name="{{.Role}}"
                         team="{{.Team}}"
                         alive="false"
+                        collapsed
                     ></player-card>
                     {{end}}
                     </card-list>
@@ -33,12 +34,13 @@
                         <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
                         <h3 style="margin:0">Your Last Shot</h3>
                     </div>
-                    <p><small>You have been eliminated! Choose a player to take down with you.</small></p>
+                    <p><small>You have been eliminated! Choose a player to take down with you, then confirm.</small></p>
+                    {{$hunterSelected := .HunterSelectedID}}
                     <card-list>
                     {{range .HunterTargets}}
                     {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
-                    <form ws-send id="hunter-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
-                        <input type="hidden" name="action" value="hunter_revenge">
+                    <form ws-send id="hunter-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                        <input type="hidden" name="action" value="hunter_select">
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
                             player-name="{{.Name}}"
@@ -46,10 +48,15 @@
                             team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
                             alive="true"
                             selectable
+                            {{if eq $hunterSelected .PlayerID}}selected{{end}}
                         ></player-card>
                     </form>
                     {{end}}
                     </card-list>
+                    <form ws-send id="hunter-shoot-form" class="vote-form">
+                        <input type="hidden" name="action" value="hunter_revenge">
+                        <button type="submit" id="hunter-shoot-button" {{if eq $hunterSelected 0}}disabled{{end}}>🏹 Shoot</button>
+                    </form>
                     {{else}}
                     <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
                     {{end}}
@@ -69,6 +76,7 @@
         <card-list>
         {{range .AliveTargets}}
         {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
+        {{$voteCount := index $.DayVoteCounts .PlayerID}}
         <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
             <input type="hidden" name="action" value="day_vote">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
@@ -78,6 +86,7 @@
                 team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
                 alive="true"
                 selectable
+                count="{{$voteCount}}"
                 {{if eq $currentVote .PlayerID}}selected{{end}}
             ></player-card>
         </form>

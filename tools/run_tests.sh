@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run_tests.sh - Run tests with extensive logging options
 #
-# Usage: ./agent_tools/run_tests.sh [OPTIONS]
+# Usage: ./tools/run_tests.sh [OPTIONS]
 #
 # Options:
 #   -v, --verbose         Enable verbose test output (go test -v)
@@ -19,11 +19,11 @@
 #   -h, --help            Show this help message
 #
 # Examples:
-#   ./agent_tools/run_tests.sh                    # Run all tests
-#   ./agent_tools/run_tests.sh -v                 # Verbose output
-#   ./agent_tools/run_tests.sh --all-logs         # All logging enabled
-#   ./agent_tools/run_tests.sh --test TestSignup  # Run specific test
-#   ./agent_tools/run_tests.sh --debug --log-db   # Debug with DB dumps
+#   ./tools/run_tests.sh                    # Run all tests
+#   ./tools/run_tests.sh -v                 # Verbose output
+#   ./tools/run_tests.sh --all-logs         # All logging enabled
+#   ./tools/run_tests.sh --test TestSignup  # Run specific test
+#   ./tools/run_tests.sh --debug --log-db   # Debug with DB dumps
 
 set -e
 
@@ -44,7 +44,7 @@ show_help() {
     cat << 'EOF'
 run_tests.sh - Run tests with extensive logging options
 
-Usage: ./agent_tools/run_tests.sh [OPTIONS]
+Usage: ./tools/run_tests.sh [OPTIONS]
 
 Options:
   -v, --verbose         Enable verbose test output (go test -v)
@@ -70,12 +70,12 @@ Environment Variables Set:
   TEST_OUTPUT_DIR=path  Log output directory
 
 Examples:
-  ./agent_tools/run_tests.sh                    # Run all tests
-  ./agent_tools/run_tests.sh -v                 # Verbose output
-  ./agent_tools/run_tests.sh --all-logs         # All logging enabled
-  ./agent_tools/run_tests.sh --test TestSignup  # Run specific test
-  ./agent_tools/run_tests.sh --debug --log-db   # Debug with DB dumps
-  ./agent_tools/run_tests.sh --all-logs --clean # Fresh logs, all enabled
+  ./tools/run_tests.sh                    # Run all tests
+  ./tools/run_tests.sh -v                 # Verbose output
+  ./tools/run_tests.sh --all-logs         # All logging enabled
+  ./tools/run_tests.sh --test TestSignup  # Run specific test
+  ./tools/run_tests.sh --debug --log-db   # Debug with DB dumps
+  ./tools/run_tests.sh --all-logs --clean # Fresh logs, all enabled
 EOF
 }
 

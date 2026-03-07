@@ -26,7 +26,8 @@ type DayData struct {
 	NightNumber         int
 	NightVictims        []NightVictim // All players killed last night
 	Votes               []DayVote
-	CurrentVote         int64 // 0 means no vote
+	DayVoteCounts       map[int64]int // vote count per target player ID
+	CurrentVote         int64         // 0 means no vote
 	IsAlive             bool
 	HunterRevengeNeeded bool           // Night victim was a Hunter who hasn't shot yet
 	HunterRevengeDone   bool           // Hunter has taken their shot
@@ -34,6 +35,7 @@ type DayData struct {
 	HunterVictim        string         // Who the Hunter shot (after revenge)
 	HunterVictimRole    string         // Role of Hunter's target
 	IsTheHunter         bool           // Is this player the dead Hunter needing to shoot?
+	HunterSelectedID    int64          // Pending revenge target (0 = none selected)
 	HunterTargets       []Player       // Alive targets for the Hunter to pick from
 	IsLover             bool           // Is this player one of the two lovers?
 	LoverName           string         // Name of their partner
@@ -355,6 +357,74 @@ func resolveDayVotes(game *Game) {
 	transitionToNight(game)
 }
 
+// handleWSHunterSelect toggles the hunter's pending revenge target selection.
+// Clicking the same player again deselects; clicking a different player replaces the selection.
+func handleWSHunterSelect(client *Client, msg WSMessage) {
+	game, err := getOrCreateCurrentGame()
+	if err != nil {
+		logError("handleWSHunterSelect: getOrCreateCurrentGame", err)
+		sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "day" {
+		sendErrorToast(client.playerID, "Hunter revenge not active")
+		return
+	}
+	hunter, err := getPlayerInGame(game.ID, client.playerID)
+	if err != nil {
+		logError("handleWSHunterSelect: getPlayerInGame", err)
+		sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if hunter.RoleName != "Hunter" {
+		sendErrorToast(client.playerID, "Only the Hunter can select a target")
+		return
+	}
+	if hunter.IsAlive {
+		sendErrorToast(client.playerID, "Hunter revenge is only available when eliminated")
+		return
+	}
+	// Don't allow re-selection if already shot
+	var revengeCount int
+	db.Get(&revengeCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionHunterRevenge)
+	if revengeCount > 0 {
+		sendErrorToast(client.playerID, "You have already taken your revenge shot")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	target, err := getPlayerInGame(game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionHunterSelect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// Same player clicked again → deselect
+		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+			game.ID, game.Round, client.playerID, ActionHunterSelect)
+		log.Printf("Hunter '%s' deselected revenge target", hunter.Name)
+	} else {
+		// Select (or replace prior selection)
+		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'day', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, client.playerID, ActionHunterSelect, targetID, VisibilityActor)
+		log.Printf("Hunter '%s' selected revenge target %d", hunter.Name, targetID)
+	}
+
+	broadcastGameUpdate()
+}
+
 func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	game, err := getOrCreateCurrentGame()
 	if err != nil {
@@ -396,11 +466,17 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		return
 	}
 
-	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
-	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+	// Read the pending selection from DB
+	var selectAction GameAction
+	if err := db.Get(&selectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionHunterSelect); err != nil || selectAction.TargetPlayerID == nil {
+		sendErrorToast(client.playerID, "Select a player to shoot first")
 		return
 	}
+	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(game.ID, targetID)
 	if err != nil {
@@ -412,6 +488,10 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		sendErrorToast(client.playerID, "Cannot shoot a dead player")
 		return
 	}
+
+	// Remove the pending selection
+	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionHunterSelect)
 
 	// Kill the target
 	_, err = db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, targetID)

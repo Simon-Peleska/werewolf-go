@@ -42,6 +42,22 @@ func (tp *TestPlayer) getDayVoteButtons() []string {
 	return names
 }
 
+// getDayVoteCount returns the vote count shown on a day vote card for a given player
+func (tp *TestPlayer) getDayVoteCount(targetName string) string {
+	result, err := tp.p().Eval(`() => {
+		const card = document.querySelector("[id^='day-vote-form-'] player-card[player-name='` + targetName + `']");
+		return card ? (card.getAttribute('count') || '0') : '0';
+	}`)
+	if err != nil {
+		return "0"
+	}
+	v := result.Value.String()
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Day vote count for %s: %s", tp.Name, targetName, v)
+	}
+	return v
+}
+
 // isGameFinished checks if the game has ended
 func (tp *TestPlayer) isGameFinished() bool {
 	found, _, err := tp.p().Has(".win-hero")
@@ -149,6 +165,60 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 	}
 
 	ctx.logger.Debug("Players: %d", len(players))
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDayVoteCountsShownOnCards(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing day vote counts on cards ===")
+
+	// 3 villagers, 1 werewolf — werewolf kills villager[0], leaving 3 alive:
+	// villagers[1], villagers[2], werewolves[0]
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	targetName := werewolves[0].Name
+	ctx.logger.Debug("Target: %s, voters: %s, %s", targetName, villagers[1].Name, villagers[2].Name)
+
+	// Before any vote: count should be 0
+	if got := villagers[1].getDayVoteCount(targetName); got != "0" {
+		t.Errorf("Expected count 0 before any vote, got %s", got)
+	}
+
+	// Villager 1 votes for werewolf (AllActed=false, no auto-end)
+	villagers[1].dayVoteForPlayer(targetName)
+
+	// Both villager 1 and villager 2 should see count=1 on the werewolf's card
+	if got := villagers[1].getDayVoteCount(targetName); got != "1" {
+		ctx.logger.LogDB("FAIL: wrong count after villager 1 votes")
+		t.Errorf("Villager 1 page: expected count 1 after first vote, got %s", got)
+	}
+	if got := villagers[2].getDayVoteCount(targetName); got != "1" {
+		ctx.logger.LogDB("FAIL: wrong count on villager 2 page")
+		t.Errorf("Villager 2 page: expected count 1 after villager 1 voted, got %s", got)
+	}
+
+	// Villager 2 also votes for werewolf (2/3 voted, AllActed still false)
+	villagers[2].dayVoteForPlayer(targetName)
+
+	// All three alive players should see count=2 on the werewolf's card
+	if got := villagers[1].getDayVoteCount(targetName); got != "2" {
+		ctx.logger.LogDB("FAIL: wrong count after villager 2 votes (villager 1 view)")
+		t.Errorf("Villager 1 page: expected count 2 after second vote, got %s", got)
+	}
+	if got := villagers[2].getDayVoteCount(targetName); got != "2" {
+		ctx.logger.LogDB("FAIL: wrong count after villager 2 votes (villager 2 view)")
+		t.Errorf("Villager 2 page: expected count 2 after second vote, got %s", got)
+	}
+	if got := werewolves[0].getDayVoteCount(targetName); got != "2" {
+		ctx.logger.LogDB("FAIL: wrong count on target's own page")
+		t.Errorf("Werewolf page: expected count 2 after two votes against them, got %s", got)
+	}
+
 	ctx.logger.Debug("=== Test passed ===")
 }
 
@@ -877,12 +947,18 @@ func findPlayersByRoleWithDoctor(players []*TestPlayer) (werewolves, villagers, 
 	return
 }
 
-// doctorProtectPlayer clicks the doctor protect button for a specific player
+// doctorProtectPlayer selects a target for the doctor and clicks the Protect button.
 func (tp *TestPlayer) doctorProtectPlayer(targetName string) {
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] Doctor protecting: %s", tp.Name, targetName)
+		tp.logger.Debug("[%s] Doctor selecting target: %s", tp.Name, targetName)
 	}
-	tp.clickAndWait("[id^='doctor-form-'] player-card[player-name='" + targetName + "']")
+	// Select the player (triggers broadcastGameUpdate)
+	tp.doWithWSWait(func() {
+		tp.p().MustElement("[id^='doctor-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
+	})
+	tp.logHTML("after doctor select of " + targetName)
+	// Click Protect button to commit
+	tp.clickAndWait("#doctor-protect-button")
 	tp.logHTML("after doctor protection of " + targetName)
 }
 
@@ -901,7 +977,7 @@ func (tp *TestPlayer) getDoctorResult() string {
 
 // canSeeDoctorButtons checks if the doctor protection cards are visible
 func (tp *TestPlayer) canSeeDoctorButtons() bool {
-	found, _, err := tp.p().Has("[id^='doctor-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='doctor-select-form-'] player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see doctor buttons: %v", tp.Name, canSee)
@@ -1296,12 +1372,18 @@ func findPlayersByRoleWithGuard(players []*TestPlayer) (werewolves, villagers, g
 	return
 }
 
-// guardProtectPlayer clicks the guard protect button for a specific player
+// guardProtectPlayer selects a target for the guard and clicks the Protect button.
 func (tp *TestPlayer) guardProtectPlayer(targetName string) {
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] Guard protecting: %s", tp.Name, targetName)
+		tp.logger.Debug("[%s] Guard selecting target: %s", tp.Name, targetName)
 	}
-	tp.clickAndWait("[id^='guard-form-'] player-card[player-name='" + targetName + "']")
+	// Select the player (triggers broadcastGameUpdate)
+	tp.doWithWSWait(func() {
+		tp.p().MustElement("[id^='guard-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
+	})
+	tp.logHTML("after guard select of " + targetName)
+	// Click Protect button to commit
+	tp.clickAndWait("#guard-protect-button")
 	tp.logHTML("after guard protection of " + targetName)
 }
 
@@ -1320,7 +1402,7 @@ func (tp *TestPlayer) getGuardResult() string {
 
 // canSeeGuardButtons checks if the guard protection cards are visible
 func (tp *TestPlayer) canSeeGuardButtons() bool {
-	found, _, err := tp.p().Has("[id^='guard-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='guard-select-form-'] player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see guard buttons: %v", tp.Name, canSee)
@@ -1331,7 +1413,7 @@ func (tp *TestPlayer) canSeeGuardButtons() bool {
 // getGuardButtonNames returns the names shown on guard protection cards
 func (tp *TestPlayer) getGuardButtonNames() []string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll("[id^='guard-form-'] player-card");
+		const cards = document.querySelectorAll("[id^='guard-select-form-'] player-card");
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
 	}`)
 	if err != nil {
@@ -1804,18 +1886,24 @@ func findPlayersByRoleWithHunter(players []*TestPlayer) (werewolves, villagers, 
 	return
 }
 
-// hunterShootPlayer clicks the hunter revenge button for a specific player
+// hunterShootPlayer selects a target for the hunter and clicks the Shoot button.
 func (tp *TestPlayer) hunterShootPlayer(targetName string) {
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] Hunter shooting: %s", tp.Name, targetName)
+		tp.logger.Debug("[%s] Hunter selecting target: %s", tp.Name, targetName)
 	}
-	tp.clickAndWait("[id^='hunter-form-'] player-card[player-name='" + targetName + "']")
+	// Select the player (triggers broadcastGameUpdate)
+	tp.doWithWSWait(func() {
+		tp.p().MustElement("[id^='hunter-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
+	})
+	tp.logHTML("after hunter select of " + targetName)
+	// Click Shoot button to commit
+	tp.clickAndWait("#hunter-shoot-button")
 	tp.logHTML("after hunter shooting " + targetName)
 }
 
 // canSeeHunterButtons checks if the hunter revenge cards are visible
 func (tp *TestPlayer) canSeeHunterButtons() bool {
-	found, _, err := tp.p().Has("[id^='hunter-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='hunter-select-form-'] player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see hunter buttons: %v", tp.Name, canSee)
