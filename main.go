@@ -22,85 +22,18 @@ var templateFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
-var templates *template.Template
-var db *sqlx.DB
 var devMode bool
 
-// logError logs an error with context and dumps the database in dev mode
+// App holds per-server resources to enable full isolation between tests.
+type App struct {
+	db        *sqlx.DB
+	hub       *Hub
+	templates *template.Template
+}
+
+// logError logs an error with context
 func logError(context string, err error) {
 	log.Printf("ERROR [%s]: %v", context, err)
-	if devMode {
-		rows, _ := db.Query(".dump")
-		log.Printf("DB dump: %v", rows)
-	}
-}
-
-// broadcastGameUpdate sends the current game state to all connected clients
-func broadcastGameUpdate() {
-	game, err := getOrCreateCurrentGame()
-	if err != nil {
-		logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
-		return
-	}
-
-	players, err := getPlayersByGameId(game.ID)
-	if err != nil {
-		logError("broadcastGameUpdate: getPlayersByGameId", err)
-		return
-	}
-
-	DebugLog("broadcastGameUpdate", "Broadcasting to %d players in game %d (status: %s)", len(players), game.ID, game.Status)
-
-	for _, p := range players {
-		// Send game component
-		buf, err := getGameComponent(p.PlayerID, game)
-		if err != nil {
-			logError("broadcastGameUpdate: getGameComponent", err)
-			continue
-		}
-		hub.sendToPlayer(p.PlayerID, buf.Bytes())
-
-		// Send character info
-		var charBuf bytes.Buffer
-
-		data := SidebarData{
-			Player:              &p,
-			Players:             selfFirstPlayers(players, p.PlayerID),
-			Game:                game,
-			LoverPartnerID:      getLoverPartner(game.ID, p.PlayerID),
-			SeerFoundWerewolves: getSeerFoundWerewolves(game.ID, p.PlayerID),
-		}
-
-		templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
-		hub.sendToPlayer(p.PlayerID, charBuf.Bytes())
-
-		historyBuf, err := getGameHistory(p.PlayerID, game)
-		if err != nil {
-			logError("broadcastGameHistory: getGameHistory", err)
-			continue
-		}
-		hub.sendToPlayer(p.PlayerID, historyBuf.Bytes())
-	}
-}
-
-// getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
-func getOrCreateCurrentGame() (*Game, error) {
-	var game Game
-	err := db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
-	if err == sql.ErrNoRows {
-		result, err := db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
-		if err != nil {
-			return nil, err
-		}
-		gameID, _ := result.LastInsertId()
-		game = Game{ID: gameID, Status: "lobby", Round: 0}
-		log.Printf("Created new game: id=%d, status='lobby'", gameID)
-		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
-		LogDBState("after new game created")
-	} else if err != nil {
-		return nil, err
-	}
-	return &game, nil
 }
 
 type GameData struct {
@@ -111,35 +44,35 @@ type GameData struct {
 	GameComponent string
 }
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
+func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 
-	playerID, err := getPlayerIdFromSession(r)
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	loggedIn := err == nil && playerID > 0
 
 	if loggedIn {
 		var playerName string
-		db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+		app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 		DebugLog("handleIndex", "Page accessed by logged-in player '%s' (ID: %d)", playerName, playerID)
 	} else {
 		DebugLog("handleIndex", "Page accessed by anonymous visitor")
 	}
 
-	templates.ExecuteTemplate(w, "index.html", loggedIn)
+	app.templates.ExecuteTemplate(w, "index.html", loggedIn)
 }
 
-func handleGame(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(r)
+func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
 		DebugLog("handleGame", "Redirecting anonymous visitor to index")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	game, err := getOrCreateCurrentGame()
+	game, err := getOrCreateCurrentGame(app.db)
 	if err != nil {
 		logError("handleGame: getOrCreateCurrentGame", err)
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
@@ -148,7 +81,7 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 
 	// Get player info from player table
 	var player Player
-	err = db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
+	err = app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
 	if err != nil {
 		logError("handleGame: db.Get player", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -160,7 +93,7 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 	// Check if player is in the game
 	isInGame := false
 	var gamePlayer Player
-	err = db.Get(&gamePlayer, `SELECT g.rowid as id,
+	err = app.db.Get(&gamePlayer, `SELECT g.rowid as id,
 			r.rowid as role_id,
 			r.name as role_name,
 			r.description as role_description,
@@ -181,12 +114,12 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all players in the game
-	players, err := getPlayersByGameId(game.ID)
+	players, err := getPlayersByGameId(app.db, game.ID)
 	if err != nil {
 		logError("handleGame: getPlayersByGameId", err)
 	}
 
-	buf, err := getGameComponent(playerID, game)
+	buf, err := getGameComponent(app.db, app.templates, playerID, game)
 	if err != nil {
 		logError("handleGame: getGameComponent", err)
 	}
@@ -199,7 +132,7 @@ func handleGame(w http.ResponseWriter, r *http.Request) {
 		GameComponent: buf.String(),
 	}
 
-	templates.ExecuteTemplate(w, "game.html", data)
+	app.templates.ExecuteTemplate(w, "game.html", data)
 }
 
 type SidebarData struct {
@@ -225,7 +158,7 @@ func selfFirstPlayers(players []Player, selfPlayerID int64) []Player {
 
 // getSeerFoundWerewolves returns the set of player IDs that playerID (as Seer) has
 // investigated and confirmed to be werewolves. Returns an empty map for non-seers.
-func getSeerFoundWerewolves(gameID, playerID int64) map[int64]bool {
+func getSeerFoundWerewolves(db *sqlx.DB, gameID, playerID int64) map[int64]bool {
 	found := map[int64]bool{}
 	var targets []int64
 	db.Select(&targets, `
@@ -241,15 +174,15 @@ func getSeerFoundWerewolves(gameID, playerID int64) map[int64]bool {
 	return found
 }
 
-func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(r)
+func (app *App) handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
 		DebugLog("handleSidebarInfo", "Redirecting anonymous visitor to index")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	game, err := getOrCreateCurrentGame()
+	game, err := getOrCreateCurrentGame(app.db)
 	if err != nil {
 		logError("handleSidebarInfo: getOrCreateCurrentGame", err)
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
@@ -259,14 +192,14 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	// Get player info — include role data if game has started
 	var player Player
 	if game.Status != "lobby" {
-		player, err = getPlayerInGame(game.ID, playerID)
+		player, err = getPlayerInGame(app.db, game.ID, playerID)
 		if err != nil {
 			logError("handleSidebarInfo: getPlayerInGame", err)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 	} else {
-		err = db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
+		err = app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
 		if err != nil {
 			logError("handleSidebarInfo: db.Get player", err)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -277,7 +210,7 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	DebugLog("handleSidebarInfo", "Player '%s' (ID: %d) accessing sidebar, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
 
 	// Get all players in the game
-	players, err := getPlayersByGameId(game.ID)
+	players, err := getPlayersByGameId(app.db, game.ID)
 	if err != nil {
 		logError("handleGame: getPlayersByGameId", err)
 	}
@@ -286,69 +219,69 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		Player:              &player,
 		Players:             selfFirstPlayers(players, playerID),
 		Game:                game,
-		LoverPartnerID:      getLoverPartner(game.ID, playerID),
-		SeerFoundWerewolves: getSeerFoundWerewolves(game.ID, playerID),
+		LoverPartnerID:      getLoverPartner(app.db, game.ID, playerID),
+		SeerFoundWerewolves: getSeerFoundWerewolves(app.db, game.ID, playerID),
 	}
 
-	templates.ExecuteTemplate(w, "sidebar.html", data)
+	app.templates.ExecuteTemplate(w, "sidebar.html", data)
 }
 
-func handleGameComponent(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(r)
+func (app *App) handleGameComponent(w http.ResponseWriter, r *http.Request) {
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	game, err := getOrCreateCurrentGame()
+	game, err := getOrCreateCurrentGame(app.db)
 	if err != nil {
 		logError("handleGameComponent: getOrCreateCurrentGame", err)
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
-	buf, err := getGameComponent(playerID, game)
+	buf, err := getGameComponent(app.db, app.templates, playerID, game)
 	if err != nil {
 		logError("handleGameComponent: getGameComponent", err)
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
 	buf.WriteTo(w)
 }
 
-func handleGameHistory(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(r)
+func (app *App) handleGameHistory(w http.ResponseWriter, r *http.Request) {
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	game, err := getOrCreateCurrentGame()
+	game, err := getOrCreateCurrentGame(app.db)
 	if err != nil {
 		logError("handleGameComponent: getOrCreateCurrentGame", err)
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
-	buf, err := getGameHistory(playerID, game)
+	buf, err := getGameHistory(app.db, app.templates, playerID, game)
 	if err != nil {
 		logError("handleGameHistory: getGameHistory", err)
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
 	buf.WriteTo(w)
 }
 
-func getGameHistory(playerID int64, game *Game) (*bytes.Buffer, error) {
-	viewer, err := getPlayerInGame(game.ID, playerID)
+func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game) (*bytes.Buffer, error) {
+	viewer, err := getPlayerInGame(db, game.ID, playerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Player not yet added to the game (race between HTTP request and WS connect).
 			// Return empty history rather than an error.
 			var buf bytes.Buffer
-			if err := templates.ExecuteTemplate(&buf, "history.html", []string(nil)); err != nil {
+			if err := tmpl.ExecuteTemplate(&buf, "history.html", []string(nil)); err != nil {
 				return nil, err
 			}
 			return &buf, nil
@@ -385,7 +318,7 @@ func getGameHistory(playerID int64, game *Game) (*bytes.Buffer, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := templates.ExecuteTemplate(&buf, "history.html", descriptions); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "history.html", descriptions); err != nil {
 		return nil, err
 	}
 
@@ -403,7 +336,7 @@ func disableCaching(next http.Handler) http.Handler {
 func handleWSMessage(client *Client, message []byte) {
 	// Log incoming WebSocket message
 	var playerName string
-	db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
+	client.hub.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
 
 	var msg WSMessage
 	err := json.Unmarshal(message, &msg)
@@ -414,10 +347,10 @@ func handleWSMessage(client *Client, message []byte) {
 
 	LogWSMessage("IN", playerName, msg.Action)
 
-	game, err := getOrCreateCurrentGame()
+	game, err := getOrCreateCurrentGame(client.hub.db)
 	if err != nil {
 		logError("handleWSMessage: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		client.hub.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
@@ -474,17 +407,17 @@ func handleWSMessage(client *Client, message []byte) {
 	case "night_survey":
 		handleWSNightSurvey(client, msg)
 	case "new_game":
-		handleWSNewGame(client)
+		client.hub.handleWSNewGame(client)
 	default:
 		log.Printf("Unknown action: %s for player %d (%s) in game %d (status: %s)", msg.Action, client.playerID, playerName, game.ID, game.Status)
 	}
 }
 
 // getGameComponent returns the HTML buffer for the current game state
-func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
+func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 
-	players, err := getPlayersByGameId(game.ID)
+	players, err := getPlayersByGameId(db, game.ID)
 	if err != nil {
 		logError("getGameComponent: getPlayersByGameId", err)
 		return nil, err
@@ -504,7 +437,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 
 		var roleConfigDisplay []RoleConfigDisplay
 
-		roles, err := getRoles()
+		roles, err := getRoles(db)
 		if err != nil {
 			logError("getGameComponent: getRoles", err)
 			return nil, err
@@ -528,13 +461,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			GameStatus:  game.Status,
 		}
 
-		if err := templates.ExecuteTemplate(&buf, "lobby_content.html", data); err != nil {
+		if err := tmpl.ExecuteTemplate(&buf, "lobby_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate lobby_content", err)
 			return nil, err
 		}
 	} else if game.Status == "night" {
 		// Get the current player's info
-		currentPlayer, err := getPlayerInGame(game.ID, playerID)
+		currentPlayer, err := getPlayerInGame(db, game.ID, playerID)
 		if err != nil {
 			logError("getGameComponent: getPlayerInGame", err)
 			return nil, err
@@ -916,7 +849,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		}
 
 		// Lover info: any player who is in a finalized lover pair sees their partner
-		loverPartnerID := getLoverPartner(game.ID, currentPlayer.PlayerID)
+		loverPartnerID := getLoverPartner(db, game.ID, currentPlayer.PlayerID)
 		isLover := loverPartnerID != 0
 		var loverName string
 		if isLover {
@@ -976,7 +909,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		}
 
 		data := NightData{
-			SeerFoundWerewolves:   getSeerFoundWerewolves(game.ID, playerID),
+			SeerFoundWerewolves:   getSeerFoundWerewolves(db, game.ID, playerID),
 			PlayerName:            currentPlayer.Name,
 			RoleName:              currentPlayer.RoleName,
 			RoleDescription:       currentPlayer.RoleDescription,
@@ -1036,7 +969,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 		}
 
 		// Survey: show once player has completed their night role action
-		if isAlive && playerDoneWithNightAction(game.ID, game.Round, currentPlayer) {
+		if isAlive && playerDoneWithNightAction(db, game.ID, game.Round, currentPlayer) {
 			data.ShowSurvey = true
 			var submitted int
 			db.Get(&submitted, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
@@ -1048,13 +981,13 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			data.SurveyTargets = aliveTargets
 		}
 
-		if err := templates.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
+		if err := tmpl.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate night_content", err)
 			return nil, err
 		}
 	} else if game.Status == "day" {
 		// Get the current player's info
-		currentPlayer, err := getPlayerInGame(game.ID, playerID)
+		currentPlayer, err := getPlayerInGame(db, game.ID, playerID)
 		if err != nil {
 			logError("getGameComponent: getPlayerInGame for day", err)
 			return nil, err
@@ -1178,7 +1111,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			votes = append(votes, DayVote{VoterName: voterName, TargetName: targetName})
 		}
 
-		dayLoverPartnerID := getLoverPartner(game.ID, currentPlayer.PlayerID)
+		dayLoverPartnerID := getLoverPartner(db, game.ID, currentPlayer.PlayerID)
 		isDayLover := dayLoverPartnerID != 0
 		var dayLoverName string
 		if isDayLover {
@@ -1194,7 +1127,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			game.ID, game.Round, ActionDayVote, playerID)
 
 		data := DayData{
-			SeerFoundWerewolves: getSeerFoundWerewolves(game.ID, playerID),
+			SeerFoundWerewolves: getSeerFoundWerewolves(db, game.ID, playerID),
 			PlayerName:          currentPlayer.Name,
 			RoleName:            currentPlayer.RoleName,
 			RoleDescription:     currentPlayer.RoleDescription,
@@ -1221,7 +1154,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			HasVoted:            playerActed > 0,
 		}
 
-		if err := templates.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
+		if err := tmpl.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate day_content", err)
 			return nil, err
 		}
@@ -1239,7 +1172,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			// Check if the alive players are a lover pair (lovers win)
 			var alivePlayers []Player
 			db.Select(&alivePlayers, `SELECT g.player_id as player_id FROM game_player g WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
-			if len(alivePlayers) == 2 && getLoverPartner(game.ID, alivePlayers[0].PlayerID) == alivePlayers[1].PlayerID {
+			if len(alivePlayers) == 2 && getLoverPartner(db, game.ID, alivePlayers[0].PlayerID) == alivePlayers[1].PlayerID {
 				winner = "lovers"
 			} else {
 				winner = "werewolves"
@@ -1270,7 +1203,7 @@ func getGameComponent(playerID int64, game *Game) (*bytes.Buffer, error) {
 			Winner:  winner,
 		}
 
-		if err := templates.ExecuteTemplate(&buf, "finished_content.html", data); err != nil {
+		if err := tmpl.ExecuteTemplate(&buf, "finished_content.html", data); err != nil {
 			logError("getGameComponent: ExecuteTemplate finished_content", err)
 			return nil, err
 		}
@@ -1308,19 +1241,20 @@ func main() {
 		log.Println("Extended logging enabled")
 	}
 
-	db, err = sqlx.Connect("sqlite3", cfg.DB)
+	db, err := sqlx.Connect("sqlite3", cfg.DB)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 	defer db.Close()
 
-	if err := initDB(); err != nil {
+	if err := initDB(db); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
 
-	LogDBState("after initDB")
+	LogDBState(db, "after initDB")
 
-	initStoryteller(cfg)
+	storyteller := initStoryteller(cfg)
+	narrator := initNarrator(cfg)
 
 	funcMap := template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
@@ -1329,35 +1263,37 @@ func main() {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
 	}
-	templates, err = template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		log.Fatal("Failed to parse templates:", err)
 	}
 
-	// Start WebSocket hub
-	go hub.run()
+	h := newHub(db, tmpl, storyteller, narrator)
+	go h.run()
+
+	app := &App{db: db, hub: h, templates: tmpl}
 
 	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
-		var h http.Handler = handler
-		// h = compress(h)
-		h = disableCaching(h)
+		var hh http.Handler = handler
+		// hh = compress(hh)
+		hh = disableCaching(hh)
 		if appLogger != nil && appLogger.logRequests {
-			http.Handle(pattern, &LoggingHandler{Handler: h, Logger: appLogger})
+			http.Handle(pattern, &LoggingHandler{Handler: hh, Logger: appLogger})
 		} else {
-			http.Handle(pattern, h)
+			http.Handle(pattern, hh)
 		}
 	}
 
-	wrapHandler("/", handleIndex)
-	wrapHandler("/signup", handleSignup)
-	wrapHandler("/login", handleLogin)
-	wrapHandler("/logout", handleLogout)
-	wrapHandler("/game", handleGame)
-	wrapHandler("/ws", handleWebSocket)
-	wrapHandler("/game/component", handleGameComponent)
-	wrapHandler("/game/history", handleGameHistory)
-	wrapHandler("/game/sidebar", handleSidebarInfo)
+	wrapHandler("/", app.handleIndex)
+	wrapHandler("/signup", app.handleSignup)
+	wrapHandler("/login", app.handleLogin)
+	wrapHandler("/logout", app.handleLogout)
+	wrapHandler("/game", app.handleGame)
+	wrapHandler("/ws", func(w http.ResponseWriter, r *http.Request) { handleWebSocket(app, w, r) })
+	wrapHandler("/game/component", app.handleGameComponent)
+	wrapHandler("/game/history", app.handleGameHistory)
+	wrapHandler("/game/sidebar", app.handleSidebarInfo)
 
 	// Serve static files with compression for text-based files (CSS, JS, SVG)
 	// Binary formats like images will be served without compression

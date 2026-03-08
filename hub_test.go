@@ -1,9 +1,39 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
 )
+
+// TestMain launches a single shared Chromium browser for the entire test suite,
+// then runs all tests, then closes the browser. This avoids per-test browser
+// startup overhead and prevents resource exhaustion on long sequential runs.
+func TestMain(m *testing.M) {
+	path, found := launcher.LookPath()
+	if found {
+		u, err := launcher.New().
+			Bin(path).
+			Headless(true).
+			// Allow AudioContext to start without a user gesture so TTS audio tests work.
+			Set("autoplay-policy", "no-user-gesture-required").
+			Launch()
+		if err == nil {
+			b := rod.New().ControlURL(u)
+			if err := b.Connect(); err == nil {
+				sharedBrowser = b
+			}
+		}
+	}
+	code := m.Run()
+	if sharedBrowser != nil {
+		sharedBrowser.MustClose()
+	}
+	os.Exit(code)
+}
 
 func TestWebSocketSync(t *testing.T) {
 	ctx := newTestContext(t)

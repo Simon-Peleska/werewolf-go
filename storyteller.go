@@ -23,9 +23,6 @@ type Storyteller interface {
 	Tell(ctx context.Context, history []string, onChunk func(string)) (string, error)
 }
 
-// globalStoryteller is nil when no provider is configured (feature disabled).
-var globalStoryteller Storyteller
-
 type llmStoryteller struct {
 	llm          llms.Model
 	systemPrompt string
@@ -81,8 +78,8 @@ func buildCallOpts(cfg AppConfig) []llms.CallOption {
 	return opts
 }
 
-// initStoryteller sets up the global storyteller from config.
-func initStoryteller(cfg AppConfig) {
+// initStoryteller creates a Storyteller from config, or returns nil if disabled.
+func initStoryteller(cfg AppConfig) Storyteller {
 	provider := cfg.StorytellerProvider
 	model := cfg.StorytellerModel
 	callOpts := buildCallOpts(cfg)
@@ -92,34 +89,34 @@ func initStoryteller(cfg AppConfig) {
 		llm, err := ollama.New(ollama.WithModel(model), ollama.WithServerURL(cfg.StorytellerOllamaURL))
 		if err != nil {
 			log.Printf("Storyteller: failed to init Ollama (%s at %s): %v", model, cfg.StorytellerOllamaURL, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: Ollama model=%s url=%s", model, cfg.StorytellerOllamaURL)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	case "openai":
 		llm, err := openai.New(openai.WithModel(model))
 		if err != nil {
 			log.Printf("Storyteller: failed to init OpenAI (%s): %v", model, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: OpenAI model=%s", model)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	case "claude":
 		llm, err := anthropic.New(anthropic.WithModel(model))
 		if err != nil {
 			log.Printf("Storyteller: failed to init Claude (%s): %v", model, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: Claude model=%s", model)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	case "gemini":
 		llm, err := googleai.New(context.Background(), googleai.WithDefaultModel(model))
 		if err != nil {
 			log.Printf("Storyteller: failed to init Gemini (%s): %v", model, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: Gemini model=%s", model)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	case "groq":
 		llm, err := openai.New(
 			openai.WithModel(model),
@@ -128,14 +125,14 @@ func initStoryteller(cfg AppConfig) {
 		)
 		if err != nil {
 			log.Printf("Storyteller: failed to init Groq (%s): %v", model, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: Groq model=%s", model)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	case "openai-compatible":
 		if cfg.StorytellerURL == "" {
 			log.Printf("Storyteller: storyteller_url is required for openai-compatible provider")
-			return
+			return nil
 		}
 		opts := []openai.Option{
 			openai.WithModel(model),
@@ -147,27 +144,28 @@ func initStoryteller(cfg AppConfig) {
 		llm, err := openai.New(opts...)
 		if err != nil {
 			log.Printf("Storyteller: failed to init openai-compatible (%s at %s): %v", model, cfg.StorytellerURL, err)
-			return
+			return nil
 		}
-		globalStoryteller = &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 		log.Printf("Storyteller: openai-compatible model=%s url=%s", model, cfg.StorytellerURL)
+		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
 	default:
 		log.Printf("Storyteller: disabled (set storyteller_provider to enable)")
+		return nil
 	}
 }
 
 // maybeGenerateStory asynchronously streams a story into the game history after a death.
 // Returns immediately; story tokens appear progressively via broadcastGameUpdate.
 // actorPlayerID must be a valid player rowid (typically the victim's ID).
-func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int64) {
-	if globalStoryteller == nil {
+func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int64) {
+	if h.storyteller == nil {
 		return
 	}
 
 	go func() {
 		// Fetch all public history at this point in time
 		var descriptions []string
-		if err := db.Select(&descriptions, `
+		if err := h.db.Select(&descriptions, `
 			SELECT description FROM game_action
 			WHERE game_id = ? AND description != '' AND visibility = ?
 			ORDER BY rowid ASC`, gameID, VisibilityPublic); err != nil {
@@ -176,7 +174,7 @@ func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int
 		}
 
 		// Insert placeholder row (empty description = hidden from history until text arrives)
-		result, err := db.Exec(`
+		result, err := h.db.Exec(`
 			INSERT OR IGNORE INTO game_action
 				(game_id, round, phase, actor_player_id, action_type, visibility, description)
 			VALUES (?, ?, ?, ?, ?, ?, '')`,
@@ -206,8 +204,8 @@ func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int
 					text := buf.String()
 					mu.Unlock()
 					if text != "" {
-						db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, strings.TrimSpace(text), storyRowID)
-						broadcastGameUpdate()
+						h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, strings.TrimSpace(text), storyRowID)
+						h.broadcastGameUpdate()
 					}
 				case <-done:
 					return
@@ -218,7 +216,7 @@ func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		_, err = globalStoryteller.Tell(ctx, descriptions, func(chunk string) {
+		_, err = h.storyteller.Tell(ctx, descriptions, func(chunk string) {
 			mu.Lock()
 			buf.WriteString(chunk)
 			mu.Unlock()
@@ -228,7 +226,7 @@ func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int
 
 		if err != nil {
 			log.Printf("maybeGenerateStory: storyteller error: %v", err)
-			db.Exec(`DELETE FROM game_action WHERE rowid=? AND description=''`, storyRowID)
+			h.db.Exec(`DELETE FROM game_action WHERE rowid=? AND description=''`, storyRowID)
 			return
 		}
 
@@ -238,12 +236,33 @@ func maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int
 		mu.Unlock()
 
 		if finalText == "" {
-			db.Exec(`DELETE FROM game_action WHERE rowid=?`, storyRowID)
+			h.db.Exec(`DELETE FROM game_action WHERE rowid=?`, storyRowID)
 			return
 		}
 
-		db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
+		h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
 		log.Printf("Storyteller: completed story for game %d round %d %s", gameID, round, phase)
-		broadcastGameUpdate()
+		h.broadcastGameUpdate()
+		h.maybeSpeakStory(gameID, finalText)
+	}()
+}
+
+// maybeSpeakStory asynchronously narrates text as audio streamed to all connected clients.
+func (h *Hub) maybeSpeakStory(gameID int64, text string) {
+	if h.narrator == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		log.Printf("Narrator: starting TTS for game %d", gameID)
+		err := h.narrator.Speak(ctx, text, func(chunk []byte) {
+			h.broadcastAudio(chunk)
+		})
+		if err != nil {
+			log.Printf("Narrator: TTS error for game %d: %v", gameID, err)
+		} else {
+			log.Printf("Narrator: TTS completed for game %d", gameID)
+		}
 	}()
 }

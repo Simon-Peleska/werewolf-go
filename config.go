@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 )
@@ -32,6 +33,14 @@ type AppConfig struct {
 	StorytellerTemperature string `json:"storyteller_temperature"` // float 0-1 as string
 	StorytellerThinking    string `json:"storyteller_thinking"`    // none | low | medium | high | auto
 	GroqAPIKey             string `json:"groq_api_key"`            // API key for groq provider
+
+	// AI Narrator (TTS)
+	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
+	NarratorModel      string `json:"narrator_model"`       // e.g. "tts-1", "tts-1-hd"
+	NarratorVoice      string `json:"narrator_voice"`       // e.g. "onyx", "alloy" or ElevenLabs voice ID
+	NarratorAPIKey     string `json:"narrator_api_key"`     // API key
+	NarratorURL        string `json:"narrator_url"`         // base URL for openai-compatible
+	NarratorSampleRate int    `json:"narrator_sample_rate"` // PCM sample rate in Hz (default 24000)
 }
 
 func (cfg AppConfig) toLogConfig() LogConfig {
@@ -119,6 +128,28 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("GROQ_API_KEY"); v != "" {
 		cfg.GroqAPIKey = v
 	}
+	if v := envStr("NARRATOR_PROVIDER"); v != "" {
+		cfg.NarratorProvider = v
+	}
+	if v := envStr("NARRATOR_MODEL"); v != "" {
+		cfg.NarratorModel = v
+	}
+	if v := envStr("NARRATOR_VOICE"); v != "" {
+		cfg.NarratorVoice = v
+	}
+	if v := envStr("NARRATOR_API_KEY"); v != "" {
+		cfg.NarratorAPIKey = v
+	}
+	if v := envStr("NARRATOR_URL"); v != "" {
+		cfg.NarratorURL = v
+	}
+	if v := envStr("NARRATOR_SAMPLE_RATE"); v != "" {
+		var n int
+		fmt.Sscanf(v, "%d", &n)
+		if n > 0 {
+			cfg.NarratorSampleRate = n
+		}
+	}
 
 	// Layer 2: JSON config file — only fields present in the file override env vars
 	if data, err := os.ReadFile(configPath); err == nil {
@@ -165,6 +196,14 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
 	str("storyteller_thinking", &cfg.StorytellerThinking)
 	str("groq_api_key", &cfg.GroqAPIKey)
+	str("narrator_provider", &cfg.NarratorProvider)
+	str("narrator_model", &cfg.NarratorModel)
+	str("narrator_voice", &cfg.NarratorVoice)
+	str("narrator_api_key", &cfg.NarratorAPIKey)
+	str("narrator_url", &cfg.NarratorURL)
+	if v, ok := m["narrator_sample_rate"]; ok {
+		json.Unmarshal(v, &cfg.NarratorSampleRate)
+	}
 }
 
 // flagValues holds pointers to all registered CLI flags.
@@ -187,6 +226,12 @@ type flagValues struct {
 	storytellerTemperature *string
 	storytellerThinking    *string
 	groqAPIKey             *string
+	narratorProvider       *string
+	narratorModel          *string
+	narratorVoice          *string
+	narratorAPIKey         *string
+	narratorURL            *string
+	narratorSampleRate     *int
 }
 
 // registerFlags registers all CLI flags and returns pointers to their values.
@@ -211,6 +256,12 @@ func registerFlags() flagValues {
 		storytellerTemperature: flag.String("storyteller-temperature", "", "sampling temperature 0-1"),
 		storytellerThinking:    flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto"),
 		groqAPIKey:             flag.String("groq-api-key", "", "Groq API key"),
+		narratorProvider:       flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
+		narratorModel:          flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
+		narratorVoice:          flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
+		narratorAPIKey:         flag.String("narrator-api-key", "", "API key for TTS provider"),
+		narratorURL:            flag.String("narrator-url", "", "base URL for openai-compatible TTS provider"),
+		narratorSampleRate:     flag.Int("narrator-sample-rate", 0, "PCM sample rate in Hz (default 24000)"),
 	}
 }
 
@@ -253,6 +304,18 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerThinking = *fv.storytellerThinking
 		case "groq-api-key":
 			cfg.GroqAPIKey = *fv.groqAPIKey
+		case "narrator-provider":
+			cfg.NarratorProvider = *fv.narratorProvider
+		case "narrator-model":
+			cfg.NarratorModel = *fv.narratorModel
+		case "narrator-voice":
+			cfg.NarratorVoice = *fv.narratorVoice
+		case "narrator-api-key":
+			cfg.NarratorAPIKey = *fv.narratorAPIKey
+		case "narrator-url":
+			cfg.NarratorURL = *fv.narratorURL
+		case "narrator-sample-rate":
+			cfg.NarratorSampleRate = *fv.narratorSampleRate
 		}
 	})
 }

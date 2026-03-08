@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -243,7 +242,7 @@ func (al *AppLogger) LogWebSocket(direction, playerID, message string) {
 }
 
 // LogDB dumps the current database state
-func (al *AppLogger) LogDB(context string) {
+func (al *AppLogger) LogDB(db *sqlx.DB, context string) {
 	if !al.logDB || al.dbLog == nil || db == nil {
 		return
 	}
@@ -349,7 +348,14 @@ func (al *AppLogger) IsEnabled() bool {
 // TestLogger wraps AppLogger for test use with testing.T integration
 type TestLogger struct {
 	*AppLogger
-	t *testing.T
+	t  *testing.T
+	db *sqlx.DB // set after DB is created; used by LogDB convenience method
+}
+
+// LogDB dumps the database state using the stored db reference.
+// This shadows AppLogger.LogDB to allow calling without passing db explicitly.
+func (tl *TestLogger) LogDB(context string) {
+	tl.AppLogger.LogDB(tl.db, context)
 }
 
 // NewTestLogger creates a test logger from environment variables
@@ -511,9 +517,9 @@ func LogWSMessage(direction, playerID, message string) {
 }
 
 // LogDBState logs the database state using the global logger
-func LogDBState(context string) {
+func LogDBState(db *sqlx.DB, context string) {
 	if appLogger != nil {
-		appLogger.LogDB(context)
+		appLogger.LogDB(db, context)
 	}
 }
 
@@ -535,8 +541,9 @@ func CloseAppLogger() {
 // Test Helpers
 // ============================================================================
 
-// browserLaunchMutex serializes browser launches to avoid parallel launch issues
-var browserLaunchMutex sync.Mutex
+// sharedBrowser is the single Chromium instance shared across all tests.
+// Initialized in TestMain; each test creates isolated incognito pages from it.
+var sharedBrowser *rod.Browser
 
 // Role IDs in the database (based on insert order in initDB)
 const (
@@ -567,9 +574,8 @@ type TestContext struct {
 	logger  *TestLogger
 	baseURL string
 	cleanup func()
-	db      *sqlx.DB // Per-test database
-	hub     *Hub     // Per-test WebSocket hub
-	dbPath  string   // Database file path for cleanup
+	app     *App   // Per-test app (owns db, hub, templates)
+	dbPath  string // Database file path for cleanup
 }
 
 // newTestContext creates a test context with server and logger
@@ -594,16 +600,14 @@ func newTestContext(t *testing.T) *TestContext {
 		t.Fatalf("Failed to connect to test database: %v", dbErr)
 	}
 
-	// Disable AI storyteller in tests by default (individual tests may override)
-	globalStoryteller = nil
+	// Give the logger a db reference so ctx.logger.LogDB("...") works without passing db
+	logger.db = testDB
 
-	// Set globals temporarily for initDB
-	db = testDB
-	if err := initDB(); err != nil {
+	if err := initDB(testDB); err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	logger.LogDB("after initDB")
+	logger.AppLogger.LogDB(testDB, "after initDB")
 	logger.Debug("Database initialized on port %d, dbPath: %s", port, dbPath)
 
 	// Parse templates
@@ -620,41 +624,32 @@ func newTestContext(t *testing.T) *TestContext {
 	if tmplErr != nil {
 		t.Fatalf("Failed to parse templates: %v", tmplErr)
 	}
-	templates = testTemplates
 
-	// Create test-specific WebSocket hub
-	testHub := newHub()
+	// Create test-specific WebSocket hub (nil storyteller/narrator = disabled by default)
+	testHub := newHub(testDB, testTemplates, nil, nil)
 	go testHub.run()
-	hub = testHub
 
-	// Create handlers with optional logging wrapper
+	app := &App{db: testDB, hub: testHub, templates: testTemplates}
+
+	// Create handlers
 	mux := http.NewServeMux()
 
-	// Wrapper that sets test-specific db and hub before calling handler
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
-		wrappedHandler := func(w http.ResponseWriter, r *http.Request) {
-			// Set test-specific globals for this request
-			db = testDB
-			hub = testHub
-			templates = testTemplates
-			handler(w, r)
-		}
-
 		if logger.logRequests {
-			mux.Handle(pattern, &LoggingHandler{Handler: http.HandlerFunc(wrappedHandler), Logger: logger.AppLogger})
+			mux.Handle(pattern, &LoggingHandler{Handler: handler, Logger: logger.AppLogger})
 		} else {
-			mux.HandleFunc(pattern, wrappedHandler)
+			mux.HandleFunc(pattern, handler)
 		}
 	}
 
-	wrapHandler("/", handleIndex)
-	wrapHandler("/signup", handleSignup)
-	wrapHandler("/login", handleLogin)
-	wrapHandler("/game", handleGame)
-	wrapHandler("/ws", handleWebSocket)
-	wrapHandler("/game/component", handleGameComponent)
-	wrapHandler("/game/sidebar", handleSidebarInfo)
-	wrapHandler("/game/history", handleGameHistory)
+	wrapHandler("/", app.handleIndex)
+	wrapHandler("/signup", app.handleSignup)
+	wrapHandler("/login", app.handleLogin)
+	wrapHandler("/game", app.handleGame)
+	wrapHandler("/ws", func(w http.ResponseWriter, r *http.Request) { handleWebSocket(app, w, r) })
+	wrapHandler("/game/component", app.handleGameComponent)
+	wrapHandler("/game/sidebar", app.handleSidebarInfo)
+	wrapHandler("/game/history", app.handleGameHistory)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 
 	server := &http.Server{
@@ -667,7 +662,7 @@ func newTestContext(t *testing.T) *TestContext {
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
-			logger.LogDB("before cleanup")
+			logger.AppLogger.LogDB(testDB, "before cleanup")
 			logger.Debug("Cleaning up test server")
 			server.Close() // closes WebSocket connections; buffered unregister channel accepts them
 			testHub.stop() // hub goroutine processes remaining unregisters then exits
@@ -686,8 +681,7 @@ func newTestContext(t *testing.T) *TestContext {
 		logger:  logger,
 		baseURL: fmt.Sprintf("http://localhost:%d", port),
 		cleanup: cleanup,
-		db:      testDB,
-		hub:     testHub,
+		app:     app,
 		dbPath:  dbPath,
 	}
 
@@ -706,13 +700,15 @@ func startTestServer(t *testing.T) (baseURL string, cleanup func()) {
 }
 
 // Default timeout for browser operations
-const browserTimeout = 10 * time.Second
+const browserTimeout = 20 * time.Second
 
 // TestBrowser wraps browser setup for tests
 type TestBrowser struct {
-	browser *rod.Browser
-	t       *testing.T
-	logger  *TestLogger
+	browser   *rod.Browser
+	t         *testing.T
+	logger    *TestLogger
+	contexts  []*rod.Browser // incognito contexts opened during this test
+	contextMu sync.Mutex
 }
 
 // newTestBrowser creates a test browser and returns it along with a cleanup function.
@@ -721,42 +717,22 @@ func newTestBrowser(t *testing.T) (*TestBrowser, func()) {
 	return newTestBrowserWithLogger(t, nil)
 }
 
-// newTestBrowserWithLogger creates a test browser with a logger
+// newTestBrowserWithLogger returns a TestBrowser backed by the shared Chromium instance.
+// The cleanup function closes all incognito contexts opened during the test, which
+// closes their pages and disconnects WebSocket connections before hub shutdown.
 func newTestBrowserWithLogger(t *testing.T, logger *TestLogger) (*TestBrowser, func()) {
-	// Serialize browser launches to avoid parallel launch issues with Chrome/Chromium
-	if logger != nil {
-		logger.Debug("Waiting for browser launch mutex...")
-	}
-	browserLaunchMutex.Lock()
-	if logger != nil {
-		logger.Debug("Got browser launch mutex, launching browser...")
-	}
-	defer browserLaunchMutex.Unlock()
-
-	path, found := launcher.LookPath()
-	if !found {
+	if sharedBrowser == nil {
 		t.Skip("Chrome/Chromium not found, skipping browser test")
 	}
-
-	u, err := launcher.New().Bin(path).Headless(true).Launch()
-	if err != nil {
-		t.Fatalf("Failed to launch browser: %v", err)
-	}
-
-	browser := rod.New().ControlURL(u)
-	if err := browser.Connect(); err != nil {
-		t.Fatalf("Failed to connect to browser: %v", err)
-	}
-
-	if logger != nil {
-		logger.Debug("Browser launched and connected")
-	}
-
-	tb := &TestBrowser{browser: browser, t: t, logger: logger}
+	tb := &TestBrowser{browser: sharedBrowser, t: t, logger: logger}
 	cleanup := func() {
-		browser.MustClose()
+		tb.contextMu.Lock()
+		defer tb.contextMu.Unlock()
+		for _, ctx := range tb.contexts {
+			ctx.Close() // close incognito context + all its pages
+		}
+		tb.contexts = nil
 	}
-
 	return tb, cleanup
 }
 
@@ -786,9 +762,14 @@ func (tp *TestPlayer) logHTML(context string) {
 	tp.logger.LogHTML(fmt.Sprintf("[%s] %s", tp.Name, context), html)
 }
 
-// newIncognitoPage creates a new incognito page with isolated session
+// newIncognitoPage creates a new incognito page with isolated session.
+// The context is tracked so cleanup() can close it, disconnecting the WebSocket.
 func (tb *TestBrowser) newIncognitoPage(url string) *rod.Page {
-	page := tb.browser.MustIncognito().MustPage(url)
+	ctx := tb.browser.MustIncognito()
+	tb.contextMu.Lock()
+	tb.contexts = append(tb.contexts, ctx)
+	tb.contextMu.Unlock()
+	page := ctx.MustPage(url)
 	page.Timeout(browserTimeout).MustWaitLoad()
 	return page
 }
@@ -1299,15 +1280,6 @@ func (tp *TestPlayer) isOnGamePage() bool {
 func (tp *TestPlayer) isOnIndexPage() bool {
 	url := tp.p().MustInfo().URL
 	return !strings.Contains(url, "/game")
-}
-
-// generateTestName creates a unique test name
-func generateTestName(base string, n uint8) string {
-	suffix := fmt.Sprintf("%d", n)
-	if len(base) > 10 {
-		base = base[:10]
-	}
-	return base + suffix
 }
 
 // getHistoryText returns the full text content of the history bar for this player.

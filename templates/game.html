@@ -10,6 +10,11 @@
   <script src="/static/htmx-ws.js"></script>
   <script src="/static/idiomorph-ext.js"></script>
   <script src="/static/player-card.js"></script>
+  <script>
+    // Must be set before HTMX creates the WebSocket so binary frames
+    // arrive as ArrayBuffer instead of Blob.
+    htmx.config.wsBinaryType = 'arraybuffer';
+  </script>
   <style>
     body {
       height: 100vh;
@@ -393,6 +398,54 @@
       });
     });
     observer.observe(document.getElementById('toast-container'), {childList: true, subtree: true});
+
+    // ── Narrator audio ──────────────────────────────────────────────────────
+    // Binary WebSocket frames contain raw PCM audio (16-bit mono little-endian)
+    // streamed from the server TTS narrator. We schedule each chunk into the
+    // Web Audio API so playback is gapless and low-latency.
+    var _audioCtx = null;
+    var _nextPlayTime = 0;
+    var _narratorSampleRate = 24000; // matches server narrator_sample_rate (default 24000)
+
+    function ensureAudioCtx() {
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        _nextPlayTime = _audioCtx.currentTime;
+      }
+      // Resume context if suspended (browser autoplay policy)
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+      return _audioCtx;
+    }
+
+    function playPCMChunk(arrayBuffer) {
+      var ctx = ensureAudioCtx();
+      var pcm16 = new Int16Array(arrayBuffer);
+      var float32 = new Float32Array(pcm16.length);
+      for (var i = 0; i < pcm16.length; i++) {
+        float32[i] = pcm16[i] / 32768.0;
+      }
+      var buf = ctx.createBuffer(1, float32.length, _narratorSampleRate);
+      buf.copyToChannel(float32, 0);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      // Schedule chunk to play immediately after the previous one ends.
+      // Small lead time (50ms) avoids underruns on slow connections.
+      var startAt = Math.max(ctx.currentTime + 0.05, _nextPlayTime);
+      src.start(startAt);
+      _nextPlayTime = startAt + buf.duration;
+    }
+
+    // Intercept binary WS messages before HTMX tries to parse them as HTML.
+    // Calling preventDefault() makes api.triggerEvent return false, causing
+    // the htmx-ws message handler to return early without processing.
+    document.body.addEventListener('htmx:wsBeforeMessage', function(e) {
+      if (e.detail.message instanceof ArrayBuffer) {
+        playPCMChunk(e.detail.message);
+        e.preventDefault();
+      }
+    });
+    // ────────────────────────────────────────────────────────────────────────
 
     // Play sound + vibrate when a toast with data-sound appears
     function playSound() {

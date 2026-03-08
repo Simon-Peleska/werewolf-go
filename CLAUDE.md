@@ -300,6 +300,12 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
 | Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` |
 | Groq API key | `GROQ_API_KEY` | `groq_api_key` | `-groq-api-key` | — | Groq API key |
+| Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
+| Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
+| Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
+| Narrator API key | `NARRATOR_API_KEY` | `narrator_api_key` | `-narrator-api-key` | — | API key for TTS provider |
+| Narrator URL | `NARRATOR_URL` | `narrator_url` | `-narrator-url` | — | Base URL for openai-compatible TTS |
+| Narrator sample rate | `NARRATOR_SAMPLE_RATE` | `narrator_sample_rate` | `-narrator-sample-rate` | `24000` | PCM sample rate in Hz |
 
 ## Tools & Claude Skills
 
@@ -345,6 +351,13 @@ Split code into files where each file contains a complete feature or subsystem. 
 
 **IMPORTANT: When you create or delete a file, update this section in CLAUDE.md to keep it accurate.**
 
+### Project Files
+
+| Path | Purpose |
+|------|---------|
+| `./README.md` | Project overview, game description, roles, build/run instructions, dev tools — **update if build steps, dependencies, or core game rules change** |
+| `./flake.nix` | Nix flake: binary build (`packages.default`), Docker image (`packages.docker`), dev shell — **update `vendorHash` after changing Go deps** |
+
 ### Code Files (Backend Implementation)
 
 | Path | Purpose |
@@ -360,6 +373,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
 | `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
 | `./storyteller.go` | AI storyteller: Storyteller interface, Ollama/OpenAI backends, streaming story generation |
+| `./tts.go` | AI narrator (TTS): Narrator interface, OpenAI/ElevenLabs PCM streaming, maybeSpeakStory |
 | `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
 
 ### Test Files (Feature-Specific Tests)

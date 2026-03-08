@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"database/sql"
+	"html/template"
 	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/jmoiron/sqlx"
 )
 
 // WSMessage represents a message from the client
@@ -19,11 +23,36 @@ type WSMessage struct {
 	Notes           string `json:"notes,omitempty"`
 }
 
+const clientSendBuf = 64 // outbound message buffer per client
+
+// hubMsg is a tagged WebSocket message (text or binary).
+type hubMsg struct {
+	binary bool
+	data   []byte
+}
+
 // Client represents a websocket connection with player info
 type Client struct {
 	conn     *websocket.Conn
 	playerID int64
-	writeMu  sync.Mutex // Serialize writes to WebSocket (required by gorilla/websocket)
+	hub      *Hub
+	send     chan hubMsg // buffered outbound messages; closed on disconnect
+}
+
+// writer drains the send channel and writes to the WebSocket connection.
+// Runs in its own goroutine so slow clients never block the hub.
+func (c *Client) writer() {
+	defer c.hub.clientWg.Done()
+	for msg := range c.send {
+		mt := websocket.TextMessage
+		if msg.binary {
+			mt = websocket.BinaryMessage
+		}
+		if err := c.conn.WriteMessage(mt, msg.data); err != nil {
+			log.Printf("WebSocket write error to player %d: %v", c.playerID, err)
+			return
+		}
+	}
 }
 
 // WebSocket hub for broadcasting updates to all connected clients
@@ -35,51 +64,79 @@ type Hub struct {
 	mu         sync.RWMutex
 	done       chan struct{}
 	wg         sync.WaitGroup
+	clientWg   sync.WaitGroup // tracks active WebSocket reader goroutines
+
+	db          *sqlx.DB
+	templates   *template.Template
+	storyteller Storyteller
+	narrator    Narrator
 }
 
-func newHub() *Hub {
+func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator) *Hub {
 	return &Hub{
-		clients:    make(map[*websocket.Conn]*Client),
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *websocket.Conn, 64),
-		done:       make(chan struct{}),
+		clients:     make(map[*websocket.Conn]*Client),
+		broadcast:   make(chan []byte),
+		register:    make(chan *Client),
+		unregister:  make(chan *websocket.Conn, 64),
+		done:        make(chan struct{}),
+		db:          db,
+		templates:   templates,
+		storyteller: storyteller,
+		narrator:    narrator,
 	}
 }
 
-// stop signals the hub goroutine to exit and waits for it to finish
+// stop signals the hub goroutine to exit and waits for it and all
+// WebSocket reader goroutines to finish. This ensures no goroutines
+// from this hub are still accessing shared globals when stop returns.
 func (h *Hub) stop() {
 	close(h.done)
 	h.wg.Wait()
+	h.clientWg.Wait()
 }
-
-var hub = newHub()
 
 func (h *Hub) sendToPlayer(playerID int64, message []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, client := range h.clients {
 		if client.playerID == playerID {
-			// Get player name for logging
 			var playerName string
-			db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+			h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 			LogWSMessage("OUT", playerName, string(message))
-
-			// Serialize writes to each connection
-			client.writeMu.Lock()
-			err := client.conn.WriteMessage(websocket.TextMessage, message)
-			client.writeMu.Unlock()
-
-			if err != nil {
-				log.Printf("WebSocket write error to player %d: %v", playerID, err)
+			select {
+			case client.send <- hubMsg{data: message}:
+			default:
+				log.Printf("WebSocket send buffer full for player %d, dropping message", playerID)
 			}
+		}
+	}
+}
+
+// broadcastAudio sends raw PCM audio bytes to all connected clients as a binary WebSocket frame.
+func (h *Hub) broadcastAudio(data []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, client := range h.clients {
+		select {
+		case client.send <- hubMsg{binary: true, data: data}:
+		default:
+			log.Printf("WebSocket audio buffer full for player %d, dropping chunk", client.playerID)
 		}
 	}
 }
 
 func (h *Hub) run() {
 	h.wg.Add(1)
-	defer h.wg.Done()
+	defer func() {
+		// Close send channels for any remaining connected clients so writer goroutines exit.
+		h.mu.Lock()
+		for _, client := range h.clients {
+			close(client.send)
+			client.conn.Close()
+		}
+		h.mu.Unlock()
+		h.wg.Done()
+	}()
 	for {
 		select {
 		case <-h.done:
@@ -89,11 +146,13 @@ func (h *Hub) run() {
 			h.mu.Lock()
 			h.clients[client.conn] = client
 			h.mu.Unlock()
+			h.clientWg.Add(1)
+			go client.writer()
 			var playerName string
-			db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
+			h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
 			log.Printf("WebSocket client connected (player %d: %s). Total: %d", client.playerID, playerName, len(h.clients))
 			DebugLog("hub.register", "Player '%s' (ID: %d) connected via WebSocket", playerName, client.playerID)
-			addPlayerToLobby(client.playerID)
+			h.addPlayerToLobby(client.playerID)
 
 		case conn := <-h.unregister:
 			var removePlayerID int64
@@ -102,8 +161,9 @@ func (h *Hub) run() {
 			if ok {
 				playerID := client.playerID
 				var playerName string
-				db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+				h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 				delete(h.clients, conn)
+				close(client.send) // signal writer goroutine to exit
 				conn.Close()
 
 				// Check if player has any remaining connections
@@ -127,21 +187,16 @@ func (h *Hub) run() {
 			// Call removePlayerFromLobby after releasing mutex — it calls broadcastGameUpdate
 			// which calls sendToPlayer which needs the read lock
 			if removePlayerID != 0 {
-				removePlayerFromLobby(removePlayerID)
+				h.removePlayerFromLobby(removePlayerID)
 			}
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
-			for conn, client := range h.clients {
-				// Serialize writes to each connection
-				client.writeMu.Lock()
-				err := conn.WriteMessage(websocket.TextMessage, message)
-				client.writeMu.Unlock()
-
-				if err != nil {
-					log.Printf("WebSocket write error: %v", err)
-					conn.Close()
-					delete(h.clients, conn)
+			for _, client := range h.clients {
+				select {
+				case client.send <- hubMsg{data: message}:
+				default:
+					log.Printf("WebSocket broadcast buffer full for player %d, dropping message", client.playerID)
 				}
 			}
 			h.mu.RUnlock()
@@ -164,12 +219,143 @@ func (h *Hub) connectedPlayerIDs() []int64 {
 	return ids
 }
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Capture globals at entry to avoid race conditions in parallel tests
-	currentDB := db
-	currentHub := hub
+// broadcastGameUpdate sends the current game state to all connected clients
+func (h *Hub) broadcastGameUpdate() {
+	game, err := getOrCreateCurrentGame(h.db)
+	if err != nil {
+		logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
+		return
+	}
 
-	playerID, err := getPlayerIdFromSession(r)
+	players, err := getPlayersByGameId(h.db, game.ID)
+	if err != nil {
+		logError("broadcastGameUpdate: getPlayersByGameId", err)
+		return
+	}
+
+	DebugLog("broadcastGameUpdate", "Broadcasting to %d players in game %d (status: %s)", len(players), game.ID, game.Status)
+
+	for _, p := range players {
+		// Send game component
+		buf, err := getGameComponent(h.db, h.templates, p.PlayerID, game)
+		if err != nil {
+			logError("broadcastGameUpdate: getGameComponent", err)
+			continue
+		}
+		h.sendToPlayer(p.PlayerID, buf.Bytes())
+
+		// Send character info
+		var charBuf bytes.Buffer
+
+		data := SidebarData{
+			Player:              &p,
+			Players:             selfFirstPlayers(players, p.PlayerID),
+			Game:                game,
+			LoverPartnerID:      getLoverPartner(h.db, game.ID, p.PlayerID),
+			SeerFoundWerewolves: getSeerFoundWerewolves(h.db, game.ID, p.PlayerID),
+		}
+
+		h.templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
+		h.sendToPlayer(p.PlayerID, charBuf.Bytes())
+
+		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game)
+		if err != nil {
+			logError("broadcastGameHistory: getGameHistory", err)
+			continue
+		}
+		h.sendToPlayer(p.PlayerID, historyBuf.Bytes())
+	}
+}
+
+// logDBState logs the database state with this hub's db
+func (h *Hub) logDBState(context string) {
+	LogDBState(h.db, context)
+}
+
+// addPlayerToLobby adds a player to the game if it's in lobby state
+func (h *Hub) addPlayerToLobby(playerID int64) {
+	var playerName string
+	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+
+	game, err := getOrCreateCurrentGame(h.db)
+	if err != nil {
+		logError("addPlayerToLobby: getOrCreateCurrentGame", err)
+		return
+	}
+
+	if game.Status != "lobby" {
+		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) cannot join - game status is '%s'", playerName, playerID, game.Status)
+		return
+	}
+
+	result, err := h.db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", game.ID, playerID)
+	if err != nil {
+		logError("addPlayerToLobby: db.Exec insert", err)
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows > 0 {
+		log.Printf("Player %d (%s) added to lobby (connected)", playerID, playerName)
+		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) joined game %d lobby", playerName, playerID, game.ID)
+		h.logDBState("after player join: " + playerName)
+		h.broadcastGameUpdate()
+	} else {
+		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) already in game %d", playerName, playerID, game.ID)
+	}
+}
+
+// removePlayerFromLobby removes a player from the game if it's still in lobby state
+func (h *Hub) removePlayerFromLobby(playerID int64) {
+	var playerName string
+	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+
+	game, err := getOrCreateCurrentGame(h.db)
+	if err != nil {
+		logError("removePlayerFromLobby: getOrCreateCurrentGame", err)
+		return
+	}
+
+	if game.Status != "lobby" {
+		DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) cannot leave - game status is '%s'", playerName, playerID, game.Status)
+		return
+	}
+
+	_, err = h.db.Exec("DELETE FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
+	if err != nil {
+		logError("removePlayerFromLobby: db.Exec delete", err)
+		return
+	}
+
+	log.Printf("Player %d (%s) removed from lobby (disconnected)", playerID, playerName)
+	DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) left game %d lobby", playerName, playerID, game.ID)
+	h.logDBState("after player leave: " + playerName)
+	h.broadcastGameUpdate()
+}
+
+// getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
+func getOrCreateCurrentGame(db *sqlx.DB) (*Game, error) {
+	var game Game
+	err := db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
+	if err == sql.ErrNoRows {
+		result, err := db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
+		if err != nil {
+			return nil, err
+		}
+		gameID, _ := result.LastInsertId()
+		game = Game{ID: gameID, Status: "lobby", Round: 0}
+		log.Printf("Created new game: id=%d, status='lobby'", gameID)
+		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
+	} else if err != nil {
+		return nil, err
+	}
+	return &game, nil
+}
+
+func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
+	currentHub := app.hub
+
+	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
 		DebugLog("handleWebSocket", "Rejected WebSocket connection - not logged in")
 		http.Error(w, "Not logged in", http.StatusUnauthorized)
@@ -177,7 +363,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var playerName string
-	currentDB.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 	DebugLog("handleWebSocket", "Player '%s' (ID: %d) initiating WebSocket connection", playerName, playerID)
 
 	var upgrader = websocket.Upgrader{
@@ -196,10 +382,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Check if the player still exists in the current game.
 	// On reconnect after a disconnect, the player may have been removed.
 	var game Game
-	err = currentDB.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
+	err = app.db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
 	if err == nil && game.Status != "lobby" {
 		var count int
-		currentDB.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
+		app.db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
 		if count == 0 {
 			DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
 			conn.WriteMessage(websocket.TextMessage, []byte(`<div id="game-content" hx-swap-oob="innerHTML" hx-on::load="window.location.href='/'"></div>`))
@@ -208,11 +394,16 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := &Client{conn: conn, playerID: playerID}
+	client := &Client{conn: conn, playerID: playerID, hub: currentHub, send: make(chan hubMsg, clientSendBuf)}
 	currentHub.register <- client
 
-	// Handle messages and disconnection
+	// Handle messages and disconnection.
+	// clientWg tracks this goroutine so hub.stop() can wait for it to exit
+	// before cleanup proceeds — preventing resources from being closed while
+	// this goroutine is still using them.
+	currentHub.clientWg.Add(1)
 	go func() {
+		defer currentHub.clientWg.Done()
 		defer func() {
 			currentHub.unregister <- conn
 		}()
