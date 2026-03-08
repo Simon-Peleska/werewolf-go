@@ -24,78 +24,18 @@ type RoleConfigDisplay struct {
 	Count int
 }
 
-// addPlayerToLobby adds a player to the game if it's in lobby state
-func addPlayerToLobby(playerID int64) {
-	var playerName string
-	db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
-
-	game, err := getOrCreateCurrentGame()
-	if err != nil {
-		logError("addPlayerToLobby: getOrCreateCurrentGame", err)
-		return
-	}
-
-	if game.Status != "lobby" {
-		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) cannot join - game status is '%s'", playerName, playerID, game.Status)
-		return
-	}
-
-	result, err := db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", game.ID, playerID)
-	if err != nil {
-		logError("addPlayerToLobby: db.Exec insert", err)
-		return
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows > 0 {
-		log.Printf("Player %d (%s) added to lobby (connected)", playerID, playerName)
-		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) joined game %d lobby", playerName, playerID, game.ID)
-		LogDBState("after player join: " + playerName)
-		broadcastGameUpdate()
-	} else {
-		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) already in game %d", playerName, playerID, game.ID)
-	}
-}
-
-// removePlayerFromLobby removes a player from the game if it's still in lobby state
-func removePlayerFromLobby(playerID int64) {
-	var playerName string
-	db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
-
-	game, err := getOrCreateCurrentGame()
-	if err != nil {
-		logError("removePlayerFromLobby: getOrCreateCurrentGame", err)
-		return
-	}
-
-	if game.Status != "lobby" {
-		DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) cannot leave - game status is '%s'", playerName, playerID, game.Status)
-		return
-	}
-
-	_, err = db.Exec("DELETE FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
-	if err != nil {
-		logError("removePlayerFromLobby: db.Exec delete", err)
-		return
-	}
-
-	log.Printf("Player %d (%s) removed from lobby (disconnected)", playerID, playerName)
-	DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) left game %d lobby", playerName, playerID, game.ID)
-	LogDBState("after player leave: " + playerName)
-	broadcastGameUpdate()
-}
-
 func handleWSUpdateRole(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSUpdateRole: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "lobby" {
 		log.Printf("Cannot update roles: game status is '%s', expected 'lobby'", game.Status)
-		sendErrorToast(client.playerID, "Cannot update roles: game already started")
+		h.sendErrorToast(client.playerID, "Cannot update roles: game already started")
 		return
 	}
 
@@ -105,9 +45,9 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 	// For additions, check that we haven't already filled all player slots
 	if delta == "1" {
 		var totalRoles int
-		db.Get(&totalRoles, "SELECT COALESCE(SUM(count), 0) FROM game_role_config WHERE game_id = ?", game.ID)
+		h.db.Get(&totalRoles, "SELECT COALESCE(SUM(count), 0) FROM game_role_config WHERE game_id = ?", game.ID)
 		var playerCount int
-		db.Get(&playerCount, "SELECT COUNT(*) FROM game_player WHERE game_id = ?", game.ID)
+		h.db.Get(&playerCount, "SELECT COUNT(*) FROM game_player WHERE game_id = ?", game.ID)
 		if totalRoles >= playerCount {
 			log.Printf("Rejected role addition: %d roles already cover all %d players", totalRoles, playerCount)
 			return
@@ -116,11 +56,11 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 
 	// Get current count
 	var current GameRoleConfig
-	err = db.Get(&current, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ? AND role_id = ?", game.ID, roleID)
+	err = h.db.Get(&current, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ? AND role_id = ?", game.ID, roleID)
 
 	if err == sql.ErrNoRows {
 		if delta == "1" {
-			db.Exec("INSERT INTO game_role_config (game_id, role_id, count) VALUES (?, ?, 1)", game.ID, roleID)
+			h.db.Exec("INSERT INTO game_role_config (game_id, role_id, count) VALUES (?, ?, 1)", game.ID, roleID)
 			DebugLog("handleWSUpdateRole", "Added role %s to game %d (count: 1)", roleID, game.ID)
 		}
 	} else if err == nil {
@@ -131,23 +71,24 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 			newCount--
 		}
 		if newCount > 0 {
-			db.Exec("UPDATE game_role_config SET count = ? WHERE rowid = ?", newCount, current.ID)
+			h.db.Exec("UPDATE game_role_config SET count = ? WHERE rowid = ?", newCount, current.ID)
 			DebugLog("handleWSUpdateRole", "Updated role %s count to %d for game %d", roleID, newCount, game.ID)
 		} else {
-			db.Exec("DELETE FROM game_role_config WHERE rowid = ?", current.ID)
+			h.db.Exec("DELETE FROM game_role_config WHERE rowid = ?", current.ID)
 			DebugLog("handleWSUpdateRole", "Removed role %s from game %d", roleID, game.ID)
 		}
 	}
 
-	LogDBState("after role update")
-	broadcastGameUpdate()
+	h.logDBState("after role update")
+	h.triggerBroadcast()
 }
 
 func handleWSStartGame(client *Client) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSStartGame: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
@@ -155,25 +96,25 @@ func handleWSStartGame(client *Client) {
 
 	if game.Status != "lobby" {
 		log.Printf("Cannot start: game status is '%s', expected 'lobby'", game.Status)
-		sendErrorToast(client.playerID, "Game already started")
+		h.sendErrorToast(client.playerID, "Game already started")
 		return
 	}
 
 	// Get players
-	players, err := getPlayersByGameId(game.ID)
+	players, err := getPlayersByGameId(h.db, game.ID)
 	if err != nil {
 		logError("handleWSStartGame: getPlayersByGameId", err)
-		sendErrorToast(client.playerID, "Failed to get players")
+		h.sendErrorToast(client.playerID, "Failed to get players")
 		return
 	}
 	log.Printf("Found %d players in game", len(players))
 
 	// Get role configuration
 	var roleConfigs []GameRoleConfig
-	err = db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
+	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
 		logError("handleWSStartGame: db.Select roleConfigs", err)
-		sendErrorToast(client.playerID, "Failed to get role configuration")
+		h.sendErrorToast(client.playerID, "Failed to get role configuration")
 		return
 	}
 	log.Printf("Found %d role configs", len(roleConfigs))
@@ -189,7 +130,7 @@ func handleWSStartGame(client *Client) {
 
 	if len(rolePool) != len(players) {
 		log.Printf("Cannot start: role count (%d) != player count (%d)", len(rolePool), len(players))
-		sendErrorToast(client.playerID, "Role count must match player count")
+		h.sendErrorToast(client.playerID, "Role count must match player count")
 		return
 	}
 
@@ -200,33 +141,33 @@ func handleWSStartGame(client *Client) {
 	// Assign roles to players
 	for i, gp := range players {
 		log.Printf("Assigning role %d to player %d (game_player id=%d)", rolePool[i], gp.PlayerID, gp.ID)
-		_, err := db.Exec("UPDATE game_player SET role_id = ? WHERE rowid = ?", rolePool[i], gp.ID)
+		_, err := h.db.Exec("UPDATE game_player SET role_id = ? WHERE rowid = ?", rolePool[i], gp.ID)
 		if err != nil {
 			logError("handleWSStartGame: db.Exec assign role", err)
-			sendErrorToast(client.playerID, "Failed to assign roles")
+			h.sendErrorToast(client.playerID, "Failed to assign roles")
 			return
 		}
 	}
 	log.Printf("Roles assigned, updating game status...")
 
 	// Update game status and set night 1
-	_, err = db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
+	_, err = h.db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
 		logError("handleWSStartGame: db.Exec update game status", err)
-		sendErrorToast(client.playerID, "Failed to start game")
+		h.sendErrorToast(client.playerID, "Failed to start game")
 		return
 	}
 	log.Printf("Game status updated to 'night' (night 1), broadcasting...")
 	DebugLog("handleWSStartGame", "Game %d started, transitioning to night phase (night 1)", game.ID)
-	LogDBState("after game start")
+	h.logDBState("after game start")
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 	log.Printf("Game started successfully!")
 }
 
 // renderLobby renders the lobby component for a player
-func renderLobby(game Game, player Player, players []Player) (*bytes.Buffer, error) {
-	roles, _ := getRoles()
+func renderLobby(h *Hub, game Game, player Player, players []Player) (*bytes.Buffer, error) {
+	roles, _ := getRoles(h.db)
 
 	// Count players and total role slots
 	playerCount := len(players)
@@ -234,7 +175,7 @@ func renderLobby(game Game, player Player, players []Player) (*bytes.Buffer, err
 
 	// Get role configurations
 	var roleConfigs []GameRoleConfig
-	db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
+	h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 
 	// Build role config display
 	var roleConfigDisplay []RoleConfigDisplay
@@ -263,7 +204,7 @@ func renderLobby(game Game, player Player, players []Player) (*bytes.Buffer, err
 	}
 
 	var buf bytes.Buffer
-	err := templates.ExecuteTemplate(&buf, "lobby.html", data)
+	err := h.templates.ExecuteTemplate(&buf, "lobby.html", data)
 	return &buf, err
 }
 

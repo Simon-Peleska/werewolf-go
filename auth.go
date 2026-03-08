@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+
+	"github.com/jmoiron/sqlx"
 )
 
 const sessionCookieName = "werewolf_session"
@@ -20,11 +22,14 @@ func generateSecretCode() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func setSessionCookie(w http.ResponseWriter, playerID int64) {
+func setSessionCookie(db *sqlx.DB, w http.ResponseWriter, playerID int64) error {
 	tokenBig, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
 	token := tokenBig.Int64()
 
-	db.Exec("INSERT INTO session (token, player_id) VALUES (?, ?)", token, playerID)
+	_, err := db.Exec("INSERT INTO session (token, player_id) VALUES (?, ?)", token, playerID)
+	if err != nil {
+		return err
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -33,9 +38,10 @@ func setSessionCookie(w http.ResponseWriter, playerID int64) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+	return nil
 }
 
-func getPlayerIdFromSession(r *http.Request) (int64, error) {
+func getPlayerIdFromSession(db *sqlx.DB, r *http.Request) (int64, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return -1, err
@@ -55,7 +61,7 @@ func getPlayerIdFromSession(r *http.Request) (int64, error) {
 	return playerID, nil
 }
 
-func handleSignup(w http.ResponseWriter, r *http.Request) {
+func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -64,21 +70,21 @@ func handleSignup(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	if name == "" {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Name is required")))
+		w.Write([]byte(renderToast(app.templates, "error", "Name is required")))
 		return
 	}
 
 	var existing Player
-	err := db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
+	err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
 	if err == nil {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Name already taken. Use login with secret code if this is you.")))
+		w.Write([]byte(renderToast(app.templates, "error", "Name already taken. Use login with secret code if this is you.")))
 		return
 	}
 	if err != sql.ErrNoRows {
 		logError("handleSignup: db.Get player", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
@@ -86,28 +92,33 @@ func handleSignup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logError("handleSignup: generateSecretCode", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
-	result, err := db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, secretCode)
+	result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, secretCode)
 	if err != nil {
 		logError("handleSignup: db.Exec insert player", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
 	playerID, _ := result.LastInsertId()
 	log.Printf("New player created: name='%s', id=%d", name, playerID)
 	DebugLog("handleSignup", "Player '%s' signed up with ID %d", name, playerID)
-	LogDBState("after signup: " + name)
+	LogDBState(app.db, "after signup: "+name)
 
-	setSessionCookie(w, playerID)
+	if err := setSessionCookie(app.db, w, playerID); err != nil {
+		logError("handleSignup: setSessionCookie", err)
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
+		return
+	}
 	w.Header().Set("HX-Redirect", "/game")
 }
 
-func handleLogin(w http.ResponseWriter, r *http.Request) {
+func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -118,39 +129,44 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" || secretCode == "" {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Name and secret code are required")))
+		w.Write([]byte(renderToast(app.templates, "error", "Name and secret code are required")))
 		return
 	}
 
 	var player Player
-	err := db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ? AND secret_code = ?", name, secretCode)
+	err := app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ? AND secret_code = ?", name, secretCode)
 	if err == sql.ErrNoRows {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Invalid name or secret code")))
+		w.Write([]byte(renderToast(app.templates, "error", "Invalid name or secret code")))
 		return
 	}
 	if err != nil {
 		logError("handleLogin: db.Get player", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast("error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
 		return
 	}
 
 	log.Printf("Player logged in: name='%s', id=%d", name, player.ID)
 	DebugLog("handleLogin", "Player '%s' logged in with ID %d", name, player.ID)
-	setSessionCookie(w, player.ID)
+	if err := setSessionCookie(app.db, w, player.ID); err != nil {
+		logError("handleLogin: setSessionCookie", err)
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, "error", "Something went wrong")))
+		return
+	}
 	w.Header().Set("HX-Redirect", "/game")
 }
 
-func handleLogout(w http.ResponseWriter, r *http.Request) {
-	playerID, _ := getPlayerIdFromSession(r)
+func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+	playerID, _ := getPlayerIdFromSession(app.db, r)
 	var playerName string
-	db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 
 	cookie, err := r.Cookie(sessionCookieName)
 	if err == nil {
 		token, _ := strconv.ParseInt(cookie.Value, 10, 64)
-		db.Exec("DELETE FROM session WHERE token = ?", token)
+		app.db.Exec("DELETE FROM session WHERE token = ?", token)
 	}
 
 	log.Printf("Player logged out: name='%s', id=%d", playerName, playerID)

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // WerewolfVote represents a werewolf's vote during the night
@@ -88,67 +91,85 @@ type NightData struct {
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfVote: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
 
 	// Check that the player is a werewolf
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfVote: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
 		return
 	}
 
 	if !voter.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, "Dead players cannot vote")
 		return
 	}
 
 	// Reject if End Vote already pressed (vote is locked in)
 	var endVoteCount int
-	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote)
 	if endVoteCount > 0 {
-		sendErrorToast(client.playerID, "The vote has already been locked in")
+		h.sendErrorToast(client.playerID, "The vote has already been locked in")
 		return
 	}
 
 	// Parse target player ID
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	// Check that the target is valid (alive)
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, "Target not found")
 		return
 	}
 
 	if !target.IsAlive {
-		sendErrorToast(client.playerID, "Cannot target a dead player")
+		h.sendErrorToast(client.playerID, "Cannot target a dead player")
+		return
+	}
+
+	// Toggle: if already voted for this target, unselect (delete the vote)
+	var existingTarget sql.NullInt64
+	h.db.Get(&existingTarget, `SELECT target_player_id FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill)
+	if existingTarget.Valid && existingTarget.Int64 == targetID {
+		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
+			game.ID, game.Round, client.playerID, ActionWerewolfKill)
+		if err != nil {
+			logError("handleWSWerewolfVote: db.Exec delete vote", err)
+			h.sendErrorToast(client.playerID, "Failed to clear vote")
+			return
+		}
+		log.Printf("Werewolf %d (%s) unselected vote for player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+		h.triggerBroadcast()
 		return
 	}
 
 	// Record or update the vote
 	description := fmt.Sprintf("Night %d: %s voted to kill %s", game.Round, voter.Name, target.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
@@ -156,54 +177,55 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, targetID, description)
 	if err != nil {
 		logError("handleWSWerewolfVote: db.Exec insert vote", err)
-		sendErrorToast(client.playerID, "Failed to record vote")
+		h.sendErrorToast(client.playerID, "Failed to record vote")
 		return
 	}
 
 	log.Printf("Werewolf %d (%s) voted to kill player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
 	DebugLog("handleWSWerewolfVote", "Werewolf '%s' voted to kill '%s'", voter.Name, target.Name)
-	LogDBState("after werewolf vote")
+	LogDBState(h.db, "after werewolf vote")
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSWerewolfVote2(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfVote2: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
 
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfVote2: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
 		return
 	}
 
 	if !voter.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, "Dead players cannot vote")
 		return
 	}
 
 	// Validate that Wolf Cub double kill is actually active this night
 	if game.Round <= 1 {
-		sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		h.sendErrorToast(client.playerID, "Wolf Cub double kill not active")
 		return
 	}
 	var wolfCubDeathCount int
-	db.Get(&wolfCubDeathCount, `
+	h.db.Get(&wolfCubDeathCount, `
 		SELECT COUNT(*) FROM game_action ga
 		JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 		JOIN role r ON gp.role_id = r.rowid
@@ -212,38 +234,38 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 		AND r.name = 'Wolf Cub'`,
 		game.ID, game.Round-1)
 	if wolfCubDeathCount == 0 {
-		sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		h.sendErrorToast(client.playerID, "Wolf Cub double kill not active")
 		return
 	}
 
 	// Reject if End Vote 2 already pressed
 	var endVote2Count int
-	db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote2)
 	if endVote2Count > 0 {
-		sendErrorToast(client.playerID, "The second vote has already been locked in")
+		h.sendErrorToast(client.playerID, "The second vote has already been locked in")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, "Target not found")
 		return
 	}
 
 	if !target.IsAlive {
-		sendErrorToast(client.playerID, "Cannot target a dead player")
+		h.sendErrorToast(client.playerID, "Cannot target a dead player")
 		return
 	}
 
 	description2 := fmt.Sprintf("Night %d: %s voted to kill %s (Wolf Cub revenge)", game.Round, voter.Name, target.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
@@ -251,51 +273,52 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, targetID, description2)
 	if err != nil {
 		logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
-		sendErrorToast(client.playerID, "Failed to record second vote")
+		h.sendErrorToast(client.playerID, "Failed to record second vote")
 		return
 	}
 
 	log.Printf("Werewolf %d (%s) voted second kill: player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
 	DebugLog("handleWSWerewolfVote2", "Werewolf '%s' second kill vote: '%s'", voter.Name, target.Name)
-	LogDBState("after werewolf vote2")
+	LogDBState(h.db, "after werewolf vote2")
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSWerewolfPass(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfPass: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfPass: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
 		return
 	}
 	if !voter.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, "Dead players cannot vote")
 		return
 	}
 	var endVoteCount int
-	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote)
 	if endVoteCount > 0 {
-		sendErrorToast(client.playerID, "The vote has already been locked in")
+		h.sendErrorToast(client.playerID, "The vote has already been locked in")
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed", game.Round, voter.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
@@ -303,47 +326,48 @@ func handleWSWerewolfPass(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passDesc)
 	if err != nil {
 		logError("handleWSWerewolfPass: db.Exec", err)
-		sendErrorToast(client.playerID, "Failed to record pass")
+		h.sendErrorToast(client.playerID, "Failed to record pass")
 		return
 	}
 	log.Printf("Werewolf %d (%s) passed the kill vote", client.playerID, voter.Name)
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSWerewolfPass2(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfPass2: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfPass2: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
 		return
 	}
 	if !voter.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, "Dead players cannot vote")
 		return
 	}
 	var endVote2Count int
-	db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote2)
 	if endVote2Count > 0 {
-		sendErrorToast(client.playerID, "The second vote has already been locked in")
+		h.sendErrorToast(client.playerID, "The second vote has already been locked in")
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed (second kill)", game.Round, voter.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
@@ -351,38 +375,39 @@ func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passDesc)
 	if err != nil {
 		logError("handleWSWerewolfPass2: db.Exec", err)
-		sendErrorToast(client.playerID, "Failed to record pass")
+		h.sendErrorToast(client.playerID, "Failed to record pass")
 		return
 	}
 	log.Printf("Werewolf %d (%s) passed the second kill vote", client.playerID, voter.Name)
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfEndVote: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfEndVote: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		h.sendErrorToast(client.playerID, "Only werewolves can end the vote")
 		return
 	}
 
 	// Check all alive werewolves have acted
 	var werewolves []Player
-	db.Select(&werewolves, `
+	h.db.Select(&werewolves, `
 		SELECT g.rowid as id, g.player_id as player_id, p.name as name
 		FROM game_player g
 		JOIN player p ON g.player_id = p.rowid
@@ -390,50 +415,51 @@ func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 	var totalActed int
-	db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfKill)
 
 	if totalActed < len(werewolves) {
-		sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted yet (%d/%d)", totalActed, len(werewolves)))
+		h.sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted yet (%d/%d)", totalActed, len(werewolves)))
 		return
 	}
 
 	// Record End Vote (INSERT OR IGNORE — idempotent)
-	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
+	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
 		game.ID, game.Round, client.playerID, ActionWerewolfEndVote, VisibilityTeamWerewolf)
 	if err != nil {
 		logError("handleWSWerewolfEndVote: record end vote", err)
 	}
 
 	log.Printf("Werewolf %d (%s) ended the kill vote", client.playerID, voter.Name)
-	broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
-	resolveWerewolfVotes(game)
+	h.broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
+	h.resolveWerewolfVotes(game)
 }
 
 func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWerewolfEndVote2: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
 		return
 	}
-	voter, err := getPlayerInGame(game.ID, client.playerID)
+	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWerewolfEndVote2: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if voter.Team != "werewolf" {
-		sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		h.sendErrorToast(client.playerID, "Only werewolves can end the vote")
 		return
 	}
 
 	var werewolves []Player
-	db.Select(&werewolves, `
+	h.db.Select(&werewolves, `
 		SELECT g.rowid as id, g.player_id as player_id, p.name as name
 		FROM game_player g
 		JOIN player p ON g.player_id = p.rowid
@@ -441,158 +467,160 @@ func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 	var totalActed2 int
-	db.Get(&totalActed2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&totalActed2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfKill2)
 
 	if totalActed2 < len(werewolves) {
-		sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted for the second kill yet (%d/%d)", totalActed2, len(werewolves)))
+		h.sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted for the second kill yet (%d/%d)", totalActed2, len(werewolves)))
 		return
 	}
 
-	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
+	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
 		game.ID, game.Round, client.playerID, ActionWerewolfEndVote2, VisibilityTeamWerewolf)
 	if err != nil {
 		logError("handleWSWerewolfEndVote2: record end vote 2", err)
 	}
 
 	log.Printf("Werewolf %d (%s) ended the second kill vote", client.playerID, voter.Name)
-	resolveWerewolfVotes(game)
+	h.resolveWerewolfVotes(game)
 }
 
 // handleWSSeerSelect toggles the seer's pending investigation selection.
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSSeerSelect(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSSeerSelect: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	investigator, err := getPlayerInGame(game.ID, client.playerID)
+	investigator, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSSeerSelect: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if investigator.RoleName != "Seer" {
-		sendErrorToast(client.playerID, "Only the Seer can select an investigation target")
+		h.sendErrorToast(client.playerID, "Only the Seer can select an investigation target")
 		return
 	}
 	if !investigator.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Don't allow re-selection if already investigated
 	var existingCount int
-	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already investigated this night")
+		h.sendErrorToast(client.playerID, "You have already investigated this night")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	var existing GameAction
-	selectErr := db.Get(&existing, `
+	selectErr := h.db.Get(&existing, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerSelect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
 		// Same player clicked again → deselect
-		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionSeerSelect)
 		log.Printf("Seer '%s' deselected investigation target", investigator.Name)
 	} else {
 		// Select (or replace prior selection)
-		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionSeerSelect, targetID, VisibilityActor)
 		log.Printf("Seer '%s' selected investigation target %d", investigator.Name, targetID)
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSSeerInvestigate(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSSeerInvestigate: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only investigate during night phase")
+		h.sendErrorToast(client.playerID, "Can only investigate during night phase")
 		return
 	}
 
-	investigator, err := getPlayerInGame(game.ID, client.playerID)
+	investigator, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSSeerInvestigate: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if investigator.RoleName != "Seer" {
-		sendErrorToast(client.playerID, "Only the Seer can investigate")
+		h.sendErrorToast(client.playerID, "Only the Seer can investigate")
 		return
 	}
 
 	if !investigator.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 
 	// Check if already investigated this night
 	var existingCount int
-	db.Get(&existingCount, `
+	h.db.Get(&existingCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already investigated this night")
+		h.sendErrorToast(client.playerID, "You have already investigated this night")
 		return
 	}
 
 	// Read the pending selection from DB
 	var selectAction GameAction
-	if err := db.Get(&selectAction, `
+	if err := h.db.Get(&selectAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerSelect); err != nil || selectAction.TargetPlayerID == nil {
-		sendErrorToast(client.playerID, "Select a player to investigate first")
+		h.sendErrorToast(client.playerID, "Select a player to investigate first")
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, "Target not found")
 		return
 	}
 
 	if !target.IsAlive {
-		sendErrorToast(client.playerID, "Cannot investigate a dead player")
+		h.sendErrorToast(client.playerID, "Cannot investigate a dead player")
 		return
 	}
 
 	// Remove the pending selection
-	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerSelect)
 
 	result := "not a werewolf"
@@ -600,13 +628,13 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 		result = "a werewolf"
 	}
 	seerDesc := fmt.Sprintf("Night %d: You investigated %s — they are %s", game.Round, target.Name, result)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc)
 	if err != nil {
 		logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
-		sendErrorToast(client.playerID, "Failed to record investigation")
+		h.sendErrorToast(client.playerID, "Failed to record investigation")
 		return
 	}
 
@@ -614,712 +642,756 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	if target.Team == "werewolf" {
 		toastMsg = fmt.Sprintf("🔮 %s is a werewolf!", target.Name)
 	}
-	hub.sendToPlayer(client.playerID, []byte(renderToast("info", toastMsg)))
+	h.sendToPlayer(client.playerID, []byte(renderToast(h.templates, "info", toastMsg)))
 
 	log.Printf("Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
 	DebugLog("handleWSSeerInvestigate", "Seer '%s' investigated '%s' (team: %s)", investigator.Name, target.Name, target.Team)
-	LogDBState("after seer investigation")
+	LogDBState(h.db, "after seer investigation")
 
-	resolveWerewolfVotes(game)
+	h.resolveWerewolfVotes(game)
 }
 
 // handleWSDoctorSelect toggles the doctor's pending protection target selection.
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSDoctorSelect(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSDoctorSelect: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	doctor, err := getPlayerInGame(game.ID, client.playerID)
+	doctor, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSDoctorSelect: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if doctor.RoleName != "Doctor" {
-		sendErrorToast(client.playerID, "Only the Doctor can select a protection target")
+		h.sendErrorToast(client.playerID, "Only the Doctor can select a protection target")
 		return
 	}
 	if !doctor.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Don't allow re-selection if already protected
 	var existingCount int
-	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, "You have already protected someone this night")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	var existing GameAction
-	selectErr := db.Get(&existing, `
+	selectErr := h.db.Get(&existing, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorSelect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
 		// Same player clicked again → deselect
-		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionDoctorSelect)
 		log.Printf("Doctor '%s' deselected protection target", doctor.Name)
 	} else {
 		// Select (or replace prior selection)
-		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionDoctorSelect, targetID, VisibilityActor)
 		log.Printf("Doctor '%s' selected protection target %d", doctor.Name, targetID)
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSDoctorProtect(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSDoctorProtect: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only protect during night phase")
+		h.sendErrorToast(client.playerID, "Can only protect during night phase")
 		return
 	}
 
-	doctor, err := getPlayerInGame(game.ID, client.playerID)
+	doctor, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSDoctorProtect: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if doctor.RoleName != "Doctor" {
-		sendErrorToast(client.playerID, "Only the Doctor can protect players")
+		h.sendErrorToast(client.playerID, "Only the Doctor can protect players")
 		return
 	}
 
 	if !doctor.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 
 	// One protection per night
 	var existingCount int
-	db.Get(&existingCount, `
+	h.db.Get(&existingCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, "You have already protected someone this night")
 		return
 	}
 
 	// Read the pending selection from DB
 	var selectAction GameAction
-	if err := db.Get(&selectAction, `
+	if err := h.db.Get(&selectAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorSelect); err != nil || selectAction.TargetPlayerID == nil {
-		sendErrorToast(client.playerID, "Select a player to protect first")
+		h.sendErrorToast(client.playerID, "Select a player to protect first")
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, "Target not found")
 		return
 	}
 
 	if !target.IsAlive {
-		sendErrorToast(client.playerID, "Cannot protect a dead player")
+		h.sendErrorToast(client.playerID, "Cannot protect a dead player")
 		return
 	}
 
 	// Remove the pending selection
-	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorSelect)
 
 	doctorDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect, targetID, VisibilityActor, doctorDesc)
 	if err != nil {
 		logError("handleWSDoctorProtect: db.Exec insert protection", err)
-		sendErrorToast(client.playerID, "Failed to record protection")
+		h.sendErrorToast(client.playerID, "Failed to record protection")
 		return
 	}
 
 	log.Printf("Doctor '%s' is protecting '%s'", doctor.Name, target.Name)
 	DebugLog("handleWSDoctorProtect", "Doctor '%s' protecting '%s'", doctor.Name, target.Name)
-	LogDBState("after doctor protect")
+	LogDBState(h.db, "after doctor protect")
 
-	resolveWerewolfVotes(game)
+	h.resolveWerewolfVotes(game)
 }
 
 // handleWSGuardSelect toggles the guard's pending protection target selection.
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSGuardSelect(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSGuardSelect: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	guard, err := getPlayerInGame(game.ID, client.playerID)
+	guard, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSGuardSelect: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if guard.RoleName != "Guard" {
-		sendErrorToast(client.playerID, "Only the Guard can select a protection target")
+		h.sendErrorToast(client.playerID, "Only the Guard can select a protection target")
 		return
 	}
 	if !guard.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Don't allow re-selection if already protected
 	var existingCount int
-	db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionGuardProtect)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, "You have already protected someone this night")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 	if targetID == client.playerID {
-		sendErrorToast(client.playerID, "Guard cannot protect themselves")
+		h.sendErrorToast(client.playerID, "Guard cannot protect themselves")
 		return
 	}
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	var existing GameAction
-	selectErr := db.Get(&existing, `
+	selectErr := h.db.Get(&existing, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionGuardSelect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
 		// Same player clicked again → deselect
-		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionGuardSelect)
 		log.Printf("Guard '%s' deselected protection target", guard.Name)
 	} else {
 		// Select (or replace prior selection)
-		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionGuardSelect, targetID, VisibilityActor)
 		log.Printf("Guard '%s' selected protection target %d", guard.Name, targetID)
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 func handleWSGuardProtect(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSGuardProtect: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only protect during night phase")
+		h.sendErrorToast(client.playerID, "Can only protect during night phase")
 		return
 	}
 
-	guard, err := getPlayerInGame(game.ID, client.playerID)
+	guard, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSGuardProtect: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if guard.RoleName != "Guard" {
-		sendErrorToast(client.playerID, "Only the Guard can protect players")
+		h.sendErrorToast(client.playerID, "Only the Guard can protect players")
 		return
 	}
 
 	if !guard.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 
 	// One protection per night
 	var existingCount int
-	db.Get(&existingCount, `
+	h.db.Get(&existingCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionGuardProtect)
 	if existingCount > 0 {
-		sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, "You have already protected someone this night")
 		return
 	}
 
 	// Read the pending selection from DB
 	var selectAction GameAction
-	if err := db.Get(&selectAction, `
+	if err := h.db.Get(&selectAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionGuardSelect); err != nil || selectAction.TargetPlayerID == nil {
-		sendErrorToast(client.playerID, "Select a player to protect first")
+		h.sendErrorToast(client.playerID, "Select a player to protect first")
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
 	// Guard cannot protect themselves (defensive re-check)
 	if targetID == client.playerID {
-		sendErrorToast(client.playerID, "Guard cannot protect themselves")
+		h.sendErrorToast(client.playerID, "Guard cannot protect themselves")
 		return
 	}
 
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, "Target not found")
 		return
 	}
 
 	if !target.IsAlive {
-		sendErrorToast(client.playerID, "Cannot protect a dead player")
+		h.sendErrorToast(client.playerID, "Cannot protect a dead player")
 		return
 	}
 
 	// Remove the pending selection
-	db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionGuardSelect)
 
 	// Guard cannot protect the same player as last night
 	if game.Round > 1 {
 		var lastTargetID int64
-		err := db.Get(&lastTargetID, `
+		err := h.db.Get(&lastTargetID, `
 			SELECT target_player_id FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 			game.ID, game.Round-1, client.playerID, ActionGuardProtect)
 		if err == nil && lastTargetID == targetID {
-			sendErrorToast(client.playerID, "Cannot protect the same player two nights in a row")
+			h.sendErrorToast(client.playerID, "Cannot protect the same player two nights in a row")
 			return
 		}
 	}
 
 	guardDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionGuardProtect, targetID, VisibilityActor, guardDesc)
 	if err != nil {
 		logError("handleWSGuardProtect: db.Exec insert protection", err)
-		sendErrorToast(client.playerID, "Failed to record protection")
+		h.sendErrorToast(client.playerID, "Failed to record protection")
 		return
 	}
 
 	log.Printf("Guard '%s' is protecting '%s'", guard.Name, target.Name)
 	DebugLog("handleWSGuardProtect", "Guard '%s' protecting '%s'", guard.Name, target.Name)
-	LogDBState("after guard protect")
+	LogDBState(h.db, "after guard protect")
 
-	resolveWerewolfVotes(game)
+	h.resolveWerewolfVotes(game)
 }
 
 // handleWSCupidChoose handles Cupid's lover selection on Night 1.
 // Picks are staged (replaceable) until Cupid explicitly confirms via handleWSCupidLink.
 func handleWSCupidChoose(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSCupidChoose: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" || game.Round != 1 {
-		sendErrorToast(client.playerID, "Cupid can only act on Night 1")
+		h.sendErrorToast(client.playerID, "Cupid can only act on Night 1")
 		return
 	}
 
-	cupid, err := getPlayerInGame(game.ID, client.playerID)
+	cupid, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSCupidChoose: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if cupid.RoleName != "Cupid" || !cupid.IsAlive {
-		sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
+		h.sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
 		return
 	}
 
 	// Reject if already finalized
 	var finalized int
-	db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
+	h.db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 	if finalized > 0 {
-		sendErrorToast(client.playerID, "You have already linked the lovers")
+		h.sendErrorToast(client.playerID, "You have already linked the lovers")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
-	target, err := getPlayerInGame(game.ID, targetID)
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
-	// Check if step 1 is already done (first lover stored in game_action)
-	var firstLoverID int64
-	db.Get(&firstLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-		game.ID, client.playerID, ActionCupidLink)
+	// Toggle: if this player is already in a slot, remove them from that slot.
+	// Query each slot directly by (action_type, target_player_id) — fully independent.
+	var inSlot1, inSlot2 int
+	h.db.Get(&inSlot1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ? AND target_player_id = ?`,
+		game.ID, client.playerID, ActionCupidLink, targetID)
+	h.db.Get(&inSlot2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ? AND target_player_id = ?`,
+		game.ID, client.playerID, ActionCupidLink2, targetID)
 
-	if firstLoverID == 0 {
-		// Step 1: record first lover choice (replaceable until finalized); empty description = not shown in history
-		_, err = db.Exec(`
-			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-			VALUES (?, 1, 'night', ?, ?, ?, ?, '')
-			ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-			DO UPDATE SET target_player_id = ?, description = ''`,
-			game.ID, client.playerID, ActionCupidLink, targetID, VisibilityActor, targetID)
+	if inSlot1 > 0 {
+		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+			game.ID, client.playerID, ActionCupidLink)
 		if err != nil {
-			logError("handleWSCupidChoose: insert step1", err)
-			sendErrorToast(client.playerID, "Failed to record choice")
+			logError("handleWSCupidChoose: delete slot1", err)
+			h.sendErrorToast(client.playerID, "Failed to clear choice")
 			return
 		}
-		log.Printf("Cupid '%s' chose first lover: '%s'", cupid.Name, target.Name)
-		broadcastGameUpdate()
-	} else {
-		// Step 2: stage second lover — must differ from first lover
-		if firstLoverID == targetID {
-			sendErrorToast(client.playerID, "The two lovers must be different players")
-			return
-		}
-		_, err = db.Exec(`
-			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-			VALUES (?, 1, 'night', ?, ?, ?, ?, '')
-			ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-			DO UPDATE SET target_player_id = ?, description = ''`,
-			game.ID, client.playerID, ActionCupidLink2, targetID, VisibilityActor, targetID)
-		if err != nil {
-			logError("handleWSCupidChoose: insert step2", err)
-			sendErrorToast(client.playerID, "Failed to record choice")
-			return
-		}
-		log.Printf("Cupid '%s' chose second lover: '%s'", cupid.Name, target.Name)
-		broadcastGameUpdate()
+		log.Printf("Cupid '%s' unselected first lover", cupid.Name)
+		h.triggerBroadcast()
+		return
 	}
+	if inSlot2 > 0 {
+		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+			game.ID, client.playerID, ActionCupidLink2)
+		if err != nil {
+			logError("handleWSCupidChoose: delete slot2", err)
+			h.sendErrorToast(client.playerID, "Failed to clear choice")
+			return
+		}
+		log.Printf("Cupid '%s' unselected second lover", cupid.Name)
+		h.triggerBroadcast()
+		return
+	}
+
+	// Not currently selected — read slot occupancy and fill the first empty slot.
+	var slot1ID, slot2ID int64
+	h.db.Get(&slot1ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+		game.ID, client.playerID, ActionCupidLink)
+	h.db.Get(&slot2ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+		game.ID, client.playerID, ActionCupidLink2)
+
+	var fillType string
+	if slot1ID == 0 {
+		if slot2ID == targetID {
+			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			return
+		}
+		fillType = ActionCupidLink
+	} else if slot2ID == 0 {
+		if slot1ID == targetID {
+			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			return
+		}
+		fillType = ActionCupidLink2
+	} else {
+		// Both filled — replace slot 2
+		if slot1ID == targetID {
+			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			return
+		}
+		fillType = ActionCupidLink2
+	}
+
+	_, err = h.db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, 1, 'night', ?, ?, ?, ?, '')
+		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
+		DO UPDATE SET target_player_id = ?, description = ''`,
+		game.ID, client.playerID, fillType, targetID, VisibilityActor, targetID)
+	if err != nil {
+		logError("handleWSCupidChoose: insert", err)
+		h.sendErrorToast(client.playerID, "Failed to record choice")
+		return
+	}
+	log.Printf("Cupid '%s' chose lover '%s' (slot: %s)", cupid.Name, target.Name, fillType)
+	h.triggerBroadcast()
 }
 
 // handleWSCupidLink finalizes Cupid's staged lover choices on Night 1.
 func handleWSCupidLink(client *Client) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSCupidLink: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" || game.Round != 1 {
-		sendErrorToast(client.playerID, "Cupid can only act on Night 1")
+		h.sendErrorToast(client.playerID, "Cupid can only act on Night 1")
 		return
 	}
 
-	cupid, err := getPlayerInGame(game.ID, client.playerID)
+	cupid, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSCupidLink: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 
 	if cupid.RoleName != "Cupid" || !cupid.IsAlive {
-		sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
+		h.sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
 		return
 	}
 
 	var finalized int
-	db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
+	h.db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 	if finalized > 0 {
-		sendErrorToast(client.playerID, "You have already linked the lovers")
+		h.sendErrorToast(client.playerID, "You have already linked the lovers")
 		return
 	}
 
 	var firstLoverID int64
 	var secondLoverID int64
-	db.Get(&firstLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+	h.db.Get(&firstLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 		game.ID, client.playerID, ActionCupidLink)
-	db.Get(&secondLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
+	h.db.Get(&secondLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 		game.ID, client.playerID, ActionCupidLink2)
 
 	if firstLoverID == 0 || secondLoverID == 0 {
-		sendErrorToast(client.playerID, "Choose two lovers before linking them")
+		h.sendErrorToast(client.playerID, "Choose two lovers before linking them")
 		return
 	}
 	if firstLoverID == secondLoverID {
-		sendErrorToast(client.playerID, "The two lovers must be different players")
+		h.sendErrorToast(client.playerID, "The two lovers must be different players")
 		return
 	}
 
 	var first Player
 	var second Player
-	first, err = getPlayerInGame(game.ID, firstLoverID)
+	first, err = getPlayerInGame(h.db, game.ID, firstLoverID)
 	if err != nil || !first.IsAlive {
-		sendErrorToast(client.playerID, "First lover is invalid")
+		h.sendErrorToast(client.playerID, "First lover is invalid")
 		return
 	}
-	second, err = getPlayerInGame(game.ID, secondLoverID)
+	second, err = getPlayerInGame(h.db, game.ID, secondLoverID)
 	if err != nil || !second.IsAlive {
-		sendErrorToast(client.playerID, "Second lover is invalid")
+		h.sendErrorToast(client.playerID, "Second lover is invalid")
 		return
 	}
 
-	_, err = db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
+	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
 		game.ID, firstLoverID, secondLoverID)
 	if err != nil {
 		logError("handleWSCupidLink: insert lovers row1", err)
-		sendErrorToast(client.playerID, "Failed to link lovers")
+		h.sendErrorToast(client.playerID, "Failed to link lovers")
 		return
 	}
-	_, err = db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
+	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
 		game.ID, secondLoverID, firstLoverID)
 	if err != nil {
 		logError("handleWSCupidLink: insert lovers row2", err)
-		sendErrorToast(client.playerID, "Failed to link lovers")
+		h.sendErrorToast(client.playerID, "Failed to link lovers")
 		return
 	}
 
 	desc1 := fmt.Sprintf("Night 1: Your lover is %s", second.Name)
 	desc2 := fmt.Sprintf("Night 1: Your lover is %s", first.Name)
-	_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
+	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
 		game.ID, firstLoverID, ActionCupidLink, secondLoverID, VisibilityActor, desc1)
-	_, _ = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
+	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
 		game.ID, secondLoverID, ActionCupidLink, firstLoverID, VisibilityActor, desc2)
 
 	// Clear Cupid's staged picks once finalized.
-	_, _ = db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND phase = 'night' AND actor_player_id = ? AND action_type IN (?, ?)`,
+	_, _ = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND phase = 'night' AND actor_player_id = ? AND action_type IN (?, ?)`,
 		game.ID, client.playerID, ActionCupidLink, ActionCupidLink2)
 
-	hub.sendToPlayer(firstLoverID, []byte(renderToast("info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", second.Name))))
-	hub.sendToPlayer(secondLoverID, []byte(renderToast("info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", first.Name))))
+	h.sendToPlayer(firstLoverID, []byte(renderToast(h.templates, "info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", second.Name))))
+	h.sendToPlayer(secondLoverID, []byte(renderToast(h.templates, "info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", first.Name))))
 
 	log.Printf("Cupid '%s' linked lovers: '%s' and '%s'", cupid.Name, first.Name, second.Name)
 	DebugLog("handleWSCupidLink", "Cupid '%s' linked '%s' and '%s'", cupid.Name, first.Name, second.Name)
-	LogDBState("after cupid links lovers")
-	resolveWerewolfVotes(game)
+	LogDBState(h.db, "after cupid links lovers")
+	h.resolveWerewolfVotes(game)
 }
 
 // handleWSWitchSelectHeal toggles the witch's pending heal selection.
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWitchSelectHeal: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	witch, err := getPlayerInGame(game.ID, client.playerID)
+	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWitchSelectHeal: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if witch.RoleName != "Witch" {
-		sendErrorToast(client.playerID, "Only the Witch can select a heal target")
+		h.sendErrorToast(client.playerID, "Only the Witch can select a heal target")
 		return
 	}
 	if !witch.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Reject if already applied this night
 	var appliedCount int
-	db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
 		return
 	}
 	// Reject if heal potion already committed in a prior round
 	var healUsed int
-	db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionWitchHeal)
 	if healUsed > 0 {
-		sendErrorToast(client.playerID, "Your heal potion has already been used")
+		h.sendErrorToast(client.playerID, "Your heal potion has already been used")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	// Toggle: if same player already selected, deselect
 	var existing GameAction
-	selectErr := db.Get(&existing, `
+	selectErr := h.db.Get(&existing, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchSelectHeal)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
 		// Same player clicked again → deselect
-		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionWitchSelectHeal)
 		log.Printf("Witch '%s' deselected heal target", witch.Name)
 	} else {
 		// Select (or replace prior selection)
-		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionWitchSelectHeal, targetID, VisibilityActor)
 		log.Printf("Witch '%s' selected heal target %d", witch.Name, targetID)
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 // handleWSWitchSelectPoison toggles the witch's pending poison selection.
 func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWitchSelectPoison: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	witch, err := getPlayerInGame(game.ID, client.playerID)
+	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWitchSelectPoison: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if witch.RoleName != "Witch" {
-		sendErrorToast(client.playerID, "Only the Witch can select a poison target")
+		h.sendErrorToast(client.playerID, "Only the Witch can select a poison target")
 		return
 	}
 	if !witch.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Reject if already applied this night
 	var appliedCount int
-	db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
 		return
 	}
 	// Reject if poison potion already committed in a prior round
 	var poisonUsed int
-	db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionWitchKill)
 	if poisonUsed > 0 {
-		sendErrorToast(client.playerID, "Your poison potion has already been used")
+		h.sendErrorToast(client.playerID, "Your poison potion has already been used")
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, "Invalid target")
 		return
 	}
 
 	// Toggle: if same player already selected, deselect
 	var existing GameAction
-	selectErr := db.Get(&existing, `
+	selectErr := h.db.Get(&existing, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchSelectPoison)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
 		// Same player clicked again → deselect
-		db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionWitchSelectPoison)
 		log.Printf("Witch '%s' deselected poison target", witch.Name)
 	} else {
 		// Select (or replace prior selection)
-		db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionWitchSelectPoison, targetID, VisibilityActor)
 		log.Printf("Witch '%s' selected poison target %d", witch.Name, targetID)
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 // handleWSWitchApply commits the witch's pending selections and ends her night turn.
 func handleWSWitchApply(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSWitchApply: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, "Can only act during night phase")
 		return
 	}
-	witch, err := getPlayerInGame(game.ID, client.playerID)
+	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		logError("handleWSWitchApply: getPlayerInGame", err)
-		sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
 	if witch.RoleName != "Witch" {
-		sendErrorToast(client.playerID, "Only the Witch can apply actions")
+		h.sendErrorToast(client.playerID, "Only the Witch can apply actions")
 		return
 	}
 	if !witch.IsAlive {
-		sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, "Dead players cannot act")
 		return
 	}
 	// Idempotency guard
 	var appliedCount int
-	db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
 		return
 	}
 
 	// Commit pending heal selection if present
 	var healAction GameAction
-	if err := db.Get(&healAction, `
+	if err := h.db.Get(&healAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
@@ -1328,42 +1400,42 @@ func handleWSWitchApply(client *Client, msg WSMessage) {
 		targetID := *healAction.TargetPlayerID
 		// Final validation: heal potion not used globally
 		var healUsed int
-		db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
+		h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 			game.ID, client.playerID, ActionWitchHeal)
 		if healUsed > 0 {
-			sendErrorToast(client.playerID, "Your heal potion has already been used")
+			h.sendErrorToast(client.playerID, "Your heal potion has already been used")
 			return
 		}
 		// Cannot heal self
 		if targetID == client.playerID {
-			sendErrorToast(client.playerID, "You cannot heal yourself")
+			h.sendErrorToast(client.playerID, "You cannot heal yourself")
 			return
 		}
 		// Heal target must be a wolf victim (End Vote must have been pressed)
 		var endVoteCount int
-		db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+		h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
 			game.ID, game.Round, ActionWerewolfEndVote)
 		if endVoteCount == 0 {
-			sendErrorToast(client.playerID, "Werewolves have not locked in their vote yet")
+			h.sendErrorToast(client.playerID, "Werewolves have not locked in their vote yet")
 			return
 		}
 		var isVictim int
-		db.Get(&isVictim, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type IN (?,?) AND target_player_id=?`,
+		h.db.Get(&isVictim, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type IN (?,?) AND target_player_id=?`,
 			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, targetID)
 		if isVictim == 0 {
-			sendErrorToast(client.playerID, "You can only heal a werewolf target")
+			h.sendErrorToast(client.playerID, "You can only heal a werewolf target")
 			return
 		}
 		var targetName string
-		db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", targetID)
+		h.db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", targetID)
 		witchHealDesc := fmt.Sprintf("Night %d: You saved %s with your heal potion", game.Round, targetName)
-		_, err = db.Exec(`
+		_, err = h.db.Exec(`
 			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 			VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 			game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc)
 		if err != nil {
 			logError("handleWSWitchApply: commit heal", err)
-			sendErrorToast(client.playerID, "Failed to commit heal")
+			h.sendErrorToast(client.playerID, "Failed to commit heal")
 			return
 		}
 		log.Printf("Witch '%s' committed heal on player %d (%s)", witch.Name, targetID, targetName)
@@ -1371,7 +1443,7 @@ func handleWSWitchApply(client *Client, msg WSMessage) {
 
 	// Commit pending poison selection if present
 	var poisonAction GameAction
-	if err := db.Get(&poisonAction, `
+	if err := h.db.Get(&poisonAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
@@ -1380,25 +1452,25 @@ func handleWSWitchApply(client *Client, msg WSMessage) {
 		targetID := *poisonAction.TargetPlayerID
 		// Final validation: poison potion not used globally
 		var poisonUsed int
-		db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
+		h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 			game.ID, client.playerID, ActionWitchKill)
 		if poisonUsed > 0 {
-			sendErrorToast(client.playerID, "Your poison potion has already been used")
+			h.sendErrorToast(client.playerID, "Your poison potion has already been used")
 			return
 		}
-		target, err := getPlayerInGame(game.ID, targetID)
+		target, err := getPlayerInGame(h.db, game.ID, targetID)
 		if err != nil || !target.IsAlive {
-			sendErrorToast(client.playerID, "Poison target is no longer valid")
+			h.sendErrorToast(client.playerID, "Poison target is no longer valid")
 			return
 		}
 		witchKillDesc := fmt.Sprintf("Night %d: You poisoned %s", game.Round, target.Name)
-		_, err = db.Exec(`
+		_, err = h.db.Exec(`
 			INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
 			VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 			game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc)
 		if err != nil {
 			logError("handleWSWitchApply: commit poison", err)
-			sendErrorToast(client.playerID, "Failed to commit poison")
+			h.sendErrorToast(client.playerID, "Failed to commit poison")
 			return
 		}
 		log.Printf("Witch '%s' committed poison on player %d (%s)", witch.Name, targetID, target.Name)
@@ -1406,26 +1478,26 @@ func handleWSWitchApply(client *Client, msg WSMessage) {
 
 	// Record that the witch has finished her night turn
 	witchApplyDesc := fmt.Sprintf("Night %d: Witch %s confirmed her actions", game.Round, witch.Name)
-	_, err = db.Exec(`
+	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description)
 		VALUES (?, ?, 'night', ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionWitchApply, VisibilityActor, witchApplyDesc)
 	if err != nil {
 		logError("handleWSWitchApply: insert apply", err)
-		sendErrorToast(client.playerID, "Failed to record witch action")
+		h.sendErrorToast(client.playerID, "Failed to record witch action")
 		return
 	}
 
 	log.Printf("Witch '%s' applied actions for night %d", witch.Name, game.Round)
 	DebugLog("handleWSWitchApply", "Witch '%s' applied", witch.Name)
-	LogDBState("after witch apply")
+	LogDBState(h.db, "after witch apply")
 
-	resolveWerewolfVotes(game)
+	h.resolveWerewolfVotes(game)
 }
 
 // playerDoneWithNightAction returns true if the given player has completed their night role action
 // and the survey should be shown to them.
-func playerDoneWithNightAction(gameID int64, round int, player Player) bool {
+func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Player) bool {
 	switch player.RoleName {
 	case "Villager", "Mason", "Hunter":
 		return true // no night action
@@ -1491,27 +1563,28 @@ func playerDoneWithNightAction(gameID int64, round int, player Player) bool {
 // handleWSNightSurvey records a player's night survey answers.
 // Once all alive players have submitted, the game transitions to day.
 func handleWSNightSurvey(client *Client, msg WSMessage) {
-	game, err := getOrCreateCurrentGame()
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
 		logError("handleWSNightSurvey: getOrCreateCurrentGame", err)
-		sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "night" {
-		sendErrorToast(client.playerID, "Survey only available during night phase")
+		h.sendErrorToast(client.playerID, "Survey only available during night phase")
 		return
 	}
 
-	player, err := getPlayerInGame(game.ID, client.playerID)
+	player, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil || !player.IsAlive {
-		sendErrorToast(client.playerID, "You must be alive to submit the survey")
+		h.sendErrorToast(client.playerID, "You must be alive to submit the survey")
 		return
 	}
 
 	// Idempotent: ignore if already submitted
 	var existing int
-	db.Get(&existing, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
+	h.db.Get(&existing, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
 		game.ID, game.Round, ActionNightSurvey, client.playerID)
 	if existing > 0 {
 		return
@@ -1525,7 +1598,7 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 	var parts []string
 	if suspectID > 0 {
 		var suspectName string
-		db.Get(&suspectName, "SELECT name FROM player WHERE rowid=?", suspectID)
+		h.db.Get(&suspectName, "SELECT name FROM player WHERE rowid=?", suspectID)
 		if suspectName != "" {
 			parts = append(parts, "Suspects: "+suspectName)
 		}
@@ -1543,11 +1616,11 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 	}
 	// If all empty, description stays "" (counts as submitted, hidden from history)
 
-	_, err = db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?)`,
+	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionNightSurvey, VisibilityResolved, description)
 	if err != nil {
 		logError("handleWSNightSurvey: insert survey", err)
-		sendErrorToast(client.playerID, "Failed to record survey")
+		h.sendErrorToast(client.playerID, "Failed to record survey")
 		return
 	}
 
@@ -1555,9 +1628,9 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 
 	// Transition to day if all alive players have now submitted
 	var aliveCount int
-	db.Get(&aliveCount, `SELECT COUNT(*) FROM game_player WHERE game_id=? AND is_alive=1`, game.ID)
+	h.db.Get(&aliveCount, `SELECT COUNT(*) FROM game_player WHERE game_id=? AND is_alive=1`, game.ID)
 	var surveyCount int
-	db.Get(&surveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
+	h.db.Get(&surveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
 		game.ID, game.Round, ActionNightSurvey)
 
 	log.Printf("Night survey progress: %d/%d", surveyCount, aliveCount)
@@ -1569,47 +1642,47 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 			TargetPlayerID int64 `db:"target_player_id"`
 		}
 		var pendingKills []pendingKill
-		db.Select(&pendingKills, `SELECT rowid as id, target_player_id FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND description=''`,
+		h.db.Select(&pendingKills, `SELECT rowid as id, target_player_id FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND description=''`,
 			game.ID, game.Round, ActionNightKill)
 
 		var nightKills []int64
 		for _, pk := range pendingKills {
-			if _, err = db.Exec("UPDATE game_player SET is_alive=0 WHERE game_id=? AND player_id=?", game.ID, pk.TargetPlayerID); err != nil {
+			if _, err = h.db.Exec("UPDATE game_player SET is_alive=0 WHERE game_id=? AND player_id=?", game.ID, pk.TargetPlayerID); err != nil {
 				logError("handleWSNightSurvey: apply kill", err)
 				continue
 			}
 			var name, roleName string
-			db.Get(&name, "SELECT name FROM player WHERE rowid=?", pk.TargetPlayerID)
-			db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id=r.rowid WHERE gp.game_id=? AND gp.player_id=?`, game.ID, pk.TargetPlayerID)
+			h.db.Get(&name, "SELECT name FROM player WHERE rowid=?", pk.TargetPlayerID)
+			h.db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id=r.rowid WHERE gp.game_id=? AND gp.player_id=?`, game.ID, pk.TargetPlayerID)
 			desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
-			db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, desc, pk.ID)
+			h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, desc, pk.ID)
 			nightKills = append(nightKills, pk.TargetPlayerID)
 			log.Printf("Applied pending night kill: %s (%s)", name, roleName)
 		}
 
 		// Transition to day, then apply heartbreaks and check win conditions
-		if _, err = db.Exec("UPDATE game SET status='day' WHERE rowid=?", game.ID); err != nil {
+		if _, err = h.db.Exec("UPDATE game SET status='day' WHERE rowid=?", game.ID); err != nil {
 			logError("handleWSNightSurvey: transition to day", err)
 			return
 		}
-		applyHeartbreaks(game, "night", nightKills)
+		h.applyHeartbreaks(game, "night", nightKills)
 
 		log.Printf("Night %d ended (all surveys submitted), transitioning to day", game.Round)
-		LogDBState("after all surveys submitted and kills applied")
+		LogDBState(h.db, "after all surveys submitted and kills applied")
 
-		if checkWinConditions(game) {
+		if h.checkWinConditions(game) {
 			return
 		}
 		if len(nightKills) > 0 {
-			maybeGenerateStory(game.ID, game.Round, "night", nightKills[0])
+			h.maybeGenerateStory(game.ID, game.Round, "night", nightKills[0])
 		}
 	}
 
-	broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 // recordPublicDeath inserts a public history entry when a player dies at night.
-func recordPublicDeath(game *Game, playerID int64) {
+func recordPublicDeath(db *sqlx.DB, game *Game, playerID int64) {
 	var name string
 	db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
 	var roleName string
@@ -1625,10 +1698,10 @@ func recordPublicDeath(game *Game, playerID int64) {
 }
 
 // resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
-func resolveWerewolfVotes(game *Game) {
+func (h *Hub) resolveWerewolfVotes(game *Game) {
 	// Get all living werewolves
 	var werewolves []Player
-	err := db.Select(&werewolves, `
+	err := h.db.Select(&werewolves, `
 		SELECT g.rowid as id, g.player_id as player_id, p.name as name
 		FROM game_player g
 		JOIN player p ON g.player_id = p.rowid
@@ -1641,7 +1714,7 @@ func resolveWerewolfVotes(game *Game) {
 
 	// Get all werewolf votes for this night
 	var votes []GameAction
-	err = db.Select(&votes, `
+	err = h.db.Select(&votes, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
@@ -1656,17 +1729,17 @@ func resolveWerewolfVotes(game *Game) {
 	// Check if all werewolves have voted or passed
 	if len(votes) < len(werewolves) {
 		log.Printf("Not all werewolves have voted yet (%d/%d)", len(votes), len(werewolves))
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
 	// Check if End Vote has been pressed — don't resolve until one wolf locks it in
 	var endVoteCount int
-	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote)
 	if endVoteCount == 0 {
 		log.Printf("Werewolves have all voted but End Vote not pressed yet")
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
@@ -1701,7 +1774,7 @@ func resolveWerewolfVotes(game *Game) {
 	var victim2 int64
 	if game.Round > 1 {
 		var wolfCubDeathCount int
-		db.Get(&wolfCubDeathCount, `
+		h.db.Get(&wolfCubDeathCount, `
 			SELECT COUNT(*) FROM game_action ga
 			JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 			JOIN role r ON gp.role_id = r.rowid
@@ -1714,7 +1787,7 @@ func resolveWerewolfVotes(game *Game) {
 
 	if wolfCubDoubleKill {
 		var votes2 []GameAction
-		db.Select(&votes2, `
+		h.db.Select(&votes2, `
 			SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 			FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
@@ -1722,16 +1795,16 @@ func resolveWerewolfVotes(game *Game) {
 
 		if len(votes2) < len(werewolves) {
 			log.Printf("Wolf Cub double kill: waiting for second votes (%d/%d)", len(votes2), len(werewolves))
-			broadcastGameUpdate()
+			h.triggerBroadcast()
 			return
 		}
 
 		var endVote2Count int
-		db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
+		h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 			game.ID, game.Round, ActionWerewolfEndVote2)
 		if endVote2Count == 0 {
 			log.Printf("Wolf Cub double kill: End Vote 2 not pressed yet")
-			broadcastGameUpdate()
+			h.triggerBroadcast()
 			return
 		}
 
@@ -1757,16 +1830,16 @@ func resolveWerewolfVotes(game *Game) {
 	// Night 1: check Cupid has linked lovers before resolving
 	if game.Round == 1 {
 		var aliveCupidCount int
-		db.Get(&aliveCupidCount, `
+		h.db.Get(&aliveCupidCount, `
 			SELECT COUNT(*) FROM game_player g
 			JOIN role r ON g.role_id = r.rowid
 			WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Cupid'`, game.ID)
 		if aliveCupidCount > 0 {
 			var loverCount int
-			db.Get(&loverCount, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
+			h.db.Get(&loverCount, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 			if loverCount == 0 {
 				log.Printf("Waiting for Cupid to link lovers")
-				broadcastGameUpdate()
+				h.triggerBroadcast()
 				return
 			}
 		}
@@ -1774,78 +1847,78 @@ func resolveWerewolfVotes(game *Game) {
 
 	// Check if all alive Seers have investigated before resolving the night
 	var aliveSeerCount int
-	db.Get(&aliveSeerCount, `
+	h.db.Get(&aliveSeerCount, `
 		SELECT COUNT(*) FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Seer'`, game.ID)
 
 	var seerInvestigateCount int
-	db.Get(&seerInvestigateCount, `
+	h.db.Get(&seerInvestigateCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionSeerInvestigate)
 
 	if seerInvestigateCount < aliveSeerCount {
 		log.Printf("Waiting for seers to investigate (%d/%d)", seerInvestigateCount, aliveSeerCount)
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
 	// Check if all alive Doctors have protected before resolving the night
 	var aliveDoctorCount int
-	db.Get(&aliveDoctorCount, `
+	h.db.Get(&aliveDoctorCount, `
 		SELECT COUNT(*) FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Doctor'`, game.ID)
 
 	var doctorProtectCount int
-	db.Get(&doctorProtectCount, `
+	h.db.Get(&doctorProtectCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionDoctorProtect)
 
 	if doctorProtectCount < aliveDoctorCount {
 		log.Printf("Waiting for doctors to protect (%d/%d)", doctorProtectCount, aliveDoctorCount)
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
 	// Check if all alive Guards have protected before resolving the night
 	var aliveGuardCount int
-	db.Get(&aliveGuardCount, `
+	h.db.Get(&aliveGuardCount, `
 		SELECT COUNT(*) FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Guard'`, game.ID)
 
 	var guardProtectCount int
-	db.Get(&guardProtectCount, `
+	h.db.Get(&guardProtectCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionGuardProtect)
 
 	if guardProtectCount < aliveGuardCount {
 		log.Printf("Waiting for guards to protect (%d/%d)", guardProtectCount, aliveGuardCount)
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
 	// Check if all alive Witches have passed before resolving the night
 	var aliveWitchCount int
-	db.Get(&aliveWitchCount, `
+	h.db.Get(&aliveWitchCount, `
 		SELECT COUNT(*) FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Witch'`, game.ID)
 
 	if aliveWitchCount > 0 {
 		var witchApplyCount int
-		db.Get(&witchApplyCount, `
+		h.db.Get(&witchApplyCount, `
 			SELECT COUNT(*) FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 			game.ID, game.Round, ActionWitchApply)
 
 		if witchApplyCount < aliveWitchCount {
 			log.Printf("Waiting for witch to apply (%d/%d)", witchApplyCount, aliveWitchCount)
-			broadcastGameUpdate()
+			h.triggerBroadcast()
 			return
 		}
 	}
@@ -1856,56 +1929,56 @@ func resolveWerewolfVotes(game *Game) {
 		// Wolf Cub second kill (pending — applied when surveys complete)
 		if wolfCubDoubleKill && victim2 != 0 {
 			var protect2Count int
-			db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
+			h.db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
 				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
 			var victim2Name string
-			db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+			h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 			if protect2Count > 0 {
 				log.Printf("Protection saved %s from Wolf Cub double kill", victim2Name)
 			} else {
 				log.Printf("Wolf Cub double kill pending: %s", victim2Name)
-				db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+				h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
 			}
 		}
 		// Witch poison (pending — applied when surveys complete)
 		var witchKillActionNoVictim GameAction
-		if wkErr := db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
+		if wkErr := h.db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
 			var poisonName string
-			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
+			h.db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
 			log.Printf("Witch poison pending: %s", poisonName)
-			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 				game.ID, game.Round, *witchKillActionNoVictim.TargetPlayerID, ActionNightKill, *witchKillActionNoVictim.TargetPlayerID, VisibilityPublic)
 		}
 		log.Printf("Night %d: no wolf kill, waiting for surveys", game.Round)
-		broadcastGameUpdate()
+		h.triggerBroadcast()
 		return
 	}
 
 	// Check if the victim is protected by any Doctor
 	var protectionCount int
-	db.Get(&protectionCount, `
+	h.db.Get(&protectionCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
 		game.ID, game.Round, ActionDoctorProtect, victim)
 
 	// Check if the victim is protected by any Guard
 	var guardProtectionCount int
-	db.Get(&guardProtectionCount, `
+	h.db.Get(&guardProtectionCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
 		game.ID, game.Round, ActionGuardProtect, victim)
 
 	// Check if the victim is healed by the Witch (target-specific)
 	var witchHealCount int
-	db.Get(&witchHealCount, `
+	h.db.Get(&witchHealCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
 		game.ID, game.Round, ActionWitchHeal, victim)
 
 	if protectionCount > 0 || guardProtectionCount > 0 || witchHealCount > 0 {
 		var victimName string
-		db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
+		h.db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
 		if protectionCount > 0 {
 			log.Printf("Doctor saved %s (player ID %d) from werewolf attack", victimName, victim)
 		}
@@ -1919,72 +1992,73 @@ func resolveWerewolfVotes(game *Game) {
 		// Wolf Cub second kill may still land even if main victim is protected
 		if wolfCubDoubleKill && victim2 != 0 {
 			var protect2Count int
-			db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
+			h.db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
 				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
 			var victim2Name string
-			db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+			h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 			if protect2Count > 0 {
 				log.Printf("Protection saved %s from Wolf Cub double kill", victim2Name)
 			} else {
 				log.Printf("Wolf Cub double kill pending: %s", victim2Name)
-				db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+				h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
 			}
 		}
 		// Witch poison is separate from the main wolf kill
 		var witchKillActionP2 GameAction
-		if wkErr := db.Get(&witchKillActionP2, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionP2.TargetPlayerID != nil {
+		if wkErr := h.db.Get(&witchKillActionP2, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionP2.TargetPlayerID != nil {
 			var poisonName string
-			db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionP2.TargetPlayerID)
+			h.db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionP2.TargetPlayerID)
 			log.Printf("Witch poison pending: %s", poisonName)
-			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 				game.ID, game.Round, *witchKillActionP2.TargetPlayerID, ActionNightKill, *witchKillActionP2.TargetPlayerID, VisibilityPublic)
 		}
 
 		log.Printf("Night %d: main victim protected, waiting for surveys", game.Round)
-		LogDBState("after protection save")
-		broadcastGameUpdate()
+		LogDBState(h.db, "after protection save")
+		h.triggerBroadcast()
 		return
 	}
 
 	// Insert pending kill for main wolf victim (description='' hides from history until surveys complete)
 	var victimName string
-	db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
+	h.db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
 	log.Printf("Werewolf kill pending: %s (player ID %d)", victimName, victim)
 	DebugLog("resolveWerewolfVotes", "Werewolf kill pending: '%s', waiting for surveys", victimName)
-	db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+	h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 		game.ID, game.Round, victim, ActionNightKill, victim, VisibilityPublic)
 
 	// Witch poison (pending — applied when surveys complete)
 	var witchKillAction GameAction
-	if err := db.Get(&witchKillAction, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); err == nil && witchKillAction.TargetPlayerID != nil {
+	if err := h.db.Get(&witchKillAction, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); err == nil && witchKillAction.TargetPlayerID != nil {
 		var poisonVictimName string
-		db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
+		h.db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
 		log.Printf("Witch poison pending: %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
-		db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+		h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, *witchKillAction.TargetPlayerID, ActionNightKill, *witchKillAction.TargetPlayerID, VisibilityPublic)
 	}
 
 	// Wolf Cub second kill (pending — applied when surveys complete)
 	if wolfCubDoubleKill && victim2 != 0 && victim2 != victim {
 		var protect2Count int
-		db.Get(&protect2Count, `
+		h.db.Get(&protect2Count, `
 			SELECT COUNT(*) FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'night'
 			AND action_type IN (?, ?, ?) AND target_player_id = ?`,
 			game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
 		var victim2Name string
-		db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
+		h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 		if protect2Count > 0 {
 			log.Printf("Protection saved %s (player ID %d) from Wolf Cub double kill", victim2Name, victim2)
 		} else {
 			log.Printf("Wolf Cub double kill pending: %s (player ID %d)", victim2Name, victim2)
-			db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
 				game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
 		}
 	}
 
 	log.Printf("Night %d: kills pending, waiting for surveys", game.Round)
-	LogDBState("after pending night kills recorded")
-	broadcastGameUpdate()
+	LogDBState(h.db, "after pending night kills recorded")
+	h.triggerBroadcast()
+
 }

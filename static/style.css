@@ -27,7 +27,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ── Dark theme — Cold Moonlight Over a Midnight Forest ─────────────────── */
-[data-theme=dark] {
+:root[data-theme=dark] {
   color-scheme: dark;
 
   /* ─ Palette ─ */
@@ -70,13 +70,6 @@ h1, h2, h3, h4, h5, h6 {
   --c-lover-shadow:          rgba(220,  90, 150, 0.20);
   --c-lover-badge-bg:        rgba( 60,  10,  28, 0.90);
   --c-lover-heart:           #e878b4;
-
-  /* ─ Background image ─ */
-  background-image: linear-gradient(rgba(7, 8, 13, 0.82), rgba(7, 8, 13, 0.82)),
-                    url('/static/backgrounds/background_night.webp');
-  background-size: cover;
-  background-attachment: fixed;
-  background-position: center;
 
   /* ─ Pico overrides ─ */
   --pico-background-color:      var(--c-bg);
@@ -142,15 +135,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ── Light theme — Sunlit Medieval Village at High Noon ─────────────────── */
-[data-theme=light] {
+:root[data-theme=light] {
   color-scheme: light;
-
-  /* ─ Background image ─ */
-  background-image: linear-gradient(rgba(242, 234, 214, 0.80), rgba(242, 234, 214, 0.80)),
-                    url('/static/backgrounds/background_day.webp');
-  background-size: cover;
-  background-attachment: fixed;
-  background-position: center;
 
   /* ─ Palette ─ */
   --c-bg:           #f2ead6;   /* sunlit limestone */
@@ -272,11 +258,74 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--c-muted); }
 
-/* ── Background image visibility ───────────────────────────────────────── */
-/* Pico sets body{background: --pico-background-color} which would hide the  */
-/* html-level background image. Make body transparent so the image shows.    */
+/* ── Background layers + theme transitions ──────────────────────────────── */
+/* html canvas fallback — transitions smoothly between theme colors          */
+html {
+  background-color: var(--c-bg, #07080d);
+  transition: background-color 0.5s ease;
+}
+
+/* Night background layer — visible by default */
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: linear-gradient(rgba(7, 8, 13, 0.82), rgba(7, 8, 13, 0.82)),
+                    url('/static/backgrounds/background_night.webp');
+  background-size: cover;
+  background-position: center;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+
+/* Day background layer — hidden until light theme */
+html::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: linear-gradient(rgba(242, 234, 214, 0.80), rgba(242, 234, 214, 0.80)),
+                    url('/static/backgrounds/background_day.webp');
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+
+:root[data-theme=light]::before { opacity: 0; }
+:root[data-theme=light]::after  { opacity: 1; }
+
+/* Body must sit above the background layers (z-index: 0). Pico sets         */
+/* body{background-color} which we clear so the background layers show.      */
 body {
+  position: relative;
+  z-index: 1;
   background-color: transparent;
+}
+
+/* All elements get smooth color/surface transitions on theme change.        */
+/* Elements with explicit transition rules override this for their own props. */
+* {
+  transition:
+    color            0.4s ease,
+    background-color 0.4s ease,
+    border-color     0.4s ease,
+    box-shadow       0.4s ease;
+}
+/* Pico's button transition omits opacity, so disabled↔enabled flashes.
+   Re-declare with opacity added; same specificity, later in cascade = wins. */
+button,
+[type=submit],
+[type=button],
+[type=reset] {
+  transition:
+    background-color var(--pico-transition),
+    border-color     var(--pico-transition),
+    color            var(--pico-transition),
+    box-shadow       var(--pico-transition),
+    opacity          var(--pico-transition);
 }
 
 /* ── Seal utilities ────────────────────────────────────────────────────── */
@@ -322,6 +371,45 @@ body {
 }
 .topbar-phase-day { color: var(--c-flame); }
 
+
+/* ── Game-content enter/exit animation ─────────────────────────────────── */
+/* Similar to pc-enter: fade-up from slightly below. JS controls the exit.   */
+@keyframes gc-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { transform: translateY(0); }
+}
+@keyframes gc-exit {
+  to { opacity: 0; transform: translateY(-10px); }
+}
+
+/* Any newly inserted element anywhere inside game-content gets a quick
+   fade-up (e.g. vote list appearing, survey section, story text).
+   Existing morphed elements already ran this animation and stay put. */
+#game-content * {
+  animation: gc-enter 0.25s ease backwards;
+}
+
+/* Direct children (the <section>) get the longer staggered animation on
+   phase transitions. Comes after * so it wins for direct children. */
+#game-content > * {
+  animation: gc-enter 0.38s ease backwards;
+}
+#game-content > *:nth-child(1)  { animation-delay: 0.04s; }
+#game-content > *:nth-child(2)  { animation-delay: 0.10s; }
+#game-content > *:nth-child(3)  { animation-delay: 0.16s; }
+#game-content > *:nth-child(4)  { animation-delay: 0.22s; }
+#game-content > *:nth-child(5)  { animation-delay: 0.28s; }
+#game-content > *:nth-child(6)  { animation-delay: 0.34s; }
+#game-content > *:nth-child(7)  { animation-delay: 0.40s; }
+#game-content > *:nth-child(8)  { animation-delay: 0.46s; }
+
+/* JS sets inline opacity/transform to 0 before the swap, then removes them
+   so this transition fires and smoothly reveals the new content. */
+#game-content {
+  transition: opacity 0.35s ease, transform 0.35s ease,
+              color 0.4s ease, background-color 0.4s ease,
+              border-color 0.4s ease, box-shadow 0.4s ease;
+}
 
 /* ── Phase action layout (shared by night and day) ───────────────────────── */
 /* Two-column: role card left (auto), action panel right (1fr) */
@@ -432,17 +520,9 @@ body {
 .cupid-button,
 .witch-heal-button,
 .witch-kill-button {
-  width: 100%;
-  padding: 0.55rem 0.4rem;
   background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: 0.4rem;
+  border-color: var(--c-border);
   color: var(--c-amber);
-  font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
-  font-size: 0.9em;
-  cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
-  margin: 0;
 }
 .vote-button:hover,
 .seer-button:hover,
@@ -471,7 +551,7 @@ body {
   font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
   font-size: 0.9em;
   cursor: pointer;
-  transition: border-color 0.1s, color 0.1s;
+  transition: border-color 0.1s ease, color 0.1s ease, background-color 0.4s ease, box-shadow 0.4s ease;
   margin: 0;
 }
 .witch-pass-button:hover { border-color: var(--c-amber); color: var(--c-amber); }

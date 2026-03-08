@@ -599,7 +599,6 @@ func newTestContext(t *testing.T) *TestContext {
 	if dbErr != nil {
 		t.Fatalf("Failed to connect to test database: %v", dbErr)
 	}
-
 	// Give the logger a db reference so ctx.logger.LogDB("...") works without passing db
 	logger.db = testDB
 
@@ -727,6 +726,7 @@ func newTestBrowserWithLogger(t *testing.T, logger *TestLogger) (*TestBrowser, f
 	tb := &TestBrowser{browser: sharedBrowser, t: t, logger: logger}
 	cleanup := func() {
 		tb.contextMu.Lock()
+
 		defer tb.contextMu.Unlock()
 		for _, ctx := range tb.contexts {
 			ctx.Close() // close incognito context + all its pages
@@ -797,6 +797,16 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 	// Wait for sidebar content — confirms page loaded + HTMX sidebar request completed
 	// #secret-code-display is always present in the sidebar regardless of game state
 	p.MustElement("#secret-code-display")
+
+	// Wait until this player appears in the player list. The player list is updated via
+	// WebSocket OOB swap from broadcastGameUpdate (triggered by addPlayerToLobby after
+	// hub processes the WS registration). This ensures hub has registered the connection
+	// before signupPlayer returns — preventing startGame from running before all players
+	// are in game_player.
+	player.waitUntilCondition(`() => {
+		const cards = document.querySelectorAll('#player-list player-card');
+		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+name+`');
+	}`, "player "+name+" appears in lobby list")
 
 	player.logHTML("after signup")
 
@@ -1186,6 +1196,12 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 
 	// Wait for sidebar to load — confirms page loaded + HTMX sidebar request completed
 	p.MustElement("#secret-code-display")
+
+	// Wait until this player appears in the player list (WS registration confirmed).
+	player.waitUntilCondition(`() => {
+		const cards = document.querySelectorAll('#player-list player-card');
+		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+name+`');
+	}`, "player "+name+" appears in lobby list after login")
 
 	player.logHTML("after login")
 

@@ -205,7 +205,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 					mu.Unlock()
 					if text != "" {
 						h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, strings.TrimSpace(text), storyRowID)
-						h.broadcastGameUpdate()
+						h.triggerBroadcast()
 					}
 				case <-done:
 					return
@@ -242,7 +242,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 
 		h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
 		log.Printf("Storyteller: completed story for game %d round %d %s", gameID, round, phase)
-		h.broadcastGameUpdate()
+		h.triggerBroadcast()
 		h.maybeSpeakStory(gameID, finalText)
 	}()
 }

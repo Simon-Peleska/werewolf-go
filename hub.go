@@ -57,14 +57,15 @@ func (c *Client) writer() {
 
 // WebSocket hub for broadcasting updates to all connected clients
 type Hub struct {
-	clients    map[*websocket.Conn]*Client
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *websocket.Conn
-	mu         sync.RWMutex
-	done       chan struct{}
-	wg         sync.WaitGroup
-	clientWg   sync.WaitGroup // tracks active WebSocket reader goroutines
+	clients        map[*websocket.Conn]*Client
+	broadcast      chan []byte
+	register       chan *Client
+	unregister     chan *websocket.Conn
+	broadcastReqCh chan struct{} // coalescing signal for broadcastGameUpdate
+	mu             sync.RWMutex
+	done           chan struct{}
+	wg             sync.WaitGroup
+	clientWg       sync.WaitGroup // tracks active WebSocket reader goroutines
 
 	db          *sqlx.DB
 	templates   *template.Template
@@ -74,35 +75,56 @@ type Hub struct {
 
 func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator) *Hub {
 	return &Hub{
-		clients:     make(map[*websocket.Conn]*Client),
-		broadcast:   make(chan []byte),
-		register:    make(chan *Client),
-		unregister:  make(chan *websocket.Conn, 64),
-		done:        make(chan struct{}),
-		db:          db,
-		templates:   templates,
-		storyteller: storyteller,
-		narrator:    narrator,
+		clients:        make(map[*websocket.Conn]*Client),
+		broadcast:      make(chan []byte),
+		register:       make(chan *Client),
+		unregister:     make(chan *websocket.Conn, 64),
+		broadcastReqCh: make(chan struct{}, 1),
+		done:           make(chan struct{}),
+		db:             db,
+		templates:      templates,
+		storyteller:    storyteller,
+		narrator:       narrator,
+	}
+}
+
+// triggerBroadcast signals the broadcast worker to call broadcastGameUpdate.
+// Multiple rapid calls coalesce into a single broadcast.
+func (h *Hub) triggerBroadcast() {
+	select {
+	case h.broadcastReqCh <- struct{}{}:
+	default: // already pending; worker will pick it up
 	}
 }
 
 // stop signals the hub goroutine to exit and waits for it and all
-// WebSocket reader goroutines to finish. This ensures no goroutines
-// from this hub are still accessing shared globals when stop returns.
+// WebSocket goroutines to finish. Channels are closed here (after all
+// senders have stopped) to avoid "send on closed channel" panics.
 func (h *Hub) stop() {
 	close(h.done)
-	h.wg.Wait()
+	h.wg.Wait() // waits for run() + broadcast worker; no senders alive after this
+
+	// Close send channels for any remaining clients so writer goroutines exit.
+	h.mu.Lock()
+	for _, client := range h.clients {
+		close(client.send)
+		client.conn.Close()
+	}
+	h.mu.Unlock()
+
 	h.clientWg.Wait()
 }
 
 func (h *Hub) sendToPlayer(playerID int64, message []byte) {
+	// Fetch player name for logging before acquiring the lock.
+	var playerName string
+	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	LogWSMessage("OUT", playerName, string(message))
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, client := range h.clients {
 		if client.playerID == playerID {
-			var playerName string
-			h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
-			LogWSMessage("OUT", playerName, string(message))
 			select {
 			case client.send <- hubMsg{data: message}:
 			default:
@@ -126,17 +148,27 @@ func (h *Hub) broadcastAudio(data []byte) {
 }
 
 func (h *Hub) run() {
+	// run() goroutine
 	h.wg.Add(1)
-	defer func() {
-		// Close send channels for any remaining connected clients so writer goroutines exit.
-		h.mu.Lock()
-		for _, client := range h.clients {
-			close(client.send)
-			client.conn.Close()
+	defer h.wg.Done()
+
+	// Broadcast worker: drains broadcastReqCh and calls broadcastGameUpdate.
+	// Runs concurrently with run() so the hub goroutine is never blocked by
+	// the heavy DB + template work inside broadcastGameUpdate.
+	// Tracked by h.wg so stop() waits for it before closing client channels.
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		for {
+			select {
+			case <-h.broadcastReqCh:
+				h.broadcastGameUpdate()
+			case <-h.done:
+				return
+			}
 		}
-		h.mu.Unlock()
-		h.wg.Done()
 	}()
+
 	for {
 		select {
 		case <-h.done:
@@ -176,18 +208,21 @@ func (h *Hub) run() {
 				}
 
 				if !hasOtherConn {
+					log.Printf("Player '%s' (ID: %d) has no more connections, removing from lobby", playerName, playerID)
 					DebugLog("hub.unregister", "Player '%s' (ID: %d) has no more connections, removing from lobby", playerName, playerID)
 					removePlayerID = playerID
 				} else {
+					log.Printf("Player '%s' (ID: %d)  still has other connections", playerName, playerID)
 					DebugLog("hub.unregister", "Player '%s' (ID: %d) still has other connections", playerName, playerID)
 				}
 			}
 			h.mu.Unlock()
 			log.Printf("WebSocket client disconnected. Total: %d", len(h.clients))
-			// Call removePlayerFromLobby after releasing mutex — it calls broadcastGameUpdate
-			// which calls sendToPlayer which needs the read lock
+			// Call removePlayerFromLobby after releasing mutex — it calls triggerBroadcast
+			// which needs no lock, but the pattern is consistent with before.
 			if removePlayerID != 0 {
 				h.removePlayerFromLobby(removePlayerID)
+				log.Printf("Removed Player: %d", removePlayerID)
 			}
 
 		case message := <-h.broadcast:
@@ -236,16 +271,17 @@ func (h *Hub) broadcastGameUpdate() {
 	DebugLog("broadcastGameUpdate", "Broadcasting to %d players in game %d (status: %s)", len(players), game.ID, game.Status)
 
 	for _, p := range players {
-		// Send game component
+		// Build all three template outputs and combine into a single WebSocket message.
+		// HTMX processes all hx-swap-oob elements found in one message atomically,
+		// which means clients receive a consistent update in one htmx:wsAfterMessage event.
+		var combined bytes.Buffer
+
 		buf, err := getGameComponent(h.db, h.templates, p.PlayerID, game)
 		if err != nil {
 			logError("broadcastGameUpdate: getGameComponent", err)
 			continue
 		}
-		h.sendToPlayer(p.PlayerID, buf.Bytes())
-
-		// Send character info
-		var charBuf bytes.Buffer
+		combined.Write(buf.Bytes())
 
 		data := SidebarData{
 			Player:              &p,
@@ -254,16 +290,16 @@ func (h *Hub) broadcastGameUpdate() {
 			LoverPartnerID:      getLoverPartner(h.db, game.ID, p.PlayerID),
 			SeerFoundWerewolves: getSeerFoundWerewolves(h.db, game.ID, p.PlayerID),
 		}
-
-		h.templates.ExecuteTemplate(&charBuf, "sidebar.html", data)
-		h.sendToPlayer(p.PlayerID, charBuf.Bytes())
+		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 
 		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game)
 		if err != nil {
 			logError("broadcastGameHistory: getGameHistory", err)
 			continue
 		}
-		h.sendToPlayer(p.PlayerID, historyBuf.Bytes())
+		combined.Write(historyBuf.Bytes())
+
+		h.sendToPlayer(p.PlayerID, combined.Bytes())
 	}
 }
 
@@ -299,7 +335,9 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 		log.Printf("Player %d (%s) added to lobby (connected)", playerID, playerName)
 		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) joined game %d lobby", playerName, playerID, game.ID)
 		h.logDBState("after player join: " + playerName)
-		h.broadcastGameUpdate()
+		h.triggerBroadcast()
+
+		log.Printf("Player %d (%s) added to lobby (triggered broadcast )", playerID, playerName)
 	} else {
 		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) already in game %d", playerName, playerID, game.ID)
 	}
@@ -330,7 +368,7 @@ func (h *Hub) removePlayerFromLobby(playerID int64) {
 	log.Printf("Player %d (%s) removed from lobby (disconnected)", playerID, playerName)
 	DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) left game %d lobby", playerName, playerID, game.ID)
 	h.logDBState("after player leave: " + playerName)
-	h.broadcastGameUpdate()
+	h.triggerBroadcast()
 }
 
 // getOrCreateCurrentGame returns the current waiting game, or creates one if none exists

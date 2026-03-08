@@ -464,6 +464,52 @@ func TestWerewolfCanChangeVote(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func TestWerewolfCanUnselectVote(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing werewolf can unselect vote ===")
+
+	// 1 villager, 2 werewolves so first vote doesn't auto-resolve
+	players := setupNightPhaseGame(ctx, browser, 1, 2)
+	werewolves, villagers := findPlayersByRole(players)
+
+	if len(werewolves) < 2 || len(villagers) == 0 {
+		t.Fatal("Failed to find enough players")
+	}
+
+	targetName := villagers[0].Name
+	ctx.logger.Debug("Werewolves: %s, %s. Target: %s", werewolves[0].Name, werewolves[1].Name, targetName)
+
+	// Vote for the villager
+	werewolves[0].voteForPlayer(targetName)
+
+	if got := werewolves[0].getCurrentVoteTarget(); got != targetName {
+		ctx.logger.LogDB("FAIL: vote not recorded")
+		t.Fatalf("Expected vote for %s, got %q", targetName, got)
+	}
+	if got := werewolves[0].getWerewolfVoteCount(targetName); got != "1" {
+		t.Errorf("Expected count 1 after voting, got %s", got)
+	}
+
+	// Click same card again to unselect
+	werewolves[0].voteForPlayer(targetName)
+
+	if got := werewolves[0].getCurrentVoteTarget(); got != "" {
+		ctx.logger.LogDB("FAIL: vote not cleared after unselect")
+		t.Errorf("Expected no vote after unselect, got %q", got)
+	}
+	if got := werewolves[0].getWerewolfVoteCount(targetName); got != "0" {
+		ctx.logger.LogDB("FAIL: vote count not decremented after unselect")
+		t.Errorf("Expected count 0 after unselect, got %s", got)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 func TestDayTransitionOnMajorityVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
@@ -1624,6 +1670,22 @@ func (tp *TestPlayer) isCupidLinkButtonEnabled() bool {
 	return disabled == nil
 }
 
+// getCupidSelectedNames returns the names of players currently shown as selected in the Cupid UI.
+func (tp *TestPlayer) getCupidSelectedNames() []string {
+	result, err := tp.p().Eval(`() => {
+		const cards = document.querySelectorAll("[id^='cupid-form-'] player-card[selected]");
+		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
+	}`)
+	if err != nil {
+		return nil
+	}
+	raw := result.Value.String()
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, "\n")
+}
+
 // ============================================================================
 // Cupid Tests
 // ============================================================================
@@ -1742,6 +1804,112 @@ func TestCupidLinksLovers(t *testing.T) {
 		if w.historyContains(lover1Entry) || w.historyContains(lover2Entry) {
 			t.Errorf("Werewolf (%s) should not see lover notifications in history", w.Name)
 		}
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestCupidCanUnselectFirstLover(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing cupid can unselect first lover independently ===")
+
+	var players []*TestPlayer
+	for _, name := range []string{"CU1", "CU2", "CU3", "CU4", "CU5"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		players = append(players, p)
+	}
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	_, villagers, cupids := findPlayersByRoleWithCupid(players)
+	if len(cupids) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+	cupid := cupids[0]
+	lover1, lover2 := villagers[0].Name, villagers[1].Name
+
+	// Select both lovers
+	cupid.cupidPickLover(lover1)
+	cupid.cupidPickLover(lover2)
+
+	selected := cupid.getCupidSelectedNames()
+	if len(selected) != 2 {
+		ctx.logger.LogDB("FAIL: expected 2 selected after picking both")
+		t.Fatalf("Expected 2 selected, got %v", selected)
+	}
+
+	// Unselect the first lover — second should remain
+	cupid.cupidPickLover(lover1)
+
+	selected = cupid.getCupidSelectedNames()
+	if len(selected) != 1 || selected[0] != lover2 {
+		ctx.logger.LogDB("FAIL: expected only second lover selected after unselecting first")
+		t.Errorf("Expected [%s] selected, got %v", lover2, selected)
+	}
+	if cupid.isCupidLinkButtonEnabled() {
+		t.Error("Link button should be disabled with only one lover selected")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestCupidCanUnselectSecondLover(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing cupid can unselect second lover independently ===")
+
+	var players []*TestPlayer
+	for _, name := range []string{"CU1", "CU2", "CU3", "CU4", "CU5"} {
+		p := browser.signupPlayer(ctx.baseURL, name)
+		players = append(players, p)
+	}
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	_, villagers, cupids := findPlayersByRoleWithCupid(players)
+	if len(cupids) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+	cupid := cupids[0]
+	lover1, lover2 := villagers[0].Name, villagers[1].Name
+
+	// Select both lovers
+	cupid.cupidPickLover(lover1)
+	cupid.cupidPickLover(lover2)
+
+	selected := cupid.getCupidSelectedNames()
+	if len(selected) != 2 {
+		ctx.logger.LogDB("FAIL: expected 2 selected after picking both")
+		t.Fatalf("Expected 2 selected, got %v", selected)
+	}
+
+	// Unselect the second lover — first should remain
+	cupid.cupidPickLover(lover2)
+
+	selected = cupid.getCupidSelectedNames()
+	if len(selected) != 1 || selected[0] != lover1 {
+		ctx.logger.LogDB("FAIL: expected only first lover selected after unselecting second")
+		t.Errorf("Expected [%s] selected, got %v", lover1, selected)
+	}
+	if cupid.isCupidLinkButtonEnabled() {
+		t.Error("Link button should be disabled with only one lover selected")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -1893,8 +2061,8 @@ func TestAIStoryteller(t *testing.T) {
 
 	// Enable mock storyteller for this test; restore nil afterwards
 	storyText := "The village wept in silence."
-	globalStoryteller = &mockStoryteller{text: storyText}
-	defer func() { globalStoryteller = nil }()
+	ctx.app.hub.storyteller = &mockStoryteller{text: storyText}
+	defer func() { ctx.app.hub.storyteller = nil }()
 
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()

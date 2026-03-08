@@ -42,6 +42,19 @@ func (tp *TestPlayer) getDayVoteButtons() []string {
 	return names
 }
 
+// getCurrentDayVoteTarget returns the player name currently selected in the day vote UI
+func (tp *TestPlayer) getCurrentDayVoteTarget() string {
+	found, el, err := tp.p().Has("[id^='day-vote-form-'] player-card[selected]")
+	if err != nil || !found {
+		return ""
+	}
+	name, err := el.Attribute("player-name")
+	if err != nil || name == nil {
+		return ""
+	}
+	return *name
+}
+
 // getDayVoteCount returns the vote count shown on a day vote card for a given player
 func (tp *TestPlayer) getDayVoteCount(targetName string) string {
 	result, err := tp.p().Eval(`() => {
@@ -217,6 +230,47 @@ func TestDayVoteCountsShownOnCards(t *testing.T) {
 	if got := werewolves[0].getDayVoteCount(targetName); got != "2" {
 		ctx.logger.LogDB("FAIL: wrong count on target's own page")
 		t.Errorf("Werewolf page: expected count 2 after two votes against them, got %s", got)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+func TestDayVoteCanUnselect(t *testing.T) {
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	ctx.logger.Debug("=== Testing day vote can unselect ===")
+
+	// 3 villagers, 1 werewolf — werewolf kills villager[0], leaving 3 alive
+	_, werewolves, villagers := setupDayPhaseGame(ctx, browser, 3, 1)
+
+	targetName := werewolves[0].Name
+	ctx.logger.Debug("Voter: %s, Target: %s", villagers[1].Name, targetName)
+
+	// Vote for werewolf
+	villagers[1].dayVoteForPlayer(targetName)
+
+	if got := villagers[1].getCurrentDayVoteTarget(); got != targetName {
+		ctx.logger.LogDB("FAIL: vote not recorded")
+		t.Fatalf("Expected vote for %s, got %q", targetName, got)
+	}
+	if got := villagers[1].getDayVoteCount(targetName); got != "1" {
+		t.Errorf("Expected count 1 after voting, got %s", got)
+	}
+
+	// Click same card again to unselect
+	villagers[1].dayVoteForPlayer(targetName)
+
+	if got := villagers[1].getCurrentDayVoteTarget(); got != "" {
+		ctx.logger.LogDB("FAIL: vote not cleared after unselect")
+		t.Errorf("Expected no vote after unselect, got %q", got)
+	}
+	if got := villagers[1].getDayVoteCount(targetName); got != "0" {
+		ctx.logger.LogDB("FAIL: vote count not decremented after unselect")
+		t.Errorf("Expected count 0 after unselect, got %s", got)
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -538,10 +592,8 @@ func (tp *TestPlayer) seerInvestigatePlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Seer selecting target: %s", tp.Name, targetName)
 	}
-	// Select the player (toggles; no WS response expected, just a broadcastGameUpdate)
-	tp.doWithWSWait(func() {
-		tp.p().MustElement("[id^='seer-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
-	})
+	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
+	tp.clickAndWait("[id^='seer-select-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after seer select of " + targetName)
 	// Click Investigate button to commit
 	tp.clickAndWait("#seer-investigate-button")
@@ -952,10 +1004,8 @@ func (tp *TestPlayer) doctorProtectPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Doctor selecting target: %s", tp.Name, targetName)
 	}
-	// Select the player (triggers broadcastGameUpdate)
-	tp.doWithWSWait(func() {
-		tp.p().MustElement("[id^='doctor-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
-	})
+	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
+	tp.clickAndWait("[id^='doctor-select-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after doctor select of " + targetName)
 	// Click Protect button to commit
 	tp.clickAndWait("#doctor-protect-button")
@@ -1377,10 +1427,8 @@ func (tp *TestPlayer) guardProtectPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Guard selecting target: %s", tp.Name, targetName)
 	}
-	// Select the player (triggers broadcastGameUpdate)
-	tp.doWithWSWait(func() {
-		tp.p().MustElement("[id^='guard-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
-	})
+	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
+	tp.clickAndWait("[id^='guard-select-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after guard select of " + targetName)
 	// Click Protect button to commit
 	tp.clickAndWait("#guard-protect-button")
@@ -1891,10 +1939,8 @@ func (tp *TestPlayer) hunterShootPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Hunter selecting target: %s", tp.Name, targetName)
 	}
-	// Select the player (triggers broadcastGameUpdate)
-	tp.doWithWSWait(func() {
-		tp.p().MustElement("[id^='hunter-select-form-'] player-card[player-name='" + targetName + "']").MustClick()
-	})
+	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
+	tp.clickAndWait("[id^='hunter-select-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after hunter select of " + targetName)
 	// Click Shoot button to commit
 	tp.clickAndWait("#hunter-shoot-button")

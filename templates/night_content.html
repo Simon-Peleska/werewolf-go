@@ -1,7 +1,7 @@
 <div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label" id="topbar-phase-label">Night {{.NightNumber}}</span></div>
 <div id="page-theme" data-theme="dark" hx-swap-oob="morph" hidden></div>
 
-<div class="game-content" id="game-content" hx-swap-oob="morph">
+<div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="{{if and .ShowSurvey .HasSubmittedSurvey}}night-wait{{else if .ShowSurvey}}night-survey{{else}}night-action{{end}}-{{.NightNumber}}">
     <section>
 
         {{if and .ShowSurvey .HasSubmittedSurvey}}
@@ -46,21 +46,17 @@
                     <input type="hidden" name="action" value="werewolf_pass">
                     <button type="submit" id="werewolf-pass-btn" class="vote-button">Pass</button>
                 </form>
-                {{if .AllWolvesActed}}
                 <form ws-send id="werewolf-end-vote-form">
                     <input type="hidden" name="action" value="werewolf_end_vote">
-                    <button type="submit" id="werewolf-end-vote-btn" class="contrast">End Vote</button>
+                    <button type="submit" id="werewolf-end-vote-btn" {{if not .AllWolvesActed}}disabled{{end}}>End Vote</button>
                 </form>
-                {{else}}
-                <p id="wolf-end-vote-waiting"><small><em>Waiting for all werewolves to vote or pass...</em></small></p>
-                {{end}}
                 {{end}}
 
                 {{if .Votes}}
-                <h4>Current Votes</h4>
-                <ul class="vote-list">
+                <h4 id="wolf-vote-title">Current Votes</h4>
+                <ul id="wolf-vote-list" class="vote-list">
                     {{range .Votes}}
-                    <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+                    <li id="wolf-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
                     {{end}}
                 </ul>
                 {{end}}
@@ -96,14 +92,10 @@
                         <input type="hidden" name="action" value="werewolf_pass_2">
                         <button type="submit" id="werewolf-pass2-btn" class="vote-button">Pass</button>
                     </form>
-                    {{if .AllWolvesActed2}}
                     <form ws-send id="werewolf-end-vote2-form">
                         <input type="hidden" name="action" value="werewolf_end_vote_2">
-                        <button type="submit" id="werewolf-end-vote2-btn" class="contrast">End Second Vote</button>
+                        <button type="submit" id="werewolf-end-vote2-btn" {{if not .AllWolvesActed2}}disabled{{end}}>End Second Vote</button>
                     </form>
-                    {{else}}
-                    <p id="wolf-end-vote2-waiting"><small><em>Waiting for all werewolves to vote or pass for the second kill...</em></small></p>
-                    {{end}}
                     {{end}}
                 </div>
                 {{end}}
@@ -315,11 +307,13 @@
                 <h3>Cupid: Link Two Lovers</h3>
                 {{if .CupidLinked}}
                 <p id="cupid-result"><em>You have linked <strong>{{.CupidChosen1}}</strong> and <strong>{{.CupidChosen2}}</strong> as lovers.</em></p>
-                {{else if .CupidChosen1}}
-                {{if .CupidChosen2}}
-                <p><small>Chosen lovers: <strong>{{.CupidChosen1}}</strong> and <strong>{{.CupidChosen2}}</strong>. Pick another player to replace the second lover.</small></p>
                 {{else}}
-                <p><small>First lover chosen: <strong>{{.CupidChosen1}}</strong>. Now choose the second.</small></p>
+                {{if and .CupidChosen1 .CupidChosen2}}
+                <p><small>Chosen: <strong>{{.CupidChosen1}}</strong> and <strong>{{.CupidChosen2}}</strong>. Click a card to deselect.</small></p>
+                {{else if or .CupidChosen1 .CupidChosen2}}
+                <p><small>One chosen. Select the second lover.</small></p>
+                {{else}}
+                <p><small>Choose two players to become lovers. They will know each other's identities.</small></p>
                 {{end}}
                 <card-list>
                 {{range .AliveTargets}}
@@ -339,28 +333,7 @@
                 </card-list>
                 <form ws-send id="cupid-link-form" class="vote-form">
                     <input type="hidden" name="action" value="cupid_link">
-                    <button type="submit" id="cupid-link-button" {{if not .CupidChosen2}}disabled{{end}}>💞 Link lovers</button>
-                </form>
-                {{else}}
-                <p><small>Choose two players to become lovers. They will know each other's identities.</small></p>
-                <card-list>
-                {{range .AliveTargets}}
-                <form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
-                    <input type="hidden" name="action" value="cupid_choose">
-                    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                    <player-card
-                        player-name="{{.Name}}"
-                        role-name="Unknown"
-                        team="unknown"
-                        alive="true"
-                        selectable
-                    ></player-card>
-                </form>
-                {{end}}
-                </card-list>
-                <form ws-send id="cupid-link-form" class="vote-form">
-                    <input type="hidden" name="action" value="cupid_link">
-                    <button type="submit" id="cupid-link-button" disabled>💞 Link lovers</button>
+                    <button type="submit" id="cupid-link-button" {{if not (and .CupidChosen1 .CupidChosen2)}}disabled{{end}}>💞 Link lovers</button>
                 </form>
                 {{end}}
 

@@ -353,6 +353,63 @@
       if (t) document.documentElement.dataset.theme = t;
     }).observe(document.getElementById('page-theme'), { attributes: true, attributeFilter: ['data-theme'] });
 
+    // Game-content transition animation.
+    //
+    // #game-content carries a data-phase attribute set by the server
+    // (e.g. "night-action-1", "night-survey-1", "day-vote-2").
+    //
+    //  phase changed → hide container → swap → force-restart enter animation
+    //  phase same    → no hiding; MutationObserver plays gc-exit on removed
+    //                  nodes; CSS gc-enter plays on newly added nodes
+    document.addEventListener('htmx:wsBeforeMessage', function(e) {
+      if (typeof e.detail.message !== 'string') return;
+      var incoming = new DOMParser()
+        .parseFromString(e.detail.message, 'text/html')
+        .getElementById('game-content');
+      if (!incoming) return;
+      var gc = document.getElementById('game-content');
+      if (!gc || incoming.dataset.phase === gc.dataset.phase) return;
+      gc._phaseChanging   = true;
+      gc.style.transition = 'none';
+      gc.style.opacity    = '0';
+      gc.style.transform  = 'translateY(6px)';
+    });
+    document.addEventListener('htmx:wsAfterMessage', function() {
+      var gc = document.getElementById('game-content');
+      if (!gc || !gc._phaseChanging) return;
+      // Defer clear so the MutationObserver microtask still sees the flag.
+      setTimeout(function() { delete gc._phaseChanging; }, 0);
+      var children = Array.from(gc.children);
+      children.forEach(function(c) { c.style.animation = 'none'; });
+      void gc.offsetHeight;
+      children.forEach(function(c) { c.style.animation = ''; });
+      requestAnimationFrame(function() {
+        gc.style.transition = '';
+        gc.style.opacity    = '';
+        gc.style.transform  = '';
+      });
+    });
+
+    // Exit animation: when idiomorph removes an element, re-append it to its
+    // parent and play gc-exit. Skip if the parent itself was removed (children
+    // of detached nodes would be invisible anyway).
+    var _exiting = new WeakSet();
+    new MutationObserver(function(mutations) {
+      var gc = document.getElementById('game-content');
+      if (!gc || gc._phaseChanging) return;
+      mutations.forEach(function(mut) {
+        if (!document.contains(mut.target)) return;
+        mut.removedNodes.forEach(function(node) {
+          if (node.nodeType !== 1 || _exiting.has(node)) return;
+          _exiting.add(node);
+          node.style.animation     = 'gc-exit 0.18s ease forwards';
+          node.style.pointerEvents = 'none';
+          mut.target.appendChild(node);
+          setTimeout(function() { node.remove(); }, 200);
+        });
+      });
+    }).observe(document.getElementById('game-content'), { childList: true, subtree: true });
+
     // Auto-dismiss toasts after 10 seconds unless hovered
     function initToast(toast) {
       let timeout;

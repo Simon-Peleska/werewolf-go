@@ -433,9 +433,13 @@
       const colActive =  this._collapsed ? 'pc-active' : 'pc-inactive';
       const toggleCall = `this.getRootNode().host._toggle()`;
 
+      // When selectable, clicking the collapsed row submits the parent form (vote).
+      // Only the ▼ button should expand it — so omit the onclick on the row itself.
+      const colClick = this.hasAttribute('selectable') ? '' : ` onclick="${toggleCall}"`;
+
       let h = `<div class="pc-card${this._collapsed ? ' pc-collapsed' : ''}">`;
       h += `<div class="pc-layer pc-exp ${expActive}">${this._buildLayerContent(false)}</div>`;
-      h += `<div class="pc-layer pc-col ${colActive}" onclick="${toggleCall}">${this._buildLayerContent(true)}</div>`;
+      h += `<div class="pc-layer pc-col ${colActive}"${colClick}>${this._buildLayerContent(true)}</div>`;
       h += `</div>`;
 
       const tmp = document.createElement('div');

@@ -1,7 +1,7 @@
 <div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label topbar-phase-day" id="topbar-phase-label">Day {{.NightNumber}}</span></div>
 <div id="page-theme" data-theme="light" hx-swap-oob="morph" hidden></div>
 
-<div class="game-content" id="game-content" hx-swap-oob="morph">
+<div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="{{if .HunterRevengeNeeded}}day-hunter{{else}}day-vote{{end}}-{{.NightNumber}}">
     <section>
         <div class="phase-action-panel">
                 {{if .NightVictims}}
@@ -97,24 +97,20 @@
             <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">Pass</button>
         </form>
 
-        {{if .AllActed}}
         <form ws-send id="day-end-vote-form">
             <input type="hidden" name="action" value="day_end_vote">
-            <button type="submit" id="day-end-vote-btn" class="contrast">End Vote</button>
+            <button type="submit" id="day-end-vote-btn" {{if not .AllActed}}disabled{{end}}>End Vote</button>
         </form>
-        {{else}}
-        <p id="day-end-vote-waiting"><small><em>Waiting for all players to vote or pass...</em></small></p>
-        {{end}}
 
         {{else}}
         <p><em>You are dead and cannot vote.</em></p>
         {{end}}
 
         {{if .Votes}}
-        <h3>Current Votes</h3>
+        <h3 id="day-vote-title">Current Votes</h3>
         <ul id="day-vote-list" class="vote-list">
             {{range .Votes}}
-            <li>{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+            <li id="day-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
             {{end}}
         </ul>
         {{end}}

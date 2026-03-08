@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type Game struct {
@@ -31,7 +33,7 @@ type Player struct {
 	IsObserver      bool   `db:"is_observer"`
 }
 
-func getPlayerInGame(gameID, playerID int64) (Player, error) {
+func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 	var player Player
 	err := db.Get(&player, `SELECT g.rowid as id,
 			g.game_id as game_id,
@@ -51,7 +53,7 @@ func getPlayerInGame(gameID, playerID int64) (Player, error) {
 	return player, err
 }
 
-func getPlayersByGameId(id int64) ([]Player, error) {
+func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 	var players []Player
 	err := db.Select(&players, `
 		SELECT g.rowid as id,
@@ -72,27 +74,6 @@ func getPlayersByGameId(id int64) ([]Player, error) {
 	return players, err
 }
 
-func getPlayersByPlayerGameId(id int) (Player, error) {
-	var players Player
-	err := db.Select(&players, `
-		SELECT g.rowid as id,
-			g.game_id as game_id,
-			g.player_id as player_id,
-			p.name as name,
-			p.secret_code as secret_code,
-			r.rowid as role_id,
-			r.name as role_name,
-			r.description as role_description,
-			r.team as team,
-			g.is_alive as is_alive,
-			is_observer as is_observer
-		FROM game_player g
-			JOIN player p on g.player_id = p.rowid
-			JOIN role r on g.role_id = r.rowid
-		WHERE g.rowid = ?`, id)
-	return players, err
-}
-
 // Role definitions
 type Role struct {
 	ID          int64  `db:"id"`
@@ -101,7 +82,7 @@ type Role struct {
 	Description string `db:"description"`
 }
 
-func getRoles() ([]Role, error) {
+func getRoles(db *sqlx.DB) ([]Role, error) {
 	var roles []Role
 	err := db.Select(&roles, `
 		SELECT rowid as id,
@@ -111,19 +92,6 @@ func getRoles() ([]Role, error) {
 		FROM role
 		`)
 	return roles, err
-}
-
-func getRoleById(id int) (Role, error) {
-	var role Role
-	err := db.Select(&role, `
-		SELECT rowid as id,
-			name,
-			description,
-			team,
-		FROM role
-		WHERE id = ?
-		`, id)
-	return role, err
 }
 
 // GameAction represents any action taken during the game (night or day phase)
@@ -208,29 +176,8 @@ func canSeeAction(action GameAction, viewer Player, currentRound int, currentPha
 	}
 }
 
-// getActionsForPlayer returns all actions a player is allowed to see for a specific round/phase
-func getActionsForPlayer(gameID int64, viewer Player, currentRound int, currentPhase string, queryRound int, queryPhase string) ([]GameAction, error) {
-	var allActions []GameAction
-	err := db.Select(&allActions, `
-		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
-		FROM game_action
-		WHERE game_id = ? AND round = ? AND phase = ?`,
-		gameID, queryRound, queryPhase)
-	if err != nil {
-		return nil, err
-	}
-
-	var visibleActions []GameAction
-	for _, action := range allActions {
-		if canSeeAction(action, viewer, currentRound, currentPhase) {
-			visibleActions = append(visibleActions, action)
-		}
-	}
-	return visibleActions, nil
-}
-
 // getVoteCounts returns vote counts for a specific phase
-func getVoteCounts(gameID int64, round int, phase string, actionType string) (map[int64]int, int, error) {
+func getVoteCounts(db *sqlx.DB, gameID int64, round int, phase string, actionType string) (map[int64]int, int, error) {
 	var actions []GameAction
 	err := db.Select(&actions, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
@@ -253,13 +200,13 @@ func getVoteCounts(gameID int64, round int, phase string, actionType string) (ma
 // getLoverPartner returns the partner's player ID if playerID is one of the two lovers,
 // or 0 if they are not a lover (or Cupid hasn't linked anyone yet).
 // Both directions are stored in game_lovers, so this is a simple lookup.
-func getLoverPartner(gameID, playerID int64) int64 {
+func getLoverPartner(db *sqlx.DB, gameID, playerID int64) int64 {
 	var partnerID int64
 	db.Get(&partnerID, `SELECT player2_id FROM game_lovers WHERE game_id = ? AND player1_id = ?`, gameID, playerID)
 	return partnerID
 }
 
-func initDB() error {
+func initDB(db *sqlx.DB) error {
 	schema := `
 	PRAGMA journal_mode=WAL;
 

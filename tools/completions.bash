@@ -58,6 +58,6 @@ _start_chromium_completions() {
     COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
-complete -F _run_server_completions    ./tools/run_server.sh    tools/run_server.sh
-complete -F _run_tests_completions     ./tools/run_tests.sh     tools/run_tests.sh
-complete -F _start_chromium_completions ./tools/start_chromium.sh tools/start_chromium.sh
+complete -F _run_server_completions     run_server.sh ./tools/run_server.sh tools/run_server.sh
+complete -F _run_tests_completions      run_tests.sh  ./tools/run_tests.sh  tools/run_tests.sh
+complete -F _start_chromium_completions start_chromium.sh ./tools/start_chromium.sh tools/start_chromium.sh

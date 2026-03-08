@@ -3,94 +3,66 @@ package main
 import (
 	"strings"
 	"testing"
-	"testing/quick"
 )
 
 func TestSignupWithName(t *testing.T) {
-	f := func(nameSuffix uint8) bool {
-		if nameSuffix == 0 {
-			nameSuffix = 1
-		}
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
 
-		ctx := newTestContext(t)
-		defer ctx.cleanup()
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
 
-		browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
-		defer browserCleanup()
+	name := "SignupUser"
+	ctx.logger.Debug("=== Testing signup with name: %s ===", name)
 
-		name := generateTestName("User", nameSuffix)
-		ctx.logger.Debug("=== Testing signup with name: %s ===", name)
+	player := browser.signupPlayer(ctx.baseURL, name)
 
-		player := browser.signupPlayer(ctx.baseURL, name)
-
-		if !player.isOnGamePage() {
-			ctx.logger.LogDB("FAIL: player not on game page")
-			t.Errorf("Player should be on game page after signup")
-			return false
-		}
-
-		playerList := player.getPlayerList()
-		if !strings.Contains(playerList, name) {
-			ctx.logger.LogDB("FAIL: player not in list")
-			t.Errorf("Player %s not found in player list: %s", name, playerList)
-			return false
-		}
-
-		ctx.logger.Debug("=== Test passed ===")
-		return true
+	if !player.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: player not on game page")
+		t.Fatalf("Player should be on game page after signup")
 	}
 
-	if err := quick.Check(f, &quick.Config{MaxCount: 5}); err != nil {
-		t.Error(err)
+	playerList := player.getPlayerList()
+	if !strings.Contains(playerList, name) {
+		ctx.logger.LogDB("FAIL: player not in list")
+		t.Fatalf("Player %s not found in player list: %s", name, playerList)
 	}
+
+	ctx.logger.Debug("=== Test passed ===")
 }
 
 func TestSignupDuplicateNameFails(t *testing.T) {
-	f := func(nameSuffix uint8) bool {
-		if nameSuffix == 0 {
-			nameSuffix = 1
-		}
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
 
-		ctx := newTestContext(t)
-		defer ctx.cleanup()
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
 
-		browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
-		defer browserCleanup()
+	name := "DupName"
+	ctx.logger.Debug("=== Testing duplicate signup with name: %s ===", name)
 
-		name := generateTestName("Dup", nameSuffix)
-		ctx.logger.Debug("=== Testing duplicate signup with name: %s ===", name)
+	// First signup should succeed
+	player1 := browser.signupPlayer(ctx.baseURL, name)
 
-		// First signup should succeed
-		player1 := browser.signupPlayer(ctx.baseURL, name)
-
-		if !player1.isOnGamePage() {
-			ctx.logger.LogDB("FAIL: first player not on game page")
-			t.Errorf("First player should be on game page")
-			return false
-		}
-
-		// Second signup with same name should fail
-		player2 := browser.signupPlayerNoRedirect(ctx.baseURL, name)
-
-		if player2.isOnGamePage() {
-			ctx.logger.LogDB("FAIL: duplicate signup succeeded")
-			t.Errorf("Duplicate signup should not redirect to game")
-			return false
-		}
-
-		if !player2.hasErrorToast() {
-			ctx.logger.LogDB("FAIL: no error toast shown")
-			t.Errorf("Expected error toast for duplicate name")
-			return false
-		}
-
-		ctx.logger.Debug("=== Test passed ===")
-		return true
+	if !player1.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: first player not on game page")
+		t.Fatalf("First player should be on game page")
 	}
 
-	if err := quick.Check(f, &quick.Config{MaxCount: 5}); err != nil {
-		t.Error(err)
+	// Second signup with same name should fail
+	player2 := browser.signupPlayerNoRedirect(ctx.baseURL, name)
+
+	if player2.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: duplicate signup succeeded")
+		t.Fatalf("Duplicate signup should not redirect to game")
 	}
+
+	if !player2.hasErrorToast() {
+		ctx.logger.LogDB("FAIL: no error toast shown")
+		t.Fatalf("Expected error toast for duplicate name")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
 }
 
 // ============================================================================
@@ -98,86 +70,60 @@ func TestSignupDuplicateNameFails(t *testing.T) {
 // ============================================================================
 
 func TestLoginWithCorrectSecret(t *testing.T) {
-	f := func(nameSuffix uint8) bool {
-		if nameSuffix == 0 {
-			nameSuffix = 1
-		}
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
 
-		ctx := newTestContext(t)
-		defer ctx.cleanup()
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
 
-		browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
-		defer browserCleanup()
+	name := "LoginUser"
+	ctx.logger.Debug("=== Testing login with name: %s ===", name)
 
-		name := generateTestName("Login", nameSuffix)
-		ctx.logger.Debug("=== Testing login with name: %s ===", name)
+	// Signup first
+	player1 := browser.signupPlayer(ctx.baseURL, name)
 
-		// Signup first
-		player1 := browser.signupPlayer(ctx.baseURL, name)
-
-		// Get secret code
-		secretCode := player1.getSecretCode()
-		if secretCode == "" {
-			ctx.logger.Debug("Could not find secret code, skipping")
-			return true
-		}
-
-		// Login on a new page
-		player2 := browser.loginPlayer(ctx.baseURL, name, secretCode)
-
-		if !player2.isOnGamePage() {
-			ctx.logger.LogDB("FAIL: login did not redirect to game")
-			t.Errorf("Login should redirect to game page")
-			return false
-		}
-
-		ctx.logger.Debug("=== Test passed ===")
-		return true
+	// Get secret code
+	secretCode := player1.getSecretCode()
+	if secretCode == "" {
+		t.Fatal("Could not find secret code")
 	}
 
-	if err := quick.Check(f, &quick.Config{MaxCount: 5}); err != nil {
-		t.Error(err)
+	// Login on a new page
+	player2 := browser.loginPlayer(ctx.baseURL, name, secretCode)
+
+	if !player2.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: login did not redirect to game")
+		t.Fatalf("Login should redirect to game page")
 	}
+
+	ctx.logger.Debug("=== Test passed ===")
 }
 
 func TestLoginWithWrongSecret(t *testing.T) {
-	f := func(nameSuffix uint8) bool {
-		if nameSuffix == 0 {
-			nameSuffix = 1
-		}
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
 
-		ctx := newTestContext(t)
-		defer ctx.cleanup()
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
 
-		browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
-		defer browserCleanup()
+	name := "WrongSecret"
+	ctx.logger.Debug("=== Testing login with wrong secret for: %s ===", name)
 
-		name := generateTestName("Wrong", nameSuffix)
-		ctx.logger.Debug("=== Testing login with wrong secret for: %s ===", name)
+	// Signup first
+	_ = browser.signupPlayer(ctx.baseURL, name)
 
-		// Signup first
-		_ = browser.signupPlayer(ctx.baseURL, name)
+	// Try to login with wrong secret
+	player2 := browser.loginPlayerNoRedirect(ctx.baseURL, name, "wrongsecret")
 
-		// Try to login with wrong secret
-		player2 := browser.loginPlayerNoRedirect(ctx.baseURL, name, "wrongsecret")
-
-		if player2.isOnGamePage() {
-			ctx.logger.LogDB("FAIL: login with wrong secret succeeded")
-			t.Errorf("Login with wrong secret should not redirect to game")
-			return false
-		}
-
-		if !player2.hasErrorToast() {
-			ctx.logger.LogDB("FAIL: no error toast for wrong secret")
-			t.Errorf("Expected error toast for wrong secret")
-			return false
-		}
-
-		ctx.logger.Debug("=== Test passed ===")
-		return true
+	if player2.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: login with wrong secret succeeded")
+		t.Fatalf("Login with wrong secret should not redirect to game")
 	}
 
-	if err := quick.Check(f, &quick.Config{MaxCount: 5}); err != nil {
-		t.Error(err)
+	if !player2.hasErrorToast() {
+		ctx.logger.LogDB("FAIL: no error toast for wrong secret")
+		t.Fatalf("Expected error toast for wrong secret")
 	}
+
+	ctx.logger.Debug("=== Test passed ===")
 }
