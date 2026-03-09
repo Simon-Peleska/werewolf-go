@@ -276,6 +276,7 @@ func findPlayersByRole(players []*TestPlayer) (werewolves []*TestPlayer, village
 // ============================================================================
 
 func TestVillagerCannotSeeWerewolfVotes(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -318,6 +319,7 @@ func TestVillagerCannotSeeWerewolfVotes(t *testing.T) {
 }
 
 func TestWerewolfCanVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -381,6 +383,7 @@ func TestWerewolfCanVote(t *testing.T) {
 }
 
 func TestWerewolfVoteCountsShownOnCards(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -422,6 +425,7 @@ func TestWerewolfVoteCountsShownOnCards(t *testing.T) {
 }
 
 func TestWerewolfCanChangeVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -465,6 +469,7 @@ func TestWerewolfCanChangeVote(t *testing.T) {
 }
 
 func TestWerewolfCanUnselectVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -511,6 +516,7 @@ func TestWerewolfCanUnselectVote(t *testing.T) {
 }
 
 func TestDayTransitionOnMajorityVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -561,6 +567,7 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 }
 
 func TestStayInNightWithoutMajority(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -602,6 +609,7 @@ func TestStayInNightWithoutMajority(t *testing.T) {
 }
 
 func TestCorrectPlayerGetsKilled(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -680,6 +688,7 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 }
 
 func TestWerewolvesVoteSplitNoKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -723,6 +732,7 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 }
 
 func TestWerewolfCanPass(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -790,6 +800,7 @@ func TestWerewolfCanPass(t *testing.T) {
 }
 
 func TestWitchHealSavesVictim(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -879,6 +890,7 @@ func TestWitchHealSavesVictim(t *testing.T) {
 }
 
 func TestWitchPoisonKillsPlayer(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1000,6 +1012,7 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 }
 
 func TestWitchPassEndNight(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1130,6 +1143,7 @@ func (tp *TestPlayer) witchCanSeeVictim(name string) bool {
 // ============================================================================
 
 func TestMasonsKnowEachOther(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1190,6 +1204,7 @@ func TestMasonsKnowEachOther(t *testing.T) {
 }
 
 func TestSingleMasonSeesNoOthers(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1264,6 +1279,7 @@ func (tp *TestPlayer) canSeeDoubleKillSection() bool {
 // ============================================================================
 
 func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1391,6 +1407,7 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 }
 
 func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1513,6 +1530,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 }
 
 func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1693,6 +1711,7 @@ func (tp *TestPlayer) getCupidSelectedNames() []string {
 // TestCupidLinksLovers verifies Cupid can link two players, night resolves only after Cupid acts,
 // and both lovers can see each other's identity.
 func TestCupidLinksLovers(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1810,6 +1829,7 @@ func TestCupidLinksLovers(t *testing.T) {
 }
 
 func TestCupidCanUnselectFirstLover(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1863,6 +1883,7 @@ func TestCupidCanUnselectFirstLover(t *testing.T) {
 }
 
 func TestCupidCanUnselectSecondLover(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1918,6 +1939,7 @@ func TestCupidCanUnselectSecondLover(t *testing.T) {
 // TestHeartbreakOnNightKill verifies that when a lover is killed at night,
 // their partner dies from heartbreak and both deaths appear in the morning.
 func TestHeartbreakOnNightKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1992,6 +2014,7 @@ func TestHeartbreakOnNightKill(t *testing.T) {
 // TestLoversWinCondition verifies that when only the two lovers remain alive,
 // they win together (even if on opposite teams).
 func TestLoversWinCondition(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2056,6 +2079,7 @@ func TestLoversWinCondition(t *testing.T) {
 }
 
 func TestAIStoryteller(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2116,6 +2140,7 @@ func TestAIStoryteller(t *testing.T) {
 // TestNightSurveyBlocksDayTransition verifies that day does not start until
 // ALL alive players have submitted the night survey.
 func TestNightSurveyBlocksDayTransition(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2197,6 +2222,7 @@ func TestNightSurveyBlocksDayTransition(t *testing.T) {
 // TestNightSurveyAnswersVisibleInHistory verifies that non-empty survey answers
 // are written to history and become visible to all players once the day starts.
 func TestNightSurveyAnswersVisibleInHistory(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -358,57 +359,52 @@ func (tl *TestLogger) LogDB(context string) {
 	tl.AppLogger.LogDB(tl.db, context)
 }
 
-// NewTestLogger creates a test logger from environment variables
+// NewTestLogger creates a test logger from environment variables.
+// When TEST_OUTPUT_DIR is set, log files are written to a per-test subdirectory:
+//
+//	$TEST_OUTPUT_DIR/<test-name>/requests.log
+//	$TEST_OUTPUT_DIR/<test-name>/html_states.log
+//	$TEST_OUTPUT_DIR/<test-name>/database.log
+//	$TEST_OUTPUT_DIR/<test-name>/websocket.log
 func NewTestLogger(t *testing.T) *TestLogger {
-	config := LogConfig{
-		OutputDir:   os.Getenv("TEST_OUTPUT_DIR"),
-		LogRequests: os.Getenv("TEST_LOG_REQUESTS") == "1",
-		LogHTML:     os.Getenv("TEST_LOG_HTML") == "1",
-		LogDB:       os.Getenv("TEST_LOG_DB") == "1",
-		LogWS:       os.Getenv("TEST_LOG_WS") == "1",
-		Debug:       os.Getenv("TEST_DEBUG") == "1",
-	}
-
-	// For tests, use specific log file paths from env
 	al := &AppLogger{
-		outputDir:   config.OutputDir,
-		logRequests: config.LogRequests,
-		logHTML:     config.LogHTML,
-		logDB:       config.LogDB,
-		logWS:       config.LogWS,
-		debug:       config.Debug,
+		logRequests: os.Getenv("TEST_LOG_REQUESTS") == "1",
+		logHTML:     os.Getenv("TEST_LOG_HTML") == "1",
+		logDB:       os.Getenv("TEST_LOG_DB") == "1",
+		logWS:       os.Getenv("TEST_LOG_WS") == "1",
+		debug:       os.Getenv("TEST_DEBUG") == "1",
 	}
 
-	// Open log files from env paths
-	if al.logRequests {
-		if path := os.Getenv("TEST_REQUEST_LOG"); path != "" {
-			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				al.requestLog = f
+	// If an output directory is configured and at least one log type is enabled,
+	// create a per-test subdirectory and open log files inside it.
+	if baseDir := os.Getenv("TEST_OUTPUT_DIR"); baseDir != "" && (al.logRequests || al.logHTML || al.logDB || al.logWS) {
+		// Replace slashes in subtest names (e.g. "TestFoo/sub") with underscores
+		// so the path remains a single directory level.
+		safeName := strings.ReplaceAll(t.Name(), "/", "_")
+		testDir := fmt.Sprintf("%s/%s", baseDir, safeName)
+		if err := os.MkdirAll(testDir, 0755); err == nil {
+			al.outputDir = testDir
+			openLog := func(name string) *os.File {
+				f, err := os.OpenFile(
+					fmt.Sprintf("%s/%s", testDir, name),
+					os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644,
+				)
+				if err != nil {
+					return nil
+				}
+				return f
 			}
-		}
-	}
-	if al.logHTML {
-		if path := os.Getenv("TEST_HTML_LOG"); path != "" {
-			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				al.htmlLog = f
+			if al.logRequests {
+				al.requestLog = openLog("requests.log")
 			}
-		}
-	}
-	if al.logDB {
-		if path := os.Getenv("TEST_DB_LOG"); path != "" {
-			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				al.dbLog = f
+			if al.logHTML {
+				al.htmlLog = openLog("html_states.log")
 			}
-		}
-	}
-	if al.logWS {
-		if path := os.Getenv("TEST_WS_LOG"); path != "" {
-			f, err := os.OpenFile(path+"_"+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				al.wsLog = f
+			if al.logDB {
+				al.dbLog = openLog("database.log")
+			}
+			if al.logWS {
+				al.wsLog = openLog("websocket.log")
 			}
 		}
 	}
@@ -421,7 +417,7 @@ func (tl *TestLogger) Debug(format string, args ...any) {
 	if !tl.debug {
 		return
 	}
-	tl.t.Logf("[DEBUG] "+format, args...)
+	tl.t.Logf("[DEBUG %s] "+format, append([]any{time.Now().Format("15:04:05.000")}, args...)...)
 }
 
 // ============================================================================
@@ -742,6 +738,7 @@ type TestPlayer struct {
 	SecretCode string
 	Page       *rod.Page
 	logger     *TestLogger
+	t          *testing.T
 }
 
 // p returns the page with timeout applied for element operations
@@ -765,12 +762,20 @@ func (tp *TestPlayer) logHTML(context string) {
 // newIncognitoPage creates a new incognito page with isolated session.
 // The context is tracked so cleanup() can close it, disconnecting the WebSocket.
 func (tb *TestBrowser) newIncognitoPage(url string) *rod.Page {
-	ctx := tb.browser.MustIncognito()
+	ctx, err := tb.browser.Incognito()
+	if err != nil {
+		tb.t.Fatalf("failed to create incognito context: %v", err)
+	}
 	tb.contextMu.Lock()
 	tb.contexts = append(tb.contexts, ctx)
 	tb.contextMu.Unlock()
-	page := ctx.MustPage(url)
-	page.Timeout(browserTimeout).MustWaitLoad()
+	page, err := ctx.Page(proto.TargetCreateTarget{URL: url})
+	if err != nil {
+		tb.t.Fatalf("failed to create page %q: %v", url, err)
+	}
+	if err := page.Timeout(browserTimeout).WaitLoad(); err != nil {
+		tb.t.Fatalf("failed to wait for page %q to load: %v", url, err)
+	}
 	return page
 }
 
@@ -787,17 +792,24 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 		Name:   name,
 		Page:   page,
 		logger: tb.logger,
+		t:      tb.t,
 	}
 
 	// Fill form and submit; sidebar is rendered inline so it's present as soon as /game loads.
 	p := page.Timeout(browserTimeout)
-	p.MustElement("#signup-name").MustInput(name)
-	wait := page.MustWaitNavigation()
-	p.MustElement("#btn-signup").MustClick()
+	if el, err := p.Element("#signup-name"); err == nil {
+		el.Input(name)
+	}
+	wait := page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	if el, err := p.Element("#btn-signup"); err == nil {
+		el.Click(proto.InputMouseButtonLeft, 1)
+	}
 	wait() // blocks until navigation to /game completes
 
 	// Sidebar is inline in game.html response — #secret-code-display is in the DOM immediately.
-	p.MustElement("#secret-code-display")
+	if _, err := p.Element("#secret-code-display"); err != nil {
+		tb.t.Fatalf("signup %q: #secret-code-display not found: %v", name, err)
+	}
 
 	// Wait until this player appears in the player list. The player list is updated via
 	// WebSocket OOB swap from broadcastGameUpdate (triggered by addPlayerToLobby after
@@ -831,13 +843,18 @@ func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer 
 		Name:   name,
 		Page:   page,
 		logger: tb.logger,
+		t:      tb.t,
 	}
 
 	// Fill form and submit, expecting failure
 	player.doWithHTMXSwap(func() {
 		p := page.Timeout(browserTimeout)
-		p.MustElement("#signup-name").MustInput(name)
-		p.MustElement("#btn-signup").MustClick()
+		if el, err := p.Element("#signup-name"); err == nil {
+			el.Input(name)
+		}
+		if el, err := p.Element("#btn-signup"); err == nil {
+			el.Click(proto.InputMouseButtonLeft, 1)
+		}
 	})
 	player.logHTML("after failed signup attempt")
 
@@ -846,7 +863,9 @@ func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer 
 
 // reload reloads the page and waits for it to load
 func (tp *TestPlayer) reload() {
-	tp.p().MustReload().MustWaitLoad()
+	if err := tp.p().Reload(); err == nil {
+		tp.t.Fatalf("[%s] page coudn't be reloaded: %v", tp.Name, err)
+	}
 	tp.logHTML("after reload")
 }
 
@@ -959,7 +978,7 @@ func (tp *TestPlayer) clickAndWait(selector string) {
 // clickElementAndWait clicks a rod.Element and waits for WebSocket response
 func (tp *TestPlayer) clickElementAndWait(element *rod.Element) {
 	tp.doWithWSWait(func() {
-		element.MustClick()
+		element.Click(proto.InputMouseButtonLeft, 1)
 	})
 }
 
@@ -1064,7 +1083,8 @@ func (tp *TestPlayer) getSecretCode() string {
 	if err != nil {
 		return ""
 	}
-	code := strings.TrimSpace(el.MustText())
+	text, _ := el.Text()
+	code := strings.TrimSpace(text)
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Got secret code: %s", tp.Name, code)
 	}
@@ -1101,7 +1121,8 @@ func (tp *TestPlayer) getPlayerID() string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(el.MustText())
+	text, _ := el.Text()
+	return strings.TrimSpace(text)
 }
 
 // addRoleByID clicks the add button for a role by its ID
@@ -1111,21 +1132,38 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 		tp.logger.LogWebSocket("OUT", tp.Name, fmt.Sprintf(`{"action":"update_role","role_id":"%s","delta":"1"}`, roleID))
 	}
 	// Click and wait for WebSocket response
-	host := tp.p().MustElement("#role-" + roleID)
-	shadow := host.MustShadowRoot()
-	el := shadow.MustElement(".pc-btn-plus .pc-btn")
-
+	host, err := tp.p().Element("#role-" + roleID)
+	if err != nil {
+		tp.t.Fatalf("[%s] addRoleByID: role element #role-%s not found: %v", tp.Name, roleID, err)
+	}
+	shadow, err := host.ShadowRoot()
+	if err != nil {
+		tp.t.Fatalf("[%s] addRoleByID: shadow root not found: %v", tp.Name, err)
+	}
+	el, err := shadow.Element(".pc-btn-plus .pc-btn")
+	if err != nil {
+		tp.t.Fatalf("[%s] addRoleByID: plus button not found: %v", tp.Name, err)
+	}
 	tp.clickElementAndWait(el)
 	tp.logHTML(fmt.Sprintf("after adding role %s", roleID))
 }
 
 // getRoleCountByID returns the count for a specific role by ID
 func (tp *TestPlayer) getRoleCountByID(roleID string) string {
-	host := tp.p().MustElement("#role-" + roleID)
-	shadow := host.MustShadowRoot()
-	el := shadow.MustElement(".pc-count")
-
-	count := strings.TrimSpace(el.MustText())
+	host, err := tp.p().Element("#role-" + roleID)
+	if err != nil {
+		tp.t.Fatalf("[%s] getRoleCountByID: #role-%s not found: %v", tp.Name, roleID, err)
+	}
+	shadow, err := host.ShadowRoot()
+	if err != nil {
+		tp.t.Fatalf("[%s] getRoleCountByID: shadow root not found: %v", tp.Name, err)
+	}
+	el, err := shadow.Element(".pc-count")
+	if err != nil {
+		tp.t.Fatalf("[%s] getRoleCountByID: .pc-count not found: %v", tp.Name, err)
+	}
+	text, _ := el.Text()
+	count := strings.TrimSpace(text)
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Role %s count: %s", tp.Name, roleID, count)
 	}
@@ -1134,7 +1172,10 @@ func (tp *TestPlayer) getRoleCountByID(roleID string) string {
 
 // canStartGame checks if the start button is enabled
 func (tp *TestPlayer) canStartGame() bool {
-	el := tp.p().MustElement("#btn-start")
+	el, err := tp.p().Element("#btn-start")
+	if err != nil {
+		return false
+	}
 	disabled, err := el.Attribute("disabled")
 	canStart := err != nil || disabled == nil
 	if tp.logger != nil {
@@ -1160,10 +1201,20 @@ func (tp *TestPlayer) startGame() {
 
 // getRole returns the player's assigned role from character-info
 func (tp *TestPlayer) getRole() string {
-	host := tp.p().MustElement("#sidebar-role-card")
-	shadow := host.MustShadowRoot()
-	el := shadow.MustElement(".pc-role")
-	return el.MustText()
+	host, err := tp.p().Element("#sidebar-role-card")
+	if err != nil {
+		tp.t.Fatalf("[%s] getRole: #sidebar-role-card not found: %v", tp.Name, err)
+	}
+	shadow, err := host.ShadowRoot()
+	if err != nil {
+		tp.t.Fatalf("[%s] getRole: shadow root not found: %v", tp.Name, err)
+	}
+	el, err := shadow.Element(".pc-role")
+	if err != nil {
+		tp.t.Fatalf("[%s] getRole: .pc-role not found: %v", tp.Name, err)
+	}
+	text, _ := el.Text()
+	return text
 }
 
 // disconnect closes the player's page/connection
@@ -1171,7 +1222,7 @@ func (tp *TestPlayer) disconnect() {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Disconnecting", tp.Name)
 	}
-	tp.Page.MustClose()
+	tp.Page.Close()
 }
 
 // loginPlayer logs in an existing player (uses incognito for isolated session)
@@ -1187,16 +1238,25 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 		SecretCode: secretCode,
 		Page:       page,
 		logger:     tb.logger,
+		t:          tb.t,
 	}
 
 	// Fill form and submit, wait for redirect
 	p := page.Timeout(browserTimeout)
-	p.MustElement("#login-name").MustInput(name)
-	p.MustElement("#secret-code").MustInput(secretCode)
-	p.MustElement("#btn-login").MustClick()
+	if el, err := p.Element("#login-name"); err == nil {
+		el.Input(name)
+	}
+	if el, err := p.Element("#secret-code"); err == nil {
+		el.Input(secretCode)
+	}
+	if el, err := p.Element("#btn-login"); err == nil {
+		el.Click(proto.InputMouseButtonLeft, 1)
+	}
 
 	// Wait for sidebar to load — confirms page loaded + HTMX sidebar request completed
-	p.MustElement("#secret-code-display")
+	if _, err := p.Element("#secret-code-display"); err != nil {
+		tb.t.Fatalf("login %q: #secret-code-display not found: %v", name, err)
+	}
 
 	// Wait until this player appears in the player list (WS registration confirmed).
 	player.waitUntilCondition(`() => {
@@ -1223,14 +1283,21 @@ func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *
 		SecretCode: secretCode,
 		Page:       page,
 		logger:     tb.logger,
+		t:          tb.t,
 	}
 
 	// Fill form and submit, expecting failure
 	player.doWithHTMXSwap(func() {
 		p := page.Timeout(browserTimeout)
-		p.MustElement("#login-name").MustInput(name)
-		p.MustElement("#secret-code").MustInput(secretCode)
-		p.MustElement("#btn-login").MustClick()
+		if el, err := p.Element("#login-name"); err == nil {
+			el.Input(name)
+		}
+		if el, err := p.Element("#secret-code"); err == nil {
+			el.Input(secretCode)
+		}
+		if el, err := p.Element("#btn-login"); err == nil {
+			el.Click(proto.InputMouseButtonLeft, 1)
+		}
 	})
 	player.logHTML("after failed login attempt")
 
@@ -1243,7 +1310,8 @@ func (tp *TestPlayer) hasToastWithText(text string) bool {
 	if !found {
 		return false
 	}
-	return strings.Contains(el.MustText(), text)
+	elText, _ := el.Text()
+	return strings.Contains(elText, text)
 }
 
 // hasSoundToast returns true if any visible toast with data-sound contains the given text.
@@ -1252,8 +1320,9 @@ func (tp *TestPlayer) hasSoundToast(text string) bool {
 	if err != nil {
 		return false
 	}
-	for _, t := range toasts {
-		if strings.Contains(t.MustText(), text) {
+	for _, toast := range toasts {
+		toastText, _ := toast.Text()
+		if strings.Contains(toastText, text) {
 			return true
 		}
 	}

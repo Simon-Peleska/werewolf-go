@@ -126,6 +126,7 @@ func setupDayPhaseGame(ctx *TestContext, browser *TestBrowser, numVillagers, num
 // ============================================================================
 
 func TestDayVoteByAlivePlayer(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -182,6 +183,7 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 }
 
 func TestDayVoteCountsShownOnCards(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -236,6 +238,7 @@ func TestDayVoteCountsShownOnCards(t *testing.T) {
 }
 
 func TestDayVoteCanUnselect(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -277,6 +280,7 @@ func TestDayVoteCanUnselect(t *testing.T) {
 }
 
 func TestPlayerCanPassDayVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -323,6 +327,7 @@ func TestPlayerCanPassDayVote(t *testing.T) {
 }
 
 func TestDayVoteTransitionToNight(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -359,6 +364,7 @@ func TestDayVoteTransitionToNight(t *testing.T) {
 }
 
 func TestVillagersWinByEliminatingWerewolf(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -407,6 +413,7 @@ func TestVillagersWinByEliminatingWerewolf(t *testing.T) {
 }
 
 func TestWerewolvesWinByEliminatingVillagers(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -444,6 +451,7 @@ func TestWerewolvesWinByEliminatingVillagers(t *testing.T) {
 }
 
 func TestNewGameReturnsToLobbyWithSameRoles(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -500,6 +508,7 @@ func TestNewGameReturnsToLobbyWithSameRoles(t *testing.T) {
 }
 
 func TestNoEliminationOnTiedVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -536,6 +545,7 @@ func TestNoEliminationOnTiedVote(t *testing.T) {
 }
 
 func TestDeadPlayerCannotVote(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -640,6 +650,7 @@ func (tp *TestPlayer) canSeeSeerButtons() bool {
 // ============================================================================
 
 func TestSeerCanInvestigateVillager(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -715,6 +726,7 @@ func TestSeerCanInvestigateVillager(t *testing.T) {
 }
 
 func TestSeerCanInvestigateWerewolf(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -794,6 +806,7 @@ func TestSeerCanInvestigateWerewolf(t *testing.T) {
 }
 
 func TestNightWaitsForSeer(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -865,6 +878,7 @@ func TestNightWaitsForSeer(t *testing.T) {
 }
 
 func TestTwoSeersActIndependently(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -944,6 +958,7 @@ func TestTwoSeersActIndependently(t *testing.T) {
 }
 
 func TestCannotVoteForDeadPlayer(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1050,6 +1065,7 @@ func (tp *TestPlayer) hasNoDeathMessage() bool {
 // ============================================================================
 
 func TestDoctorCanProtect(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1117,6 +1133,7 @@ func TestDoctorCanProtect(t *testing.T) {
 }
 
 func TestDoctorSavesVictim(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1185,6 +1202,7 @@ func TestDoctorSavesVictim(t *testing.T) {
 }
 
 func TestDoctorDoesNotSaveWrongPlayer(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1246,6 +1264,7 @@ func TestDoctorDoesNotSaveWrongPlayer(t *testing.T) {
 }
 
 func TestNightWaitsForDoctor(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1317,6 +1336,7 @@ func TestNightWaitsForDoctor(t *testing.T) {
 }
 
 func TestTwoDoctorsActIndependently(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1483,6 +1503,7 @@ func (tp *TestPlayer) getGuardButtonNames() []string {
 // ============================================================================
 
 func TestGuardCanProtect(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1550,6 +1571,7 @@ func TestGuardCanProtect(t *testing.T) {
 }
 
 func TestGuardSavesVictim(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1618,6 +1640,7 @@ func TestGuardSavesVictim(t *testing.T) {
 }
 
 func TestGuardCannotProtectSelf(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1659,6 +1682,7 @@ func TestGuardCannotProtectSelf(t *testing.T) {
 }
 
 func TestGuardCannotProtectSamePlayerTwiceInARow(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1753,6 +1777,7 @@ func TestGuardCannotProtectSamePlayerTwiceInARow(t *testing.T) {
 }
 
 func TestNightWaitsForGuard(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1825,6 +1850,7 @@ func TestNightWaitsForGuard(t *testing.T) {
 }
 
 func TestTwoGuardsActIndependently(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -1995,6 +2021,7 @@ func (tp *TestPlayer) isHunterWaiting() bool {
 // ============================================================================
 
 func TestHunterDeathShotOnNightKill(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2094,6 +2121,7 @@ func TestHunterDeathShotOnNightKill(t *testing.T) {
 }
 
 func TestHunterDeathShotOnDayElimination(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2192,6 +2220,7 @@ func TestHunterDeathShotOnDayElimination(t *testing.T) {
 }
 
 func TestHunterShootsLastWerewolf(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -2251,6 +2280,7 @@ func TestHunterShootsLastWerewolf(t *testing.T) {
 }
 
 func TestNonHunterPlayersWaitDuringRevenge(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 

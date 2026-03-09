@@ -64,6 +64,7 @@
             # Tool script deps
             inotify-tools  # run_server.sh --watch
             chromium       # start_chromium.sh manual testing
+            jq             # run_tests.sh per-test log splitting
           ];
 
           # CGO flags so `go build` / `go test` work inside the shell

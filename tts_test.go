@@ -41,6 +41,7 @@ func generateA4PCM(sampleRate int, durationSecs float64) []byte {
 //  5. The hashes are compared — byte-exact match proves the pipeline is lossless.
 //  6. _nextPlayTime > 0 confirms the Web Audio API actually scheduled the audio.
 func TestNarratorPCMStreamingToFrontend(t *testing.T) {
+	t.Parallel()
 	// ── 1. Generate A4 (440 Hz) tone: 0.5 s @ 24 kHz, 16-bit mono = 24 000 bytes ──
 	const sampleRate = 24000
 	const durationSecs = 0.5

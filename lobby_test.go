@@ -11,6 +11,7 @@ import (
 // ============================================================================
 
 func TestLobbyPlayerCount(t *testing.T) {
+	t.Parallel()
 	count := 6 // max: int(playerCount%5) + 2
 
 	ctx := newTestContext(t)
@@ -43,6 +44,7 @@ func TestLobbyPlayerCount(t *testing.T) {
 }
 
 func TestLobbyPlayersLeave(t *testing.T) {
+	t.Parallel()
 	totalPlayers := 6   // max: int(seed%4) + 3
 	leavingPlayers := 2 // max: int(seed%2) + 1
 
@@ -92,6 +94,7 @@ func TestLobbyPlayersLeave(t *testing.T) {
 }
 
 func TestLobbyPlayersLeaveAndRejoin(t *testing.T) {
+	t.Parallel()
 	totalPlayers := 4   // max: int(seed%3) + 2
 	leavingPlayers := 2 // max: int(seed%2) + 1
 
@@ -147,6 +150,7 @@ func TestLobbyPlayersLeaveAndRejoin(t *testing.T) {
 // ============================================================================
 
 func TestLobbyCanStartWithMatchingRoles(t *testing.T) {
+	t.Parallel()
 	v := 3 // max: int(villagers%3) + 1
 	w := 2 // max: int(werewolves%2) + 1
 	totalPlayers := v + w
@@ -193,6 +197,7 @@ func TestLobbyCanStartWithMatchingRoles(t *testing.T) {
 }
 
 func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
+	t.Parallel()
 	v := 3 // max: int(villagers%2) + 2
 	w := 3 // max: int(werewolves%2) + 2
 	totalPlayers := v + w
@@ -239,6 +244,7 @@ func TestLobbyCannotStartWithMismatchedRoles(t *testing.T) {
 }
 
 func TestGameStartAssignsCorrectRoles(t *testing.T) {
+	t.Parallel()
 	v := 2 // max: int(villagers%2) + 1
 	w := 2 // max: int(werewolves%2) + 1
 	totalPlayers := v + w
@@ -291,6 +297,7 @@ func TestGameStartAssignsCorrectRoles(t *testing.T) {
 }
 
 func TestGameStartWithMixedRoles(t *testing.T) {
+	t.Parallel()
 	// Max values: Villager 2, Werewolf 2, Seer 1, Doctor 1
 	v, w, s, d := 2, 2, 1, 1
 	totalPlayers := v + w + s + d

@@ -443,6 +443,7 @@ Test files are organized by feature and contain all tests and helpers for that f
     - cacert (Docker image, for outbound HTTPS)
     - inotify-tools (run_server.sh --watch)
     - chromium (start_chromium.sh manual testing)
+    - jq (run_tests.sh per-test log splitting)
 
 You are a senior developer with many years of hard-won experience. You think like "grug brain developer": you are pragmatic, humble, and deeply suspicious of unnecessary complexity. You write code that works, is readable, and is maintainable by normal humans — not just the person who wrote it.
 

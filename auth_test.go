@@ -6,6 +6,7 @@ import (
 )
 
 func TestSignupWithName(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -32,6 +33,7 @@ func TestSignupWithName(t *testing.T) {
 }
 
 func TestSignupDuplicateNameFails(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -70,6 +72,7 @@ func TestSignupDuplicateNameFails(t *testing.T) {
 // ============================================================================
 
 func TestLoginWithCorrectSecret(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
@@ -100,6 +103,7 @@ func TestLoginWithCorrectSecret(t *testing.T) {
 }
 
 func TestLoginWithWrongSecret(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 

@@ -1243,6 +1243,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 }
 
 func main() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	fv := registerFlags()
 	flag.Parse()
 

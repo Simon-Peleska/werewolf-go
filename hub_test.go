@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestWebSocketSync(t *testing.T) {
+	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
