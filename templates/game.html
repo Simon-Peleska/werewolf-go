@@ -289,14 +289,11 @@
         H
       </label>
     </header>
-    <aside class="sidebar" id="sidebar" hx-get="/game/sidebar" hx-trigger="load" hx-swap="none">
-    </aside>
+    {{.SidebarHTML}}
     <section class="container">
-      <div id="game-content" class="game-content" hx-get="/game/component" hx-trigger="load" hx-swap="none">
-      </div>
+      {{.GameComponent}}
     </section>
-    <aside class="history-bar" id="history-bar" hx-get="/game/history" hx-trigger="load" hx-swap="none">
-    </aside>
+    {{.HistoryHTML}}
   </main>
   <script>
     // Sidebar scroll-collapse (keep for sidebar card)

@@ -16,8 +16,8 @@ func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
 	}
 	tp.clickAndWait("[id^='day-vote-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after day voting for " + targetName)
-	// Auto-press End Vote if all players have now voted
-	if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn"); has {
+	// Auto-press End Vote if the button is present and enabled (all players have voted)
+	if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn:not([disabled])"); has {
 		tp.clickElementAndWait(endVoteBtn)
 	}
 }

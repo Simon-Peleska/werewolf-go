@@ -26,8 +26,10 @@
                 <div id="hunter-revenge-section">
                     {{if .HunterRevengeDone}}
                     <div class="death-announcement" id="hunter-revenge-result">
-                        <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictim}}</strong>!</p>
-                        <p>They were a <strong>{{.HunterVictimRole}}</strong>.</p>
+                        {{if .HunterVictimPlayer}}
+                        <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictimPlayer.Name}}</strong>!</p>
+                        <p>They were a <strong>{{.HunterVictimPlayer.RoleName}}</strong>.</p>
+                        {{end}}
                     </div>
                     {{else if .IsTheHunter}}
                     <div class="phase-heading" style="margin-bottom:0.75rem">
@@ -35,27 +37,25 @@
                         <h3 style="margin:0">Your Last Shot</h3>
                     </div>
                     <p><small>You have been eliminated! Choose a player to take down with you, then confirm.</small></p>
-                    {{$hunterSelected := .HunterSelectedID}}
                     <card-list>
                     {{range .HunterTargets}}
-                    {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
                     <form ws-send id="hunter-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
                         <input type="hidden" name="action" value="hunter_select">
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
                             player-name="{{.Name}}"
-                            role-name="{{if $seerKnows}}Werewolf{{else}}Unknown{{end}}"
-                            team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
+                            role-name="{{.RoleName}}"
+                            team="{{.Team}}"
                             alive="true"
                             selectable
-                            {{if eq $hunterSelected .PlayerID}}selected{{end}}
+                            {{if and $.HunterSelectedPlayer (eq $.HunterSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         ></player-card>
                     </form>
                     {{end}}
                     </card-list>
                     <form ws-send id="hunter-shoot-form" class="vote-form">
                         <input type="hidden" name="action" value="hunter_revenge">
-                        <button type="submit" id="hunter-shoot-button" {{if eq $hunterSelected 0}}disabled{{end}}>🏹 Shoot</button>
+                        <button type="submit" id="hunter-shoot-button" {{if not .HunterSelectedPlayer}}disabled{{end}}>🏹 Shoot</button>
                     </form>
                     {{else}}
                     <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
@@ -71,30 +71,27 @@
         {{if .IsAlive}}
         <p><small>Choose a player to eliminate, or pass. Majority vote required.</small></p>
 
-        {{$currentVote := .CurrentVote}}
-        {{$hasVoted := .HasVoted}}
         <card-list>
         {{range .AliveTargets}}
-        {{$seerKnows := index $.SeerFoundWerewolves .PlayerID}}
         {{$voteCount := index $.DayVoteCounts .PlayerID}}
         <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
             <input type="hidden" name="action" value="day_vote">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
             <player-card
                 player-name="{{.Name}}"
-                role-name="{{if $seerKnows}}Werewolf{{else}}Unknown{{end}}"
-                team="{{if $seerKnows}}werewolf{{else}}unknown{{end}}"
+                role-name="{{.RoleName}}"
+                team="{{.Team}}"
                 alive="true"
                 selectable
                 count="{{$voteCount}}"
-                {{if eq $currentVote .PlayerID}}selected{{end}}
+                {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
             ></player-card>
         </form>
         {{end}}
         </card-list>
         <form ws-send id="day-pass-form" class="vote-form">
             <input type="hidden" name="action" value="day_pass">
-            <button type="submit" id="day-pass-btn" class="vote-button{{if and $hasVoted (eq $currentVote 0)}} selected{{end}}">Pass</button>
+            <button type="submit" id="day-pass-btn" class="vote-button{{if and .HasVoted (not .CurrentVotePlayer)}} selected{{end}}">Pass</button>
         </form>
 
         <form ws-send id="day-end-vote-form">

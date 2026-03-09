@@ -789,13 +789,14 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 		logger: tb.logger,
 	}
 
-	// Fill form and submit, wait for HTMX redirect
+	// Fill form and submit; sidebar is rendered inline so it's present as soon as /game loads.
 	p := page.Timeout(browserTimeout)
 	p.MustElement("#signup-name").MustInput(name)
+	wait := page.MustWaitNavigation()
 	p.MustElement("#btn-signup").MustClick()
+	wait() // blocks until navigation to /game completes
 
-	// Wait for sidebar content — confirms page loaded + HTMX sidebar request completed
-	// #secret-code-display is always present in the sidebar regardless of game state
+	// Sidebar is inline in game.html response — #secret-code-display is in the DOM immediately.
 	p.MustElement("#secret-code-display")
 
 	// Wait until this player appears in the player list. The player list is updated via

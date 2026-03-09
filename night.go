@@ -25,69 +25,55 @@ type SeerResult struct {
 
 // NightData holds all data needed to render the night phase
 type NightData struct {
-	IsAlive               bool
-	Players               []Player
-	AliveTargets          []Player
-	IsWerewolf            bool
-	Werewolves            []Player
-	Votes                 []WerewolfVote
-	WerewolfVoteCounts    map[int64]int // vote count per target player ID
-	CurrentVote           int64         // 0 means no vote
-	WolfCubDoubleKill     bool          // werewolves must kill two this night
-	CurrentVote2          int64         // this werewolf's second vote (0 = none)
-	NightNumber           int
-	IsSeer                bool
-	HasInvestigated       bool
-	SeerSelectedID        int64 // Pending investigation target this night (0 = none selected)
-	SeerResults           []SeerResult
-	IsDoctor              bool
-	HasProtected          bool
-	DoctorSelectedID      int64  // Pending protection target this night (0 = none selected)
-	DoctorProtecting      string // Name of player being protected this night
-	IsGuard               bool
-	GuardHasProtected     bool
-	GuardSelectedID       int64    // Pending protection target this night (0 = none selected)
-	GuardProtecting       string   // Name of player being protected this night
-	GuardTargets          []Player // Alive targets excluding self and last night's target
-	IsWitch               bool
-	WitchVictim           string // Name of werewolf majority target (empty if no majority)
-	WitchVictimID         int64  // ID of victim (0 if none)
-	WitchVictim2          string // Name of Wolf Cub second kill target (empty if not set)
-	WitchVictimID2        int64  // ID of second kill target (0 if none)
-	HealPotionUsed        bool   // Committed heal used in ANY prior round (permanent)
-	PoisonPotionUsed      bool   // Committed poison used in ANY prior round (permanent)
-	WitchSelectedHealID   int64  // Pending heal target this night (0 = none selected)
-	WitchSelectedPoisonID int64  // Pending poison target this night (0 = none selected)
-	WitchHealedThisNight  bool   // Committed heal was applied this night (after Apply)
-	WitchHealedName       string // Name of who the witch healed this night
-	WitchKilledThisNight  bool   // Committed poison was applied this night (after Apply)
-	WitchKilledTarget     string // Name of poison target if used tonight
-	WitchDoneThisNight    bool   // True after witch_apply submitted
-	IsMason               bool
-	Masons                []Player // Other alive Masons (excluding self)
-	IsCupid               bool
-	CupidLinked           bool
-	CupidChosen1ID        int64          // 0 if not chosen yet
-	CupidChosen1          string         // name of first lover
-	CupidChosen2ID        int64          // 0 if not chosen yet
-	CupidChosen2          string         // name of second lover
-	IsLover               bool           // is this player one of the two lovers?
-	LoverName             string         // name of their partner
-	AllWolvesActed        bool           // all werewolves have voted or passed (first kill)
-	AllWolvesActed2       bool           // all werewolves have voted or passed (Wolf Cub second kill)
-	WolfEndVoted          bool           // End Vote pressed for first kill this round
-	WolfEndVoted2         bool           // End Vote pressed for Wolf Cub second kill
-	SeerFoundWerewolves   map[int64]bool // player IDs the current player (as Seer) confirmed as wolves
-	ShowSurvey            bool           // player has finished their role action, show survey
-	HasSubmittedSurvey    bool           // this player already pressed Continue
-	SurveyCount           int            // how many alive players have submitted the survey
-	AliveCount            int            // total alive players (for "waiting for N more" display)
-	SurveyTargets         []Player       // alive players for the suspect dropdown
-	// Card display fields
-	PlayerName      string
-	RoleName        string
-	RoleDescription string
-	RoleTeam        string
+	IsAlive                   bool
+	AliveTargets              []Player // alive players; visibility pre-applied
+	IsWerewolf                bool
+	Votes                     []WerewolfVote
+	WerewolfVoteCounts        map[int64]int // vote count per target player ID
+	CurrentVotePlayer         *Player       // werewolf's current vote (nil = no vote)
+	WolfCubDoubleKill         bool          // werewolves must kill two this night
+	CurrentVotePlayer2        *Player       // werewolf's current second vote (nil = none)
+	NightNumber               int
+	IsSeer                    bool
+	HasInvestigated           bool
+	SeerSelectedPlayer        *Player // pending investigation target (nil = not yet selected)
+	SeerResults               []SeerResult
+	IsDoctor                  bool
+	HasProtected              bool
+	DoctorSelectedPlayer      *Player // pending protection target (nil = not yet selected)
+	DoctorProtectingPlayer    *Player // confirmed protection target this night
+	IsGuard                   bool
+	GuardHasProtected         bool
+	GuardSelectedPlayer       *Player  // pending protection target (nil = not yet selected)
+	GuardProtectingPlayer     *Player  // confirmed protection target this night
+	GuardTargets              []Player // alive targets excluding self and last night's; visibility pre-applied
+	IsWitch                   bool
+	WitchVictimPlayer         *Player // werewolf majority target (nil = no majority); visibility pre-applied
+	WitchVictimPlayer2        *Player // Wolf Cub second kill target (nil = not set); visibility pre-applied
+	HealPotionUsed            bool    // committed heal used in any prior round
+	PoisonPotionUsed          bool    // committed poison used in any prior round
+	WitchSelectedHealPlayer   *Player // pending heal target (nil = none selected)
+	WitchSelectedPoisonPlayer *Player // pending poison target (nil = none selected)
+	WitchHealedThisNight      bool    // committed heal applied this night
+	WitchHealedPlayer         *Player // who the witch healed this night
+	WitchKilledThisNight      bool    // committed poison applied this night
+	WitchKilledPlayer         *Player // poison target this night
+	WitchDoneThisNight        bool    // true after witch_apply submitted
+	IsMason                   bool
+	Masons                    []Player // other alive Masons (excluding self); full role visible
+	IsCupid                   bool
+	CupidLinked               bool
+	CupidChosen1Player        *Player  // first lover choice (nil = not yet chosen)
+	CupidChosen2Player        *Player  // second lover choice (nil = not yet chosen)
+	AllWolvesActed            bool     // all werewolves have voted or passed (first kill)
+	AllWolvesActed2           bool     // all werewolves have voted or passed (Wolf Cub second kill)
+	WolfEndVoted              bool     // End Vote pressed for first kill this round
+	WolfEndVoted2             bool     // End Vote pressed for Wolf Cub second kill
+	ShowSurvey                bool     // player has finished their role action, show survey
+	HasSubmittedSurvey        bool     // this player already pressed Continue
+	SurveyCount               int      // how many alive players have submitted the survey
+	AliveCount                int      // total alive players
+	SurveyTargets             []Player // alive players for the suspect dropdown
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {

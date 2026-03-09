@@ -41,7 +41,9 @@ type GameData struct {
 	Players       []Player
 	Game          *Game
 	IsInGame      bool
-	GameComponent string
+	GameComponent template.HTML
+	SidebarHTML   template.HTML
+	HistoryHTML   template.HTML
 }
 
 func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +92,16 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	player.PlayerID = playerID
 	DebugLog("handleGame", "Player '%s' (ID: %d) accessing game page, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
 
+	// In lobby: add this player to the game now so the inline sidebar includes them immediately,
+	// without waiting for the WebSocket to register. Trigger a broadcast so already-connected
+	// clients (other players) see the new player. INSERT OR IGNORE is a no-op if already present.
+	if game.Status == "lobby" {
+		result, _ := app.db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", game.ID, playerID)
+		if rows, _ := result.RowsAffected(); rows > 0 {
+			app.hub.triggerBroadcast()
+		}
+	}
+
 	// Check if player is in the game
 	isInGame := false
 	var gamePlayer Player
@@ -124,23 +136,38 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		logError("handleGame: getGameComponent", err)
 	}
 
+	// Build sidebar HTML inline so the page is fully rendered before WebSocket connects.
+	seerInvestigated := getSeerInvestigated(app.db, game.ID, playerID)
+	visiblePlayers := applyCardVisibility(player, selfFirstPlayers(players, playerID), seerInvestigated)
+	sidebarData := SidebarData{
+		Player:         &player,
+		Players:        visiblePlayers,
+		Game:           game,
+		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
+	}
+	var sidebarBuf bytes.Buffer
+	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
+
+	historyBuf, _ := getGameHistory(app.db, app.templates, playerID, game)
+
 	data := GameData{
 		Player:        &player,
 		Players:       players,
 		Game:          game,
 		IsInGame:      isInGame,
-		GameComponent: buf.String(),
+		GameComponent: template.HTML(buf.String()),
+		SidebarHTML:   template.HTML(sidebarBuf.String()),
+		HistoryHTML:   template.HTML(historyBuf.String()),
 	}
 
 	app.templates.ExecuteTemplate(w, "game.html", data)
 }
 
 type SidebarData struct {
-	Player              *Player
-	Players             []Player
-	Game                *Game
-	LoverPartnerID      int64          // player_id of the viewer's lover, 0 if not a lover
-	SeerFoundWerewolves map[int64]bool // player_ids the seer has confirmed as werewolves
+	Player         *Player
+	Players        []Player
+	Game           *Game
+	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 }
 
 // selfFirstPlayers returns players sorted so the player with selfPlayerID is first.
@@ -156,28 +183,86 @@ func selfFirstPlayers(players []Player, selfPlayerID int64) []Player {
 	return out
 }
 
-// getSeerFoundWerewolves returns the set of player IDs that playerID (as Seer) has
-// investigated and confirmed to be werewolves. Returns an empty map for non-seers.
-func getSeerFoundWerewolves(db *sqlx.DB, gameID, playerID int64) map[int64]bool {
-	found := map[int64]bool{}
-	var targets []int64
-	db.Select(&targets, `
-		SELECT ga.target_player_id
+// getSeerInvestigated returns a map of player_id → team ("werewolf" or "villager") for all
+// players that playerID (as Seer) has investigated. Returns an empty map for non-seers.
+func getSeerInvestigated(db *sqlx.DB, gameID, playerID int64) map[int64]string {
+	type row struct {
+		TargetID int64  `db:"target_player_id"`
+		Team     string `db:"team"`
+	}
+	var rows []row
+	db.Select(&rows, `
+		SELECT ga.target_player_id, r.team
 		FROM game_action ga
 		JOIN game_player gp ON gp.game_id = ga.game_id AND gp.player_id = ga.target_player_id
 		JOIN role r ON r.rowid = gp.role_id
-		WHERE ga.game_id = ? AND ga.actor_player_id = ? AND ga.action_type = ? AND r.team = 'werewolf'`,
+		WHERE ga.game_id = ? AND ga.actor_player_id = ? AND ga.action_type = ?`,
 		gameID, playerID, ActionSeerInvestigate)
-	for _, t := range targets {
-		found[t] = true
+	out := make(map[int64]string, len(rows))
+	for _, r := range rows {
+		out[r.TargetID] = r.Team
 	}
-	return found
+	return out
+}
+
+// getVisiblePlayer fetches a player from the DB and applies canonical card visibility rules.
+// Returns nil if the player cannot be found.
+func getVisiblePlayer(db *sqlx.DB, gameID, targetPlayerID int64, viewer Player, seerInvestigated map[int64]string) *Player {
+	p, err := getPlayerInGame(db, gameID, targetPlayerID)
+	if err != nil {
+		return nil
+	}
+	result := applyCardVisibility(viewer, []Player{p}, seerInvestigated)
+	return &result[0]
+}
+
+// applyCardVisibility returns a copy of targets with role/team fields adjusted to show only
+// what the viewer should see. This is the canonical visibility rule applied in all contexts.
+//
+// Rules (in priority order):
+//  1. Dead → full role + team revealed
+//  2. Self → full role + team visible
+//  3. Viewer is Mason AND target is Mason → full role + team visible (masons know each other)
+//  4. Viewer is werewolf AND target is werewolf → team only ("Werewolf"), no exact role
+//  5. Seer has investigated this target → team only ("Werewolf" or "Villager"), no exact role
+//  6. Otherwise → "Unknown"
+func applyCardVisibility(viewer Player, targets []Player, seerInvestigated map[int64]string) []Player {
+	out := make([]Player, len(targets))
+	for i, t := range targets {
+		p := t
+		isSelf := viewer.PlayerID == t.PlayerID
+		isMasonPair := viewer.RoleId == "mason" && t.RoleId == "mason"
+		isWolfPair := viewer.Team == "werewolf" && t.Team == "werewolf"
+		switch {
+		case !t.IsAlive, isSelf, isMasonPair:
+			// full role + team — keep as-is
+		case isWolfPair:
+			p.RoleName = "Werewolf"
+			p.RoleDescription = ""
+			p.Team = "werewolf"
+		default:
+			if team, ok := seerInvestigated[t.PlayerID]; ok {
+				if team == "werewolf" {
+					p.RoleName = "Werewolf"
+				} else {
+					p.RoleName = "Villager"
+				}
+				p.RoleDescription = ""
+				p.Team = team
+			} else {
+				p.RoleName = "Unknown"
+				p.RoleDescription = ""
+				p.Team = "unknown"
+			}
+		}
+		out[i] = p
+	}
+	return out
 }
 
 func (app *App) handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	playerID, err := getPlayerIdFromSession(app.db, r)
 	if err != nil {
-		DebugLog("handleSidebarInfo", "Redirecting anonymous visitor to index")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -215,12 +300,12 @@ func (app *App) handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		logError("handleGame: getPlayersByGameId", err)
 	}
 
+	seerInvestigated := getSeerInvestigated(app.db, game.ID, playerID)
 	data := SidebarData{
-		Player:              &player,
-		Players:             selfFirstPlayers(players, playerID),
-		Game:                game,
-		LoverPartnerID:      getLoverPartner(app.db, game.ID, playerID),
-		SeerFoundWerewolves: getSeerFoundWerewolves(app.db, game.ID, playerID),
+		Player:         &player,
+		Players:        applyCardVisibility(player, selfFirstPlayers(players, playerID), seerInvestigated),
+		Game:           game,
+		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
 	}
 
 	app.templates.ExecuteTemplate(w, "sidebar.html", data)
@@ -476,19 +561,13 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 
 		isWerewolf := currentPlayer.Team == "werewolf"
 
-		// Get werewolves (for werewolf players to see their team)
-		var werewolves []Player
-		if isWerewolf {
-			for _, p := range players {
-				if p.Team == "werewolf" && p.IsAlive {
-					werewolves = append(werewolves, p)
-				}
-			}
-		}
+		// Apply canonical card visibility rules. All player lists use the result.
+		seerInvestigated := getSeerInvestigated(db, game.ID, playerID)
+		visiblePlayers := applyCardVisibility(currentPlayer, players, seerInvestigated)
 
-		// Get alive players as targets
+		// Get alive players as targets (visibility pre-applied)
 		var aliveTargets []Player
-		for _, p := range players {
+		for _, p := range visiblePlayers {
 			if p.IsAlive {
 				aliveTargets = append(aliveTargets, p)
 			}
@@ -497,7 +576,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		// Get current votes for this night (werewolves only)
 		var votes []WerewolfVote
 		werewolfVoteCounts := map[int64]int{}
-		var currentVote int64
+		var currentVotePlayer *Player
 
 		if isWerewolf {
 			type voteCountRow struct {
@@ -527,7 +606,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				if action.TargetPlayerID != nil {
 					db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
 					if action.ActorPlayerID == playerID {
-						currentVote = *action.TargetPlayerID
+						currentVotePlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, currentPlayer, seerInvestigated)
 					}
 				}
 				votes = append(votes, WerewolfVote{VoterName: voterName, TargetName: targetName})
@@ -538,8 +617,8 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		isSeer := currentPlayer.RoleName == "Seer"
 		var hasInvestigated bool
 		var seerResults []SeerResult
+		var seerSelectedPlayer *Player
 
-		var seerSelectedID int64
 		if isSeer {
 			// Only show the current night's investigation result
 			var action GameAction
@@ -570,7 +649,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 					FROM game_action
 					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 					game.ID, game.Round, playerID, ActionSeerSelect) == nil && selectAction.TargetPlayerID != nil {
-					seerSelectedID = *selectAction.TargetPlayerID
+					seerSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 		}
@@ -578,8 +657,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		// Populate doctor-specific data
 		isDoctor := currentPlayer.RoleName == "Doctor"
 		var hasProtected bool
-		var doctorSelectedID int64
-		var doctorProtecting string
+		var doctorSelectedPlayer, doctorProtectingPlayer *Player
 
 		if isDoctor {
 			var action GameAction
@@ -590,7 +668,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				game.ID, game.Round, playerID, ActionDoctorProtect)
 			if err == nil && action.TargetPlayerID != nil {
 				hasProtected = true
-				db.Get(&doctorProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+				doctorProtectingPlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, currentPlayer, seerInvestigated)
 			} else {
 				// Check for pending selection
 				var selectAction GameAction
@@ -599,7 +677,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 					FROM game_action
 					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 					game.ID, game.Round, playerID, ActionDoctorSelect) == nil && selectAction.TargetPlayerID != nil {
-					doctorSelectedID = *selectAction.TargetPlayerID
+					doctorSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 		}
@@ -607,8 +685,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		// Populate guard-specific data
 		isGuard := currentPlayer.RoleName == "Guard"
 		var guardHasProtected bool
-		var guardSelectedID int64
-		var guardProtecting string
+		var guardSelectedPlayer, guardProtectingPlayer *Player
 		var guardTargets []Player
 
 		if isGuard {
@@ -620,7 +697,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				game.ID, game.Round, playerID, ActionGuardProtect)
 			if err == nil && action.TargetPlayerID != nil {
 				guardHasProtected = true
-				db.Get(&guardProtecting, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+				guardProtectingPlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, currentPlayer, seerInvestigated)
 			} else {
 				// Check for pending selection
 				var selectAction GameAction
@@ -629,7 +706,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 					FROM game_action
 					WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 					game.ID, game.Round, playerID, ActionGuardSelect) == nil && selectAction.TargetPlayerID != nil {
-					guardSelectedID = *selectAction.TargetPlayerID
+					guardSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 
@@ -661,13 +738,10 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		isWitch := currentPlayer.RoleName == "Witch"
 		var healPotionUsed, poisonPotionUsed bool
 		var witchHealedThisNight, witchKilledThisNight, witchDoneThisNight bool
-		var witchKilledTarget string
-		var witchVictim string
-		var witchVictimID int64
-		var witchVictim2 string
-		var witchVictimID2 int64
-		var witchHealedName string
-		var witchSelectedHealID, witchSelectedPoisonID int64
+		var witchVictimID, witchVictimID2 int64
+		var witchHealedPlayer, witchKilledPlayer *Player
+		var witchVictimPlayer, witchVictimPlayer2 *Player
+		var witchSelectedHealPlayer, witchSelectedPoisonPlayer *Player
 
 		if isWitch {
 			// Permanent potion usage (across all rounds — checks committed heal/kill)
@@ -691,7 +765,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
 				game.ID, game.Round, playerID, ActionWitchSelectHeal); err == nil && selectHealAction.TargetPlayerID != nil {
-				witchSelectedHealID = *selectHealAction.TargetPlayerID
+				witchSelectedHealPlayer = getVisiblePlayer(db, game.ID, *selectHealAction.TargetPlayerID, currentPlayer, seerInvestigated)
 			}
 			var selectPoisonAction GameAction
 			if err := db.Get(&selectPoisonAction, `
@@ -700,7 +774,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				WHERE game_id = ? AND round = ? AND phase = 'night'
 				AND actor_player_id = ? AND action_type = ?`,
 				game.ID, game.Round, playerID, ActionWitchSelectPoison); err == nil && selectPoisonAction.TargetPlayerID != nil {
-				witchSelectedPoisonID = *selectPoisonAction.TargetPlayerID
+				witchSelectedPoisonPlayer = getVisiblePlayer(db, game.ID, *selectPoisonAction.TargetPlayerID, currentPlayer, seerInvestigated)
 			}
 
 			// Committed actions this night (visible after Apply)
@@ -713,7 +787,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				game.ID, game.Round, playerID, ActionWitchHeal); err == nil {
 				witchHealedThisNight = true
 				if healAction.TargetPlayerID != nil {
-					db.Get(&witchHealedName, "SELECT name FROM player WHERE rowid = ?", *healAction.TargetPlayerID)
+					witchHealedPlayer = getVisiblePlayer(db, game.ID, *healAction.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 			var killedAction GameAction
@@ -724,7 +798,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				AND actor_player_id = ? AND action_type = ?`,
 				game.ID, game.Round, playerID, ActionWitchKill); err == nil && killedAction.TargetPlayerID != nil {
 				witchKilledThisNight = true
-				db.Get(&witchKilledTarget, "SELECT name FROM player WHERE rowid = ?", *killedAction.TargetPlayerID)
+				witchKilledPlayer = getVisiblePlayer(db, game.ID, *killedAction.TargetPlayerID, currentPlayer, seerInvestigated)
 			}
 
 			var doneCount int
@@ -766,8 +840,8 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				if len(wvotes) > 0 && totalWerewolves > 0 {
 					majority := totalWerewolves/2 + 1
 					if wvotes[0].Count >= majority {
-						witchVictim = wvotes[0].TargetName
 						witchVictimID = wvotes[0].TargetPlayerID
+						witchVictimPlayer = getVisiblePlayer(db, game.ID, witchVictimID, currentPlayer, seerInvestigated)
 					}
 				}
 
@@ -798,8 +872,8 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 								game.ID, game.Round, ActionWerewolfKill2)
 							majority := totalWerewolves/2 + 1
 							if len(wvotes2) > 0 && wvotes2[0].Count >= majority {
-								witchVictim2 = wvotes2[0].TargetName
 								witchVictimID2 = wvotes2[0].TargetPlayerID
+								witchVictimPlayer2 = getVisiblePlayer(db, game.ID, witchVictimID2, currentPlayer, seerInvestigated)
 							}
 						}
 					}
@@ -820,45 +894,32 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		// Populate Cupid-specific data
 		isCupid := currentPlayer.RoleName == "Cupid" && game.Round == 1
 		cupidLinked := false
-		var cupidChosen1ID int64
-		var cupidChosen1, cupidChosen2 string
-		var cupidChosen2ID int64
+		var cupidChosen1Player, cupidChosen2Player *Player
 		if isCupid {
+			var cupidChosen1ID, cupidChosen2ID int64
 			var finalized int
 			db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 			if finalized > 0 {
 				cupidLinked = true
-				// Both chosen — read from game_lovers
 				db.Get(&cupidChosen1ID, `SELECT player1_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
 				db.Get(&cupidChosen2ID, `SELECT player2_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
-				db.Get(&cupidChosen1, "SELECT name FROM player WHERE rowid = ?", cupidChosen1ID)
-				db.Get(&cupidChosen2, "SELECT name FROM player WHERE rowid = ?", cupidChosen2ID)
 			} else {
-				// Check if step 1 and step 2 are done (stored in game_action)
 				db.Get(&cupidChosen1ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 					game.ID, playerID, ActionCupidLink)
-				if cupidChosen1ID != 0 {
-					db.Get(&cupidChosen1, "SELECT name FROM player WHERE rowid = ?", cupidChosen1ID)
-				}
 				db.Get(&cupidChosen2ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 					game.ID, playerID, ActionCupidLink2)
-				if cupidChosen2ID != 0 {
-					db.Get(&cupidChosen2, "SELECT name FROM player WHERE rowid = ?", cupidChosen2ID)
-				}
 			}
-		}
-
-		// Lover info: any player who is in a finalized lover pair sees their partner
-		loverPartnerID := getLoverPartner(db, game.ID, currentPlayer.PlayerID)
-		isLover := loverPartnerID != 0
-		var loverName string
-		if isLover {
-			db.Get(&loverName, "SELECT name FROM player WHERE rowid = ?", loverPartnerID)
+			if cupidChosen1ID != 0 {
+				cupidChosen1Player = getVisiblePlayer(db, game.ID, cupidChosen1ID, currentPlayer, seerInvestigated)
+			}
+			if cupidChosen2ID != 0 {
+				cupidChosen2Player = getVisiblePlayer(db, game.ID, cupidChosen2ID, currentPlayer, seerInvestigated)
+			}
 		}
 
 		// Check if Wolf Cub double kill is active this night
 		wolfCubDoubleKill := false
-		var currentVote2 int64
+		var currentVotePlayer2 *Player
 		if isWerewolf && game.Round > 1 {
 			var wolfCubDeathCount int
 			db.Get(&wolfCubDeathCount, `
@@ -880,7 +941,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 					AND actor_player_id = ? AND action_type = ?`,
 					game.ID, game.Round, playerID, ActionWerewolfKill2)
 				if err == nil && vote2Action.TargetPlayerID != nil {
-					currentVote2 = *vote2Action.TargetPlayerID
+					currentVotePlayer2 = getVisiblePlayer(db, game.ID, *vote2Action.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 		}
@@ -909,63 +970,50 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		}
 
 		data := NightData{
-			SeerFoundWerewolves:   getSeerFoundWerewolves(db, game.ID, playerID),
-			PlayerName:            currentPlayer.Name,
-			RoleName:              currentPlayer.RoleName,
-			RoleDescription:       currentPlayer.RoleDescription,
-			RoleTeam:              currentPlayer.Team,
-			IsAlive:               isAlive,
-			Players:               players,
-			AliveTargets:          aliveTargets,
-			IsWerewolf:            isWerewolf,
-			Werewolves:            werewolves,
-			Votes:                 votes,
-			WerewolfVoteCounts:    werewolfVoteCounts,
-			CurrentVote:           currentVote,
-			WolfCubDoubleKill:     wolfCubDoubleKill,
-			CurrentVote2:          currentVote2,
-			NightNumber:           game.Round,
-			IsSeer:                isSeer,
-			HasInvestigated:       hasInvestigated,
-			SeerSelectedID:        seerSelectedID,
-			SeerResults:           seerResults,
-			IsDoctor:              isDoctor,
-			HasProtected:          hasProtected,
-			DoctorSelectedID:      doctorSelectedID,
-			DoctorProtecting:      doctorProtecting,
-			IsGuard:               isGuard,
-			GuardHasProtected:     guardHasProtected,
-			GuardSelectedID:       guardSelectedID,
-			GuardProtecting:       guardProtecting,
-			GuardTargets:          guardTargets,
-			IsWitch:               isWitch,
-			WitchVictim:           witchVictim,
-			WitchVictimID:         witchVictimID,
-			WitchVictim2:          witchVictim2,
-			WitchVictimID2:        witchVictimID2,
-			HealPotionUsed:        healPotionUsed,
-			PoisonPotionUsed:      poisonPotionUsed,
-			WitchSelectedHealID:   witchSelectedHealID,
-			WitchSelectedPoisonID: witchSelectedPoisonID,
-			WitchHealedThisNight:  witchHealedThisNight,
-			WitchHealedName:       witchHealedName,
-			WitchKilledThisNight:  witchKilledThisNight,
-			WitchKilledTarget:     witchKilledTarget,
-			WitchDoneThisNight:    witchDoneThisNight,
-			IsMason:               isMason,
-			Masons:                masons,
-			IsCupid:               isCupid,
-			CupidLinked:           cupidLinked,
-			CupidChosen1ID:        cupidChosen1ID,
-			CupidChosen1:          cupidChosen1,
-			CupidChosen2ID:        cupidChosen2ID,
-			CupidChosen2:          cupidChosen2,
-			IsLover:               isLover,
-			LoverName:             loverName,
-			AllWolvesActed:        allWolvesActed,
-			AllWolvesActed2:       allWolvesActed2,
-			WolfEndVoted:          wolfEndVoted,
-			WolfEndVoted2:         wolfEndVoted2,
+			IsAlive:                   isAlive,
+			AliveTargets:              aliveTargets,
+			IsWerewolf:                isWerewolf,
+			Votes:                     votes,
+			WerewolfVoteCounts:        werewolfVoteCounts,
+			CurrentVotePlayer:         currentVotePlayer,
+			WolfCubDoubleKill:         wolfCubDoubleKill,
+			CurrentVotePlayer2:        currentVotePlayer2,
+			NightNumber:               game.Round,
+			IsSeer:                    isSeer,
+			HasInvestigated:           hasInvestigated,
+			SeerSelectedPlayer:        seerSelectedPlayer,
+			SeerResults:               seerResults,
+			IsDoctor:                  isDoctor,
+			HasProtected:              hasProtected,
+			DoctorSelectedPlayer:      doctorSelectedPlayer,
+			DoctorProtectingPlayer:    doctorProtectingPlayer,
+			IsGuard:                   isGuard,
+			GuardHasProtected:         guardHasProtected,
+			GuardSelectedPlayer:       guardSelectedPlayer,
+			GuardProtectingPlayer:     guardProtectingPlayer,
+			GuardTargets:              guardTargets,
+			IsWitch:                   isWitch,
+			WitchVictimPlayer:         witchVictimPlayer,
+			WitchVictimPlayer2:        witchVictimPlayer2,
+			HealPotionUsed:            healPotionUsed,
+			PoisonPotionUsed:          poisonPotionUsed,
+			WitchSelectedHealPlayer:   witchSelectedHealPlayer,
+			WitchSelectedPoisonPlayer: witchSelectedPoisonPlayer,
+			WitchHealedThisNight:      witchHealedThisNight,
+			WitchHealedPlayer:         witchHealedPlayer,
+			WitchKilledThisNight:      witchKilledThisNight,
+			WitchKilledPlayer:         witchKilledPlayer,
+			WitchDoneThisNight:        witchDoneThisNight,
+			IsMason:                   isMason,
+			Masons:                    masons,
+			IsCupid:                   isCupid,
+			CupidLinked:               cupidLinked,
+			CupidChosen1Player:        cupidChosen1Player,
+			CupidChosen2Player:        cupidChosen2Player,
+			AllWolvesActed:            allWolvesActed,
+			AllWolvesActed2:           allWolvesActed2,
+			WolfEndVoted:              wolfEndVoted,
+			WolfEndVoted2:             wolfEndVoted2,
 		}
 
 		// Survey: show once player has completed their night role action
@@ -1007,9 +1055,13 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 			AND gp.is_alive = 0`,
 			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, ActionWitchKill, ActionLoverHeartbreak)
 
-		// Get alive players as targets
+		// Apply visibility rules to all players from this viewer's perspective
+		seerInvestigated := getSeerInvestigated(db, game.ID, playerID)
+		visiblePlayers := applyCardVisibility(currentPlayer, players, seerInvestigated)
+
+		// Get alive players as targets (visibility pre-applied)
 		var aliveTargets []Player
-		for _, p := range players {
+		for _, p := range visiblePlayers {
 			if p.IsAlive {
 				aliveTargets = append(aliveTargets, p)
 			}
@@ -1017,9 +1069,8 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 
 		// Populate Hunter revenge data — check for any dead Hunter who hasn't taken their revenge shot yet
 		var hunterRevengeNeeded, hunterRevengeDone bool
-		var hunterName, hunterVictim, hunterVictimRole string
 		var isTheHunter bool
-		var hunterSelectedID int64
+		var hunterVictimPlayer, hunterSelectedPlayer *Player
 		var hunterTargets []Player
 
 		// Step 1: Find a dead Hunter who hasn't taken revenge yet (pending — takes priority)
@@ -1034,7 +1085,6 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 				game.ID, p.PlayerID, ActionHunterRevenge)
 			if revengeCount == 0 {
 				hunterRevengeNeeded = true
-				hunterName = p.Name
 				isTheHunter = (p.PlayerID == playerID)
 				hunterTargets = aliveTargets
 				// Check for pending selection from this hunter
@@ -1045,7 +1095,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 						FROM game_action
 						WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
 						game.ID, game.Round, playerID, ActionHunterSelect) == nil && selectAction.TargetPlayerID != nil {
-						hunterSelectedID = *selectAction.TargetPlayerID
+						hunterSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, currentPlayer, seerInvestigated)
 					}
 				}
 				break
@@ -1064,11 +1114,8 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 			if err == nil && revengeAction.TargetPlayerID != nil {
 				hunterRevengeNeeded = true
 				hunterRevengeDone = true
-				db.Get(&hunterName, "SELECT name FROM player WHERE rowid = ?", revengeAction.ActorPlayerID)
-				db.Get(&hunterVictim, "SELECT name FROM player WHERE rowid = ?", *revengeAction.TargetPlayerID)
-				db.Get(&hunterVictimRole, `
-					SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid
-					WHERE g.game_id = ? AND g.player_id = ?`, game.ID, *revengeAction.TargetPlayerID)
+				// HunterVictimPlayer: dead player, full role visible (dead rule in applyCardVisibility)
+				hunterVictimPlayer = getVisiblePlayer(db, game.ID, *revengeAction.TargetPlayerID, currentPlayer, seerInvestigated)
 				isTheHunter = (revengeAction.ActorPlayerID == playerID)
 			}
 		}
@@ -1076,7 +1123,7 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 		// Get current votes for this day
 		var votes []DayVote
 		dayVoteCounts := map[int64]int{}
-		var currentVote int64
+		var currentVotePlayer *Player
 
 		type voteCountRow struct {
 			TargetPlayerID int64 `db:"target_player_id"`
@@ -1105,17 +1152,10 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 			if action.TargetPlayerID != nil {
 				db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
 				if action.ActorPlayerID == playerID {
-					currentVote = *action.TargetPlayerID
+					currentVotePlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, currentPlayer, seerInvestigated)
 				}
 			}
 			votes = append(votes, DayVote{VoterName: voterName, TargetName: targetName})
-		}
-
-		dayLoverPartnerID := getLoverPartner(db, game.ID, currentPlayer.PlayerID)
-		isDayLover := dayLoverPartnerID != 0
-		var dayLoverName string
-		if isDayLover {
-			db.Get(&dayLoverName, "SELECT name FROM player WHERE rowid = ?", dayLoverPartnerID)
 		}
 
 		// All-acted and has-voted checks for End Vote button
@@ -1127,31 +1167,21 @@ func getGameComponent(db *sqlx.DB, tmpl *template.Template, playerID int64, game
 			game.ID, game.Round, ActionDayVote, playerID)
 
 		data := DayData{
-			SeerFoundWerewolves: getSeerFoundWerewolves(db, game.ID, playerID),
-			PlayerName:          currentPlayer.Name,
-			RoleName:            currentPlayer.RoleName,
-			RoleDescription:     currentPlayer.RoleDescription,
-			RoleTeam:            currentPlayer.Team,
-			Players:             players,
-			AliveTargets:        aliveTargets,
-			NightNumber:         game.Round,
-			NightVictims:        nightVictims,
-			Votes:               votes,
-			DayVoteCounts:       dayVoteCounts,
-			CurrentVote:         currentVote,
-			IsAlive:             currentPlayer.IsAlive,
-			HunterRevengeNeeded: hunterRevengeNeeded,
-			HunterRevengeDone:   hunterRevengeDone,
-			HunterName:          hunterName,
-			HunterVictim:        hunterVictim,
-			HunterVictimRole:    hunterVictimRole,
-			IsTheHunter:         isTheHunter,
-			HunterSelectedID:    hunterSelectedID,
-			HunterTargets:       hunterTargets,
-			IsLover:             isDayLover,
-			LoverName:           dayLoverName,
-			AllActed:            totalDayActed >= len(aliveTargets),
-			HasVoted:            playerActed > 0,
+			AliveTargets:         aliveTargets,
+			NightNumber:          game.Round,
+			NightVictims:         nightVictims,
+			Votes:                votes,
+			DayVoteCounts:        dayVoteCounts,
+			CurrentVotePlayer:    currentVotePlayer,
+			IsAlive:              currentPlayer.IsAlive,
+			HunterRevengeNeeded:  hunterRevengeNeeded,
+			HunterRevengeDone:    hunterRevengeDone,
+			HunterVictimPlayer:   hunterVictimPlayer,
+			IsTheHunter:          isTheHunter,
+			HunterSelectedPlayer: hunterSelectedPlayer,
+			HunterTargets:        hunterTargets,
+			AllActed:             totalDayActed >= len(aliveTargets),
+			HasVoted:             playerActed > 0,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "day_content.html", data); err != nil {

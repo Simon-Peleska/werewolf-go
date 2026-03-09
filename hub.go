@@ -283,12 +283,13 @@ func (h *Hub) broadcastGameUpdate() {
 		}
 		combined.Write(buf.Bytes())
 
+		seerInvestigated := getSeerInvestigated(h.db, game.ID, p.PlayerID)
+		visiblePlayers := applyCardVisibility(p, selfFirstPlayers(players, p.PlayerID), seerInvestigated)
 		data := SidebarData{
-			Player:              &p,
-			Players:             selfFirstPlayers(players, p.PlayerID),
-			Game:                game,
-			LoverPartnerID:      getLoverPartner(h.db, game.ID, p.PlayerID),
-			SeerFoundWerewolves: getSeerFoundWerewolves(h.db, game.ID, p.PlayerID),
+			Player:         &p,
+			Players:        visiblePlayers,
+			Game:           game,
+			LoverPartnerID: getLoverPartner(h.db, game.ID, p.PlayerID),
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 

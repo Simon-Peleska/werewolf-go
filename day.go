@@ -22,32 +22,21 @@ type NightVictim struct {
 
 // DayData holds all data needed to render the day phase
 type DayData struct {
-	Players             []Player
-	AliveTargets        []Player
-	NightNumber         int
-	NightVictims        []NightVictim // All players killed last night
-	Votes               []DayVote
-	DayVoteCounts       map[int64]int // vote count per target player ID
-	CurrentVote         int64         // 0 means no vote
-	IsAlive             bool
-	HunterRevengeNeeded bool           // Night victim was a Hunter who hasn't shot yet
-	HunterRevengeDone   bool           // Hunter has taken their shot
-	HunterName          string         // Name of the dead Hunter
-	HunterVictim        string         // Who the Hunter shot (after revenge)
-	HunterVictimRole    string         // Role of Hunter's target
-	IsTheHunter         bool           // Is this player the dead Hunter needing to shoot?
-	HunterSelectedID    int64          // Pending revenge target (0 = none selected)
-	HunterTargets       []Player       // Alive targets for the Hunter to pick from
-	IsLover             bool           // Is this player one of the two lovers?
-	LoverName           string         // Name of their partner
-	AllActed            bool           // All alive players have voted or passed this round
-	HasVoted            bool           // This player has a day_vote record (including pass)
-	SeerFoundWerewolves map[int64]bool // player IDs the current player (as Seer) confirmed as wolves
-	// Card display fields
-	PlayerName      string
-	RoleName        string
-	RoleDescription string
-	RoleTeam        string
+	AliveTargets         []Player // alive players; visibility pre-applied
+	NightNumber          int
+	NightVictims         []NightVictim // all players killed last night
+	Votes                []DayVote
+	DayVoteCounts        map[int64]int // vote count per target player ID
+	CurrentVotePlayer    *Player       // this player's current vote (nil = no vote / pass)
+	IsAlive              bool
+	HunterRevengeNeeded  bool     // a dead Hunter hasn't shot yet
+	HunterRevengeDone    bool     // Hunter has taken their shot
+	HunterVictimPlayer   *Player  // who the Hunter shot (full role visible — dead player)
+	IsTheHunter          bool     // is this player the dead Hunter needing to shoot?
+	HunterSelectedPlayer *Player  // pending revenge target (nil = none selected)
+	HunterTargets        []Player // alive targets for the Hunter; visibility pre-applied
+	AllActed             bool     // all alive players have voted or passed this round
+	HasVoted             bool     // this player has a day_vote record (including pass)
 }
 
 // applyHeartbreaks checks if any of the given killed players have a living lover.

@@ -150,8 +150,8 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 	}
 	tp.clickAndWait("[id^='vote-form-'] player-card[player-name='" + targetName + "']")
 	tp.logHTML("after voting for " + targetName)
-	// Auto-press End Vote if all werewolves have now voted
-	if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn"); has {
+	// Auto-press End Vote if the button is present and enabled (all werewolves have voted)
+	if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn:not([disabled])"); has {
 		tp.clickElementAndWait(endVoteBtn)
 	}
 }
@@ -1355,8 +1355,8 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
-	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
-		werewolf.clickElementAndWait(endVote2Btn)
+	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
+		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
 
 	submitNightSurveysForAllPlayers(players)
@@ -1469,8 +1469,8 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
-	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
-		werewolf.clickElementAndWait(endVote2Btn)
+	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
+		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
 
 	// Witch should see both victims listed
@@ -1585,8 +1585,8 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
-	if has, endVote2Btn, _ := werewolf.p().Has("#werewolf-end-vote2-btn"); has {
-		werewolf.clickElementAndWait(endVote2Btn)
+	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
+		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
 
 	submitNightSurveysForAllPlayers(players)

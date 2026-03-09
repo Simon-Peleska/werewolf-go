@@ -25,16 +25,12 @@
 
   {{ $self := .Player }}
   {{ $loverID := .LoverPartnerID }}
-  {{ $seerFound := .SeerFoundWerewolves }}
   <section>
     <h3>Players</h3>
     <card-list id="player-list">
       {{range .Players}}
       {{$isSelf := eq .PlayerID $self.PlayerID}}
-      {{$showFullRole := or $isSelf (not .IsAlive)}}
-      {{$showWerewolfTeam := or $showFullRole (and (eq $self.Team "werewolf") (eq .Team "werewolf")) (index $seerFound .PlayerID)}}
       {{$isLover := and (ne $loverID 0) (eq .PlayerID $loverID)}}
-      {{if $showFullRole}}
       <player-card
         {{if $isSelf}}id="sidebar-role-card"{{end}}
         data-player-id="{{.ID}}"
@@ -45,25 +41,6 @@
         alive="{{if .IsAlive}}true{{else}}false{{end}}"
         {{if $isLover}}lover{{end}}
         {{if not $isSelf}}collapsed{{end}}></player-card>
-      {{else if $showWerewolfTeam}}
-      <player-card
-        data-player-id="{{.ID}}"
-        player-name="{{.Name}}"
-        role-name="Werewolf"
-        team="werewolf"
-        alive="{{if .IsAlive}}true{{else}}false{{end}}"
-        {{if $isLover}}lover{{end}}
-        collapsed></player-card>
-      {{else}}
-      <player-card
-        data-player-id="{{.ID}}"
-        player-name="{{.Name}}"
-        role-name="Unknown"
-        team="unknown"
-        alive="{{if .IsAlive}}true{{else}}false{{end}}"
-        {{if $isLover}}lover{{end}}
-        collapsed></player-card>
-      {{end}}
       {{end}}
     </card-list>
   </section>
