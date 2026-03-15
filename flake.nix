@@ -103,7 +103,7 @@
             echo "  run_tests.sh       - run tests"
             echo "  start_chromium.sh  - open browser windows for manual testing"
             echo "  go build ./...     - build"
-            echo "  go test ./...      - test"
+            echo "  run_tests.sh run   - run tests (stream to terminal)"
           '';
         };
       });

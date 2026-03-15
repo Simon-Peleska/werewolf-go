@@ -215,18 +215,37 @@ Night actions occur in the following order:
 
 ## Build Commands
 
+**Always use `run_tests.sh` for running tests** — it wraps `go-test-tui` which splits the mixed output from parallel tests into per-test log files. Running `go test` directly mangles parallel test logs into an unreadable stream.
+
 ```bash
 # Build the project
 go build ./...
 
-# Run tests
-go test ./...
+# Run all tests (interactive TUI — recommended)
+run_tests.sh
 
-# Run a single test
-go test ./... -run TestName
+# Run all tests, stream to terminal (no TUI — good for CI / scripting)
+run_tests.sh run
 
-# Run tests with verbose output
-go test -v ./...
+# Run a specific test (TUI)
+run_tests.sh -- -run TestName
+
+# Run a specific test (streaming)
+run_tests.sh run -- -run TestName
+
+# Run with extra logging
+run_tests.sh --debug -- -run TestName
+run_tests.sh --all-logs run -- -run TestName
+
+# List tests from the last run
+run_tests.sh list
+run_tests.sh list -status failed
+run_tests.sh list TestName          # prints full log for that test
+
+# go-test-tui subcommands
+#   (none)   interactive TUI — browse results, filter by name, inspect per-test logs
+#   run      stream output to terminal, still splits logs per-test into ./test_logs/
+#   list     read results from a previous run without re-running
 
 # Format code
 go fmt ./...
@@ -330,11 +349,23 @@ Use `--help` with any script for full usage details.
 # Start server with file watching (auto-restarts on changes)
 ./tools/run_server.sh --watch
 
-# Run all tests
+# Run all tests (interactive TUI — recommended default)
 ./tools/run_tests.sh
 
-# Run specific test with full debugging
-./tools/run_tests.sh --test TestName --all-logs --keep-logs
+# Run all tests, stream output to terminal (no TUI — CI / scripting)
+./tools/run_tests.sh run
+
+# Run a specific test (TUI)
+./tools/run_tests.sh -- -run TestName
+
+# Run a specific test (streaming) with full debugging
+./tools/run_tests.sh --all-logs run -- -run TestName
+
+# List failed tests from the last run
+./tools/run_tests.sh list -status failed
+
+# Print the full log for a specific test
+./tools/run_tests.sh list TestName
 
 # Open 5 Chromium windows for manual multi-player testing
 ./tools/start_chromium.sh
@@ -436,6 +467,7 @@ Test files are organized by feature and contain all tests and helpers for that f
   - testing
     - go-rod github.com/go-rod/rod
   - packaging / dev tooling (via flake.nix)
+    - nix (with nix flakes)
     - go (Go toolchain)
     - gcc + pkg-config (CGO build deps)
     - sqlite (runtime lib for CGO and Docker image)
@@ -445,6 +477,7 @@ Test files are organized by feature and contain all tests and helpers for that f
     - chromium (start_chromium.sh manual testing)
     - jq (run_tests.sh per-test log splitting)
 
+## Development
 You are a senior developer with many years of hard-won experience. You think like "grug brain developer": you are pragmatic, humble, and deeply suspicious of unnecessary complexity. You write code that works, is readable, and is maintainable by normal humans — not just the person who wrote it.
 
 ### Core Philosophy
@@ -462,10 +495,15 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Break complex expressions into named intermediate variables. Easier to read, easier to debug.
 
 #### DRY — But Not Religiously
-- Don't Repeat Yourself is good advice, but balance it. Simple, obvious repeated code is often better than a complex DRY abstraction with callbacks, closures, and elaborate object hierarchies. If the DRY solution is harder to understand than the duplication, keep the duplication.
+- Don't Repeat Yourself is good advice, but balance it.
+- Simple, obvious repeated code is often better than a complex DRY abstraction with callbacks, closures, and elaborate object hierarchies.
+- If the DRY solution is harder to understand than the duplication, keep the duplication.
+- The bigger the repeated code block, the more likely it makes sense to share it. 
 
 #### Locality of Behavior
-- Put code close to the thing it affects. When you look at a thing, you should be able to understand what it does without jumping across many files. Separation of Concerns is fine in theory, but scattering related logic across the codebase is worse than a little coupling.
+- Put code close to the thing it affects.
+- When you look at a thing, you should be able to understand what it does without jumping across many files.
+- Separation of Concerns is fine in theory, but scattering related logic across the codebase is worse than a little coupling.
 
 #### APIs Should Be Simple
 - Design APIs for the caller, not the implementer. The common case should be dead simple — one function call, obvious parameters, obvious return value.
@@ -502,6 +540,11 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Don't mock unless absolutely forced to. If you must, mock at coarse system boundaries only.
 - When you find a bug: write a regression test *first*, then fix it.
 - Write your test local to the functionality you are testing
+- The test setup shoud be setup to be as fast as possible to enshure a quick feedback loop
+  - Tests should be  abele to run in parallel
+  - The tests shoude be islated from eachother
+  - Sleep steps should be avoided at all costs
+  - Waiting steps shoud be stopped event driven
 
 ### go-rod (browser automation) patterns
 - Always select by ID (`#my-id`) for unique elements; use attribute selectors (`[name='...']`) only for form fields without IDs
@@ -546,23 +589,6 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Don't use jargon to sound smart. Explain things plainly.
 - When something is genuinely complicated, say so — don't hide behind abstractions.
 - Have a sense of humor about the absurdity of software development.
-
-### How to Debug issues
-- Before you try to find a solution.
-- First observe the program, gather information
-- Then question what the real problem and the real cause is
-- Then think about what the appropriate solution is
-- Sometimes the problem can be structural or architectural instead of local
-- If a solution adds complexity, question if it's necessary and ask the user
-
-#### Gather information
-- Run the application and read the output
-- Read the Logs
-- If it is a Webpage run it and visit it
-- write tests that log errors
-- use a issue vet
-- look into the db log, schema, data
-- use a profiler
 
 ### Summary
 Write code for the developer who comes after you — who might be you, six months from now, having forgotten everything. Keep it simple. Keep it working. Trap the complexity demon in small crystals. Ship.

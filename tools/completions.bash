@@ -39,7 +39,7 @@ _run_tests_completions() {
         fi
     done
 
-    local opts="--debug --log-requests --log-html --log-db --log-ws --all-logs --output-dir --keep-logs --clean --"
+    local opts="run list help --debug --log-requests --log-html --log-db --log-ws --all-logs --output-dir --keep-logs --clean --"
     COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 

@@ -28,11 +28,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1773568684,
-        "narHash": "sha256-Zo5SVhIuF7LLNjCw7grZTncvFG4XkNQVDjxqot1Hwi0=",
+        "lastModified": 1773572440,
+        "narHash": "sha256-NkGtErsydmghiKytFHAy6DijFjEoY8gYCvwNsBxkPis=",
         "owner": "Simon-Peleska",
         "repo": "go-test-tui",
-        "rev": "b9b9f782555506cdaa65defd3825a7238e263a89",
+        "rev": "78655f0ee7d70a65fccdb884462296b6c3e5ffad",
         "type": "github"
       },
       "original": {
