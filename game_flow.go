@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // FinishedData holds all data needed to render the finished game screen
 type FinishedData struct {
 	Winners []Player
@@ -21,6 +23,7 @@ func (h *Hub) transitionToNight(game *Game) {
 	h.logDBState("after day resolution")
 
 	h.triggerBroadcast()
+	h.maybeSpeakStory(game.ID, fmt.Sprintf("Night %d falls upon the village.", newRound))
 }
 
 // checkWinConditions checks if the game has ended and returns true if so
@@ -158,4 +161,12 @@ func (h *Hub) endGame(game *Game, winner string) {
 	h.logDBState("after game end")
 
 	h.triggerBroadcast()
+	switch winner {
+	case "villagers":
+		h.maybeSpeakStory(game.ID, "The villagers have triumphed! All werewolves have been eliminated.")
+	case "werewolves":
+		h.maybeSpeakStory(game.ID, "The werewolves have won! They now rule the village.")
+	case "lovers":
+		h.maybeSpeakStory(game.ID, "The lovers have won. They are the last ones standing, bound together forever.")
+	}
 }

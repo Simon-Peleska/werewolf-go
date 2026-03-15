@@ -311,14 +311,12 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Log DB | `LOG_DB` | `log_db` | `-log-db` | `false` | Log database dumps |
 | Log WS | `LOG_WS` | `log_ws` | `-log-ws` | `false` | Log WebSocket messages |
 | Log debug | `LOG_DEBUG` | `log_debug` | `-log-debug` | `false` | Enable debug logging |
-| Storyteller provider | `STORYTELLER_PROVIDER` | `storyteller_provider` | `-storyteller-provider` | — | `ollama\|openai\|claude\|gemini\|groq\|openai-compatible` |
+| Storyteller provider | `STORYTELLER_PROVIDER` | `storyteller_provider` | `-storyteller-provider` | — | `openai\|claude` |
 | Storyteller model | `STORYTELLER_MODEL` | `storyteller_model` | `-storyteller-model` | — | Model name |
-| Ollama URL | `STORYTELLER_OLLAMA_URL` | `storyteller_ollama_url` | `-storyteller-ollama-url` | `http://localhost:11434` | Ollama server URL |
-| Storyteller URL | `STORYTELLER_URL` | `storyteller_url` | `-storyteller-url` | — | Base URL for openai-compatible provider |
+| Storyteller URL | `STORYTELLER_URL` | `storyteller_url` | `-storyteller-url` | — | Base URL override (default: provider's public API) |
 | Storyteller API key | `STORYTELLER_API_KEY` | `storyteller_api_key` | `-storyteller-api-key` | — | API key for storyteller |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
-| Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` |
-| Groq API key | `GROQ_API_KEY` | `groq_api_key` | `-groq-api-key` | — | Groq API key |
+| Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` (claude only) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
@@ -403,8 +401,8 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./night.go` | Night phase: werewolf voting, seer investigation, doctor/guard protection, vote resolution |
 | `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
 | `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
-| `./storyteller.go` | AI storyteller: Storyteller interface, Ollama/OpenAI backends, streaming story generation |
-| `./tts.go` | AI narrator (TTS): Narrator interface, OpenAI/ElevenLabs PCM streaming, maybeSpeakStory |
+| `./storyteller.go` | AI storyteller: `Storyteller` interface, OpenAI-compatible + Claude HTTP backends, sentence-streamed TTS pipeline |
+| `./tts.go` | AI narrator (TTS): `Narrator` interface, OpenAI/ElevenLabs PCM streaming, `maybeSpeakStory` |
 | `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
 
 ### Test Files (Feature-Specific Tests)
@@ -434,6 +432,24 @@ Test files are organized by feature and contain all tests and helpers for that f
 | `templates/toast.html` | Toast notification fragment |
 | `templates/error.html` | Error display fragment |
 
+## AI Storyteller & Narrator
+
+### Storyteller (`storyteller.go`)
+- `Storyteller` interface: `Tell(ctx, history []string, onChunk func(string)) (string, error)`
+- Two providers (direct HTTP, no library):
+  - `openai` — POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
+  - `claude` — POST `/v1/messages` SSE (Anthropic Messages API). Set `STORYTELLER_URL` to override (default: `https://api.anthropic.com`). Supports extended thinking via `STORYTELLER_THINKING` (maps to budget_tokens: low=2000, medium=8000, high=32000, auto=16000).
+- `maybeGenerateStory(gameID, round, phase, actorPlayerID)` — called after night kills, day eliminations, hunter revenge
+- Tokens streamed into `game_action.description` via 300ms DB flush ticker, so history updates progressively in the UI
+- **Sentence-pipelined TTS**: as LLM tokens arrive, `nextSentence()` detects sentence boundaries (`.` `!` `?` + whitespace/end). Each complete sentence is sent to a `sentenceCh` channel; a single TTS goroutine drains it sequentially so audio starts before the LLM finishes and sentences never overlap.
+- Tests: `mockStoryteller{text string}` in `utils.go`; `newTestContext` resets `globalStoryteller = nil`
+
+### Narrator (`tts.go`)
+- `Narrator` interface: `Speak(ctx, text string, onChunk func([]byte)) error`
+- Three providers: `openai`, `openai-compatible`, `elevenlabs` — all stream raw PCM (16-bit mono little-endian)
+- `maybeSpeakStory(gameID, text)` — used for fixed game-event announcements (game start, night start, day start, game end); fires-and-forgets a TTS goroutine
+- Frontend (`game.html`) receives binary WebSocket frames, schedules them into Web Audio API via `_nextPlayTime` for gapless playback; vibrates (200ms) on first chunk of each new announcement (3s debounce)
+
 ## Architecture
 - Go backend, SQLite database, HTMX frontend
 - Signup/login page uses standard HTTP (no WebSockets)
@@ -456,7 +472,6 @@ Test files are organized by feature and contain all tests and helpers for that f
     - sqlite github.com/mattn/go-sqlite3
     - sqlx https://github.com/launchbadge/sqlx
     - gorilla websockets https://github.com/gorilla/websocket
-    - langchaingo https://github.com/tmc/langchaingo
   - frontend
     - htmx https://github.com/bigskysoftware/htmx
     - htmx ideomorph extension https://github.com/bigskysoftware/idiomorph/blob/main/src/idiomorph-htmx.js

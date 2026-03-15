@@ -1351,9 +1351,9 @@ func (tp *TestPlayer) hasToastWithText(text string) bool {
 	return strings.Contains(elText, text)
 }
 
-// hasSoundToast returns true if any visible toast with data-sound contains the given text.
-func (tp *TestPlayer) hasSoundToast(text string) bool {
-	toasts, err := tp.p().Elements("#toast-container [data-sound]")
+// hasToast returns true if any visible toast contains the given text.
+func (tp *TestPlayer) hasToast(text string) bool {
+	toasts, err := tp.p().Elements("#toast-container [data-toast]")
 	if err != nil {
 		return false
 	}

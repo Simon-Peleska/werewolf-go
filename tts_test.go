@@ -55,9 +55,9 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 
 	// ── 2. Build Storyteller pointing at the fake server ────────────────────────────
 	storyteller := initStoryteller(AppConfig{
-		StorytellerProvider: "openai-compatible",
+		StorytellerProvider: "openai",
 		StorytellerModel:    "llm-1",
-		StorytellerURL:      fakeOpenAi.URL + "/v1/",
+		StorytellerURL:      fakeOpenAi.URL + "/v1",
 		StorytellerAPIKey:   "test-key",
 	})
 
@@ -178,11 +178,12 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 		t.Errorf("Werewolf cannot see AI story in history")
 	}
 
-	// ── 7. Wait for all bytes to arrive at the browser ───────────────────────────
-	// Poll the accumulator total. At 24 kHz / 16-bit the narrator finishes in <100 ms;
-	// WS delivery over loopback is near-instant. 5 s deadline is very generous.
+	// ── 7. Wait for story audio to arrive at the browser ─────────────────────────
+	// Multiple TTS calls fire during the game (game start, day announcements, story
+	// sentences). All use the same fake server returning identical PCM. We wait until
+	// at least one full copy of the PCM has arrived, then give it a moment to settle.
 	expectedBytes := len(pcm)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		res, evalErr := players[0].p().Eval(`() =>
 			window._testAudioChunks.reduce(function(a, b) { return a + b.length; }, 0)`)
@@ -193,45 +194,58 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	}
 
 	// ── 8. Verify total bytes received ───────────────────────────────────────────
+	// Multiple TTS calls are expected (game-start, day announcement, story sentences),
+	// so total bytes will be a multiple of len(pcm). Check at least one copy arrived.
 	bytesRes, err := players[0].p().Eval(
 		`() => window._testAudioChunks.reduce(function(a, b) { return a + b.length; }, 0)`)
 	if err != nil {
 		t.Fatalf("eval total bytes: %v", err)
 	}
 	totalBytesReceived := bytesRes.Value.Int()
-	ctx.logger.Debug("Browser received %d bytes (expected %d)", totalBytesReceived, expectedBytes)
-	if totalBytesReceived != expectedBytes {
-		t.Errorf("byte count: want %d, got %d", expectedBytes, totalBytesReceived)
+	ctx.logger.Debug("Browser received %d bytes (expected >= %d)", totalBytesReceived, expectedBytes)
+	if totalBytesReceived < expectedBytes {
+		t.Errorf("byte count: want >= %d, got %d", expectedBytes, totalBytesReceived)
+	}
+	if totalBytesReceived%expectedBytes != 0 {
+		t.Errorf("byte count %d is not a multiple of PCM size %d", totalBytesReceived, expectedBytes)
 	}
 
-	// ── 9. Browser-side SHA-256 via Web Crypto API ───────────────────────────────
-	// crypto.subtle is available on localhost (Chrome treats localhost as secure).
-	// page.Eval awaits Promises, so the async function resolves before returning.
-	hashRes, err := players[0].p().Eval(`async function() {
+	// ── 9. Per-segment integrity check via Web Crypto API ────────────────────────
+	// Each TTS call delivers an identical copy of the PCM. Verify every segment
+	// (each len(pcm) bytes) matches the known-good server hash.
+	hashRes, err := players[0].p().Eval(fmt.Sprintf(`async function() {
 		var chunks = window._testAudioChunks;
 		var totalLen = chunks.reduce(function(a, b) { return a + b.length; }, 0);
 		var combined = new Uint8Array(totalLen);
 		var offset = 0;
-		for (var i = 0; i < chunks.length; i++) {
-			combined.set(chunks[i], offset);
-			offset += chunks[i].length;
+		for (var i = 0; i < chunks.length; i++) { combined.set(chunks[i], offset); offset += chunks[i].length; }
+		var segLen = %d;
+		var numSegs = totalLen / segLen;
+		var hashes = [];
+		for (var s = 0; s < numSegs; s++) {
+			var seg = combined.buffer.slice(s * segLen, (s+1) * segLen);
+			var h = await crypto.subtle.digest('SHA-256', seg);
+			hashes.push(Array.from(new Uint8Array(h)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join(''));
 		}
-		var hashBuf = await crypto.subtle.digest('SHA-256', combined.buffer);
-		var hashArr = Array.from(new Uint8Array(hashBuf));
-		return hashArr.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-	}`)
+		return hashes.join(',');
+	}`, expectedBytes))
 	if err != nil {
 		t.Fatalf("browser SHA-256 computation: %v", err)
 	}
-	browserHashHex := hashRes.Value.Str()
+	segHashes := strings.Split(hashRes.Value.Str(), ",")
 	ctx.logger.Debug("Server SHA-256:  %s", serverHashHex)
-	ctx.logger.Debug("Browser SHA-256: %s", browserHashHex)
+	ctx.logger.Debug("Browser segments: %d, hashes: %v", len(segHashes), segHashes)
 
-	// ── 10. Hash comparison — proves lossless byte delivery ──────────────────────
-	if browserHashHex != serverHashHex {
-		t.Errorf("audio data mismatch:\n  server:  %s\n  browser: %s", serverHashHex, browserHashHex)
-	} else {
-		t.Logf("Hashes match: %s ✓", serverHashHex)
+	// ── 10. Hash comparison — proves lossless byte delivery per segment ───────────
+	allMatch := true
+	for i, h := range segHashes {
+		if h != serverHashHex {
+			t.Errorf("segment %d/%d hash mismatch:\n  server:  %s\n  browser: %s", i+1, len(segHashes), serverHashHex, h)
+			allMatch = false
+		}
+	}
+	if allMatch {
+		t.Logf("All %d segment hashes match: %s ✓", len(segHashes), serverHashHex)
 	}
 
 	// ── 11. Web Audio API scheduling check ───────────────────────────────────────

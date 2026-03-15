@@ -161,6 +161,7 @@ func handleWSStartGame(client *Client) {
 	h.logDBState("after game start")
 
 	h.triggerBroadcast()
+	h.maybeSpeakStory(game.ID, "The game begins. Night falls upon the village.")
 	h.logf("Game started successfully!")
 }
 

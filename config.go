@@ -25,14 +25,12 @@ type AppConfig struct {
 	LogDebug     bool   `json:"log_debug"`
 
 	// AI Storyteller
-	StorytellerProvider    string `json:"storyteller_provider"`    // ollama | openai | claude | gemini | groq | openai-compatible
+	StorytellerProvider    string `json:"storyteller_provider"`    // openai | claude
 	StorytellerModel       string `json:"storyteller_model"`       // model name
-	StorytellerOllamaURL   string `json:"storyteller_ollama_url"`  // Ollama server URL
-	StorytellerURL         string `json:"storyteller_url"`         // base URL for openai-compatible
-	StorytellerAPIKey      string `json:"storyteller_api_key"`     // API key for openai-compatible
+	StorytellerURL         string `json:"storyteller_url"`         // base URL (default: provider's public API)
+	StorytellerAPIKey      string `json:"storyteller_api_key"`     // API key
 	StorytellerTemperature string `json:"storyteller_temperature"` // float 0-1 as string
-	StorytellerThinking    string `json:"storyteller_thinking"`    // none | low | medium | high | auto
-	GroqAPIKey             string `json:"groq_api_key"`            // API key for groq provider
+	StorytellerThinking    string `json:"storyteller_thinking"`    // none | low | medium | high | auto (claude only)
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -56,9 +54,8 @@ func (cfg AppConfig) toLogConfig() LogConfig {
 
 func defaultConfig() AppConfig {
 	return AppConfig{
-		DB:                   "file::memory:?cache=shared",
-		Addr:                 ":8080",
-		StorytellerOllamaURL: "http://localhost:11434",
+		DB:   "file::memory:?cache=shared",
+		Addr: ":8080",
 	}
 }
 
@@ -110,9 +107,6 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("STORYTELLER_MODEL"); v != "" {
 		cfg.StorytellerModel = v
 	}
-	if v := envStr("STORYTELLER_OLLAMA_URL"); v != "" {
-		cfg.StorytellerOllamaURL = v
-	}
 	if v := envStr("STORYTELLER_URL"); v != "" {
 		cfg.StorytellerURL = v
 	}
@@ -124,9 +118,6 @@ func loadConfig(configPath string) AppConfig {
 	}
 	if v := envStr("STORYTELLER_THINKING"); v != "" {
 		cfg.StorytellerThinking = v
-	}
-	if v := envStr("GROQ_API_KEY"); v != "" {
-		cfg.GroqAPIKey = v
 	}
 	if v := envStr("NARRATOR_PROVIDER"); v != "" {
 		cfg.NarratorProvider = v
@@ -190,12 +181,10 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	boolean("log_debug", &cfg.LogDebug)
 	str("storyteller_provider", &cfg.StorytellerProvider)
 	str("storyteller_model", &cfg.StorytellerModel)
-	str("storyteller_ollama_url", &cfg.StorytellerOllamaURL)
 	str("storyteller_url", &cfg.StorytellerURL)
 	str("storyteller_api_key", &cfg.StorytellerAPIKey)
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
 	str("storyteller_thinking", &cfg.StorytellerThinking)
-	str("groq_api_key", &cfg.GroqAPIKey)
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
 	str("narrator_voice", &cfg.NarratorVoice)
@@ -220,12 +209,10 @@ type flagValues struct {
 	logDebug               *bool
 	storytellerProvider    *string
 	storytellerModel       *string
-	storytellerOllamaURL   *string
 	storytellerURL         *string
 	storytellerAPIKey      *string
 	storytellerTemperature *string
 	storytellerThinking    *string
-	groqAPIKey             *string
 	narratorProvider       *string
 	narratorModel          *string
 	narratorVoice          *string
@@ -248,14 +235,12 @@ func registerFlags() flagValues {
 		logDB:                  flag.Bool("log-db", false, "log database dumps"),
 		logWS:                  flag.Bool("log-ws", false, "log WebSocket messages"),
 		logDebug:               flag.Bool("log-debug", false, "enable debug logging"),
-		storytellerProvider:    flag.String("storyteller-provider", "", "AI storyteller provider (ollama|openai|claude|gemini|groq|openai-compatible)"),
+		storytellerProvider:    flag.String("storyteller-provider", "", "AI storyteller provider (openai|claude)"),
 		storytellerModel:       flag.String("storyteller-model", "", "AI storyteller model name"),
-		storytellerOllamaURL:   flag.String("storyteller-ollama-url", "", "Ollama server URL"),
-		storytellerURL:         flag.String("storyteller-url", "", "base URL for openai-compatible provider"),
+		storytellerURL:         flag.String("storyteller-url", "", "base URL override for storyteller provider"),
 		storytellerAPIKey:      flag.String("storyteller-api-key", "", "API key for storyteller provider"),
 		storytellerTemperature: flag.String("storyteller-temperature", "", "sampling temperature 0-1"),
-		storytellerThinking:    flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto"),
-		groqAPIKey:             flag.String("groq-api-key", "", "Groq API key"),
+		storytellerThinking:    flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto (claude only)"),
 		narratorProvider:       flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
 		narratorModel:          flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
 		narratorVoice:          flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
@@ -292,8 +277,6 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerProvider = *fv.storytellerProvider
 		case "storyteller-model":
 			cfg.StorytellerModel = *fv.storytellerModel
-		case "storyteller-ollama-url":
-			cfg.StorytellerOllamaURL = *fv.storytellerOllamaURL
 		case "storyteller-url":
 			cfg.StorytellerURL = *fv.storytellerURL
 		case "storyteller-api-key":
@@ -302,8 +285,6 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerTemperature = *fv.storytellerTemperature
 		case "storyteller-thinking":
 			cfg.StorytellerThinking = *fv.storytellerThinking
-		case "groq-api-key":
-			cfg.GroqAPIKey = *fv.groqAPIKey
 		case "narrator-provider":
 			cfg.NarratorProvider = *fv.narratorProvider
 		case "narrator-model":

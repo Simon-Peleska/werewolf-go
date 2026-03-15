@@ -408,7 +408,10 @@ func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 	}
 
 	h.logf("Werewolf %d (%s) ended the kill vote", client.playerID, voter.Name)
-	h.broadcastSoundToast("info", "🐺 The werewolves have made their choice...")
+	html := renderToast(h.templates, h.logf, "info", "🐺 The werewolves have made their choice...")
+	if html != "" {
+		h.broadcast <- []byte(html)
+	}
 	h.resolveWerewolfVotes(game)
 }
 
@@ -1623,6 +1626,7 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 			game.ID, game.Round, ActionNightKill)
 
 		var nightKills []int64
+		var nightKillNames []string
 		for _, pk := range pendingKills {
 			if _, err = h.db.Exec("UPDATE game_player SET is_alive=0 WHERE game_id=? AND player_id=?", game.ID, pk.TargetPlayerID); err != nil {
 				h.logError("handleWSNightSurvey: apply kill", err)
@@ -1634,6 +1638,7 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 			desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
 			h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, desc, pk.ID)
 			nightKills = append(nightKills, pk.TargetPlayerID)
+			nightKillNames = append(nightKillNames, name)
 			h.logf("Applied pending night kill: %s (%s)", name, roleName)
 		}
 
@@ -1649,6 +1654,11 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 
 		if h.checkWinConditions(game) {
 			return
+		}
+		if len(nightKillNames) == 0 {
+			h.maybeSpeakStory(game.ID, "Dawn breaks. The village survived the night unscathed.")
+		} else {
+			h.maybeSpeakStory(game.ID, fmt.Sprintf("Dawn breaks. The village awakens to find %s dead.", strings.Join(nightKillNames, " and ")))
 		}
 		if len(nightKills) > 0 {
 			h.maybeGenerateStory(game.ID, game.Round, "night", nightKills[0])

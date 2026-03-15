@@ -414,10 +414,10 @@ func TestWerewolfCanVote(t *testing.T) {
 		t.Errorf("Villager should not see werewolf vote in history")
 	}
 
-	// Sound toast should NOT fire yet — only one of two werewolves has voted
-	if villagers[0].hasSoundToast("werewolves have made their choice") {
-		ctx.logger.LogDB("FAIL: sound toast fired before all werewolves voted")
-		t.Errorf("Sound toast should not appear until all werewolves have voted")
+	// Toast should NOT fire yet — only one of two werewolves has voted
+	if villagers[0].hasToast("werewolves have made their choice") {
+		ctx.logger.LogDB("FAIL: toast fired before all werewolves voted")
+		t.Errorf("Toast should not appear until all werewolves have voted")
 	}
 
 	ctx.logger.Debug("=== Test passed ===")
@@ -677,19 +677,19 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 
 	ctx.logger.LogDB("after werewolf vote")
 
-	// Sound toast should fire on all players once all werewolves have voted
+	// Toast should fire on all players once all werewolves have voted
 	soundMsg := "werewolves have made their choice"
-	if !werewolves[0].hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: werewolf did not receive sound toast")
-		t.Errorf("Werewolf should see sound toast after voting completes")
+	if !werewolves[0].hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: werewolf did not receive toast")
+		t.Errorf("Werewolf should see toast after voting completes")
 	}
-	if !villagers[0].hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: villager did not receive sound toast")
-		t.Errorf("Villager should see sound toast when werewolves finish voting")
+	if !villagers[0].hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: villager did not receive toast")
+		t.Errorf("Villager should see toast when werewolves finish voting")
 	}
-	if !target.hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: target did not receive sound toast")
-		t.Errorf("Target should also receive the sound toast")
+	if !target.hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: target did not receive toast")
+		t.Errorf("Target should also receive the toast")
 	}
 
 	submitNightSurveysForAllPlayers(players)
@@ -797,11 +797,11 @@ func TestWerewolfCanPass(t *testing.T) {
 
 	ctx.logger.LogDB("after werewolf pass")
 
-	// Sound toast should NOT fire yet — End Vote not pressed
+	// Toast should NOT fire yet — End Vote not pressed
 	soundMsg := "werewolves have made their choice"
-	if villagers[0].hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: sound toast fired before End Vote")
-		t.Errorf("Sound toast should not appear until End Vote is pressed")
+	if villagers[0].hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: toast fired before End Vote")
+		t.Errorf("Toast should not appear until End Vote is pressed")
 	}
 
 	// End Vote button should now be visible (all wolves acted)
@@ -814,14 +814,14 @@ func TestWerewolfCanPass(t *testing.T) {
 
 	ctx.logger.LogDB("after End Vote press")
 
-	// Sound toast should now fire on all players
-	if !werewolf.hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: werewolf did not receive sound toast")
-		t.Errorf("Werewolf should see sound toast after End Vote")
+	// Toast should now fire on all players
+	if !werewolf.hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: werewolf did not receive toast")
+		t.Errorf("Werewolf should see toast after End Vote")
 	}
-	if !villagers[0].hasSoundToast(soundMsg) {
-		ctx.logger.LogDB("FAIL: villager did not receive sound toast")
-		t.Errorf("Villager should see sound toast after End Vote")
+	if !villagers[0].hasToast(soundMsg) {
+		ctx.logger.LogDB("FAIL: villager did not receive toast")
+		t.Errorf("Villager should see toast after End Vote")
 	}
 
 	submitNightSurveysForAllPlayers(players)
@@ -2253,9 +2253,9 @@ func TestAIStoryteller(t *testing.T) {
 	defer fakeOpenAi.Close()
 
 	storyteller := initStoryteller(AppConfig{
-		StorytellerProvider: "openai-compatible",
+		StorytellerProvider: "openai",
 		StorytellerModel:    "llm-1",
-		StorytellerURL:      fakeOpenAi.URL + "/v1/",
+		StorytellerURL:      fakeOpenAi.URL + "/v1",
 		StorytellerAPIKey:   "test-key",
 	})
 

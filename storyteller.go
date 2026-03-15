@@ -1,18 +1,18 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/llms/anthropic"
-	"github.com/tmc/langchaingo/llms/googleai"
-	"github.com/tmc/langchaingo/llms/ollama"
-	"github.com/tmc/langchaingo/llms/openai"
 )
 
 const storytellerSystemPrompt = `You are a dramatic storyteller for a medieval werewolf game. When players are killed, you tell a short atmospheric story about their fate. Keep it to 2-3 sentences. Be gothic and dramatic, fitting for a village plagued by werewolves.`
@@ -23,136 +23,254 @@ type Storyteller interface {
 	Tell(ctx context.Context, history []string, onChunk func(string)) (string, error)
 }
 
-type llmStoryteller struct {
-	llm          llms.Model
-	systemPrompt string
-	callOpts     []llms.CallOption
+// ── OpenAI-compatible ────────────────────────────────────────────────────────
+// Works with OpenAI, Ollama, Groq, and any server that speaks the
+// POST /v1/chat/completions SSE streaming protocol.
+
+type openaiStoryteller struct {
+	baseURL     string
+	apiKey      string
+	model       string
+	temperature float64
+	hasTemp     bool
 }
 
-func (s *llmStoryteller) Tell(ctx context.Context, history []string, onChunk func(string)) (string, error) {
-	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, s.systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman,
-			"Game history so far:\n"+strings.Join(history, "\n")+
-				"\n\nTell a short dramatic story (2-3 sentences) about what just happened to the victim."),
+func (s *openaiStoryteller) Tell(ctx context.Context, history []string, onChunk func(string)) (string, error) {
+	type message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	body := map[string]any{
+		"model":  s.model,
+		"stream": true,
+		"messages": []message{
+			{Role: "system", Content: storytellerSystemPrompt},
+			{Role: "user", Content: buildUserPrompt(history)},
+		},
+	}
+	if s.hasTemp {
+		body["temperature"] = s.temperature
 	}
 
-	var fullText strings.Builder
-	opts := append(s.callOpts, llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
-		text := string(chunk)
-		fullText.WriteString(text)
-		if onChunk != nil {
-			onChunk(text)
-		}
-		return nil
-	}))
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/chat/completions", bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
 
-	_, err := s.llm.GenerateContent(ctx, messages, opts...)
-	return strings.TrimSpace(fullText.String()), err
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("openai API %s: %s", resp.Status, b)
+	}
+
+	var full strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal([]byte(payload), &chunk) != nil {
+			continue
+		}
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			text := chunk.Choices[0].Delta.Content
+			full.WriteString(text)
+			if onChunk != nil {
+				onChunk(text)
+			}
+		}
+	}
+	return strings.TrimSpace(full.String()), scanner.Err()
 }
 
-// buildCallOpts builds LLM call options from the config.
-func buildCallOpts(cfg AppConfig) []llms.CallOption {
-	var opts []llms.CallOption
+// ── Claude-compatible ────────────────────────────────────────────────────────
+// Talks to the Anthropic Messages API (POST /v1/messages) with SSE streaming.
+// Also supports extended thinking via budget_tokens.
 
+type claudeStoryteller struct {
+	baseURL        string
+	apiKey         string
+	model          string
+	temperature    float64
+	hasTemp        bool
+	thinkingBudget int // 0 = disabled; >0 enables extended thinking
+}
+
+func (s *claudeStoryteller) Tell(ctx context.Context, history []string, onChunk func(string)) (string, error) {
+	type message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	body := map[string]any{
+		"model":      s.model,
+		"max_tokens": 1024,
+		"stream":     true,
+		"system":     storytellerSystemPrompt,
+		"messages":   []message{{Role: "user", Content: buildUserPrompt(history)}},
+	}
+	if s.thinkingBudget > 0 {
+		// Extended thinking requires temperature=1
+		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": s.thinkingBudget}
+		body["temperature"] = 1
+	} else if s.hasTemp {
+		body["temperature"] = s.temperature
+	}
+
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/v1/messages", bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", s.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("claude API %s: %s", resp.Status, b)
+	}
+
+	var full strings.Builder
+	var lastEvent string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			lastEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+		if lastEvent != "content_block_delta" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		var chunk struct {
+			Delta struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal([]byte(payload), &chunk) != nil {
+			continue
+		}
+		// Skip thinking blocks; only emit text_delta
+		if chunk.Delta.Type == "text_delta" && chunk.Delta.Text != "" {
+			full.WriteString(chunk.Delta.Text)
+			if onChunk != nil {
+				onChunk(chunk.Delta.Text)
+			}
+		}
+	}
+	return strings.TrimSpace(full.String()), scanner.Err()
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// nextSentence pulls the first complete sentence from text.
+// A sentence ends at . ! ? (with optional repeated punctuation) followed by
+// whitespace or end of string. Returns ("", text) if no boundary found yet.
+func nextSentence(text string) (sentence, rest string) {
+	for i := 0; i < len(text); i++ {
+		if text[i] != '.' && text[i] != '!' && text[i] != '?' {
+			continue
+		}
+		end := i + 1
+		for end < len(text) && (text[end] == '.' || text[end] == '!' || text[end] == '?') {
+			end++
+		}
+		if end >= len(text) || text[end] == ' ' || text[end] == '\n' {
+			return strings.TrimSpace(text[:end]), strings.TrimSpace(text[end:])
+		}
+	}
+	return "", text
+}
+
+func buildUserPrompt(history []string) string {
+	return "Game history so far:\n" + strings.Join(history, "\n") +
+		"\n\nTell a short dramatic story (2-3 sentences) about what just happened to the victim."
+}
+
+// thinkingBudget maps a thinking-mode string to a token budget for Claude.
+func thinkingBudget(mode string) int {
+	switch mode {
+	case "low":
+		return 2000
+	case "medium":
+		return 8000
+	case "high":
+		return 32000
+	case "auto":
+		return 16000
+	default:
+		return 0
+	}
+}
+
+// initStoryteller creates a Storyteller from config, or returns nil if disabled.
+func initStoryteller(cfg AppConfig) Storyteller {
+	model := cfg.StorytellerModel
+
+	var temperature float64
+	var hasTemp bool
 	if cfg.StorytellerTemperature != "" {
 		if f, err := strconv.ParseFloat(cfg.StorytellerTemperature, 64); err == nil {
-			opts = append(opts, llms.WithTemperature(f))
-			log.Printf("Storyteller: temperature=%.2f", f)
+			temperature = f
+			hasTemp = true
 		} else {
 			log.Printf("Storyteller: invalid temperature %q: %v", cfg.StorytellerTemperature, err)
 		}
 	}
 
-	if cfg.StorytellerThinking != "" {
-		mode := llms.ThinkingMode(cfg.StorytellerThinking)
-		switch mode {
-		case llms.ThinkingModeNone, llms.ThinkingModeLow, llms.ThinkingModeMedium, llms.ThinkingModeHigh, llms.ThinkingModeAuto:
-			opts = append(opts, llms.WithThinkingMode(mode))
-			log.Printf("Storyteller: thinking=%s", mode)
-		default:
-			log.Printf("Storyteller: invalid thinking %q (valid: none, low, medium, high, auto)", cfg.StorytellerThinking)
-		}
-	}
-
-	return opts
-}
-
-// initStoryteller creates a Storyteller from config, or returns nil if disabled.
-func initStoryteller(cfg AppConfig) Storyteller {
-	provider := cfg.StorytellerProvider
-	model := cfg.StorytellerModel
-	callOpts := buildCallOpts(cfg)
-
-	switch provider {
-	case "ollama":
-		llm, err := ollama.New(ollama.WithModel(model), ollama.WithServerURL(cfg.StorytellerOllamaURL))
-		if err != nil {
-			log.Printf("Storyteller: failed to init Ollama (%s at %s): %v", model, cfg.StorytellerOllamaURL, err)
-			return nil
-		}
-		log.Printf("Storyteller: Ollama model=%s url=%s", model, cfg.StorytellerOllamaURL)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
+	switch cfg.StorytellerProvider {
 	case "openai":
-		llm, err := openai.New(openai.WithModel(model))
-		if err != nil {
-			log.Printf("Storyteller: failed to init OpenAI (%s): %v", model, err)
-			return nil
+		baseURL := strings.TrimRight(cfg.StorytellerURL, "/")
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
 		}
-		log.Printf("Storyteller: OpenAI model=%s", model)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
+		log.Printf("Storyteller: openai model=%s url=%s temperature=%v", model, baseURL, cfg.StorytellerTemperature)
+		return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, temperature: temperature, hasTemp: hasTemp}
+
 	case "claude":
-		llm, err := anthropic.New(anthropic.WithModel(model))
-		if err != nil {
-			log.Printf("Storyteller: failed to init Claude (%s): %v", model, err)
-			return nil
+		baseURL := strings.TrimRight(cfg.StorytellerURL, "/")
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com"
 		}
-		log.Printf("Storyteller: Claude model=%s", model)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
-	case "gemini":
-		llm, err := googleai.New(context.Background(), googleai.WithDefaultModel(model))
-		if err != nil {
-			log.Printf("Storyteller: failed to init Gemini (%s): %v", model, err)
-			return nil
-		}
-		log.Printf("Storyteller: Gemini model=%s", model)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
-	case "groq":
-		llm, err := openai.New(
-			openai.WithModel(model),
-			openai.WithBaseURL("https://api.groq.com/openai/v1"),
-			openai.WithToken(cfg.GroqAPIKey),
-		)
-		if err != nil {
-			log.Printf("Storyteller: failed to init Groq (%s): %v", model, err)
-			return nil
-		}
-		log.Printf("Storyteller: Groq model=%s", model)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
-	case "openai-compatible":
-		if cfg.StorytellerURL == "" {
-			log.Printf("Storyteller: storyteller_url is required for openai-compatible provider")
-			return nil
-		}
-		opts := []openai.Option{
-			openai.WithModel(model),
-			openai.WithBaseURL(cfg.StorytellerURL),
-		}
-		if cfg.StorytellerAPIKey != "" {
-			opts = append(opts, openai.WithToken(cfg.StorytellerAPIKey))
-		}
-		llm, err := openai.New(opts...)
-		if err != nil {
-			log.Printf("Storyteller: failed to init openai-compatible (%s at %s): %v", model, cfg.StorytellerURL, err)
-			return nil
-		}
-		log.Printf("Storyteller: openai-compatible model=%s url=%s", model, cfg.StorytellerURL)
-		return &llmStoryteller{llm: llm, systemPrompt: storytellerSystemPrompt, callOpts: callOpts}
+		budget := thinkingBudget(cfg.StorytellerThinking)
+		log.Printf("Storyteller: claude model=%s url=%s temperature=%v thinking=%s", model, baseURL, cfg.StorytellerTemperature, cfg.StorytellerThinking)
+		return &claudeStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, temperature: temperature, hasTemp: hasTemp, thinkingBudget: budget}
+
 	default:
-		log.Printf("Storyteller: disabled (set storyteller_provider to enable)")
+		log.Printf("Storyteller: disabled (set storyteller_provider to openai or claude)")
 		return nil
 	}
 }
+
+// ── Story generation ─────────────────────────────────────────────────────────
 
 // maybeGenerateStory asynchronously streams a story into the game history after a death.
 // Returns immediately; story tokens appear progressively via broadcastGameUpdate.
@@ -188,7 +306,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 			return // row already exists (shouldn't happen)
 		}
 
-		// Buffer for streamed tokens, updated by the streaming callback
+		// Buffer for streamed tokens (for DB flush)
 		var mu sync.Mutex
 		var buf strings.Builder
 
@@ -213,16 +331,61 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 			}
 		}()
 
+		// Sentence-by-sentence TTS: one goroutine drains the channel sequentially
+		// so sentences are always spoken in order without gaps or overlap.
+		var sentenceCh chan string
+		if h.narrator != nil {
+			sentenceCh = make(chan string, 8)
+			go func() {
+				for sentence := range sentenceCh {
+					ttsCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					err := h.narrator.Speak(ttsCtx, sentence, func(chunk []byte) {
+						h.broadcastAudio(chunk)
+					})
+					cancel()
+					if err != nil {
+						h.logf("Narrator: TTS error: %v", err)
+					}
+				}
+			}()
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
+		// sentenceBuf accumulates tokens until a sentence boundary is detected.
+		// Tell is blocking and calls onChunk synchronously, so no mutex needed here.
+		var sentenceBuf strings.Builder
 		_, err = h.storyteller.Tell(ctx, descriptions, func(chunk string) {
 			mu.Lock()
 			buf.WriteString(chunk)
 			mu.Unlock()
+
+			if sentenceCh != nil {
+				sentenceBuf.WriteString(chunk)
+				for {
+					sentence, rest := nextSentence(sentenceBuf.String())
+					if sentence == "" {
+						break
+					}
+					sentenceCh <- sentence
+					sentenceBuf.Reset()
+					sentenceBuf.WriteString(rest)
+				}
+			}
 		})
 
 		close(done)
+
+		// Flush any remaining text (last sentence without trailing punctuation)
+		if sentenceCh != nil {
+			if err == nil {
+				if remaining := strings.TrimSpace(sentenceBuf.String()); remaining != "" {
+					sentenceCh <- remaining
+				}
+			}
+			close(sentenceCh)
+		}
 
 		if err != nil {
 			h.logf("maybeGenerateStory: storyteller error: %v", err)
@@ -243,7 +406,6 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 		h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
 		h.logf("Storyteller: completed story for game %d round %d %s", gameID, round, phase)
 		h.triggerBroadcast()
-		h.maybeSpeakStory(gameID, finalText)
 	}()
 }
 
