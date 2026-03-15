@@ -14,11 +14,12 @@
         <!-- Action panel (all roles, alive and dead) -->
         <div class="phase-action-panel">
 
-                {{if not .IsAlive}}
+                {{if not .Player.IsAlive}}
                 <p><em>You are dead. The village sleeps around you.</em></p>
 
-                {{else if .IsWerewolf}}
+                {{else if eq .Player.Team "werewolf"}}
                 <h3>Werewolf: Choose a Victim</h3>
+                <div id="wolf-vote-section">
                 {{if .WolfEndVoted}}
                 <p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
                 {{else}}
@@ -30,13 +31,16 @@
                     <input type="hidden" name="action" value="werewolf_vote">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
                         selectable
                         count="{{$wvCount}}"
                         {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -50,6 +54,7 @@
                     <button type="submit" id="werewolf-end-vote-btn" {{if not .AllWolvesActed}}disabled{{end}}>End Vote</button>
                 </form>
                 {{end}}
+                </div>
 
                 {{if .Votes}}
                 <h4 id="wolf-vote-title">Current Votes</h4>
@@ -61,7 +66,7 @@
                 {{end}}
 
                 {{if .WolfCubDoubleKill}}
-                <div class="night-wolf-cub-section">
+                <div id="wolf-cub-vote-section" class="night-wolf-cub-section">
                     <div class="phase-heading" style="margin-bottom:0.5rem">
                         <img class="seal seal-sm" src="/static/seals/Wolf_Cub.webp" alt="Wolf Cub">
                         <h4 style="margin:0">Wolf Cub's Revenge — Second Victim</h4>
@@ -76,12 +81,15 @@
                         <input type="hidden" name="action" value="werewolf_vote_2">
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
+                            data-player-id="{{.ID}}"
                             player-name="{{.Name}}"
                             role-name="{{.RoleName}}"
+                            role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
                             alive="true"
                             selectable
                             {{if and $.CurrentVotePlayer2 (eq $.CurrentVotePlayer2.PlayerID .PlayerID)}}selected{{end}}
+                            {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                         ></player-card>
                     </form>
                     {{end}}
@@ -98,23 +106,22 @@
                 </div>
                 {{end}}
 
-                {{else if .IsSeer}}
+                {{else if eq .Player.RoleName "Seer"}}
                 <h3>Seer: Your Investigation</h3>
                 {{if .HasInvestigated}}
                 <p><em>You have already investigated tonight.</em></p>
-                {{if .SeerResults}}
                 <card-list>
-                {{range .SeerResults}}
-                <player-card
-                    id="seer-result"
-                    player-name="{{.TargetName}}"
-                    role-name="{{if .IsWerewolf}}Werewolf{{else}}Villager{{end}}"
-                    team="{{if .IsWerewolf}}werewolf{{else}}villager{{end}}"
-                    alive="true"
-                ></player-card>
-                {{end}}
+                    <player-card
+                        id="seer-result"
+                        data-player-id="{{.SeerSelectedPlayer.ID}}"
+                        player-name="{{.SeerSelectedPlayer.Name}}"
+                        role-name="{{.SeerSelectedPlayer.RoleName}}"
+                        role-desc="{{.SeerSelectedPlayer.RoleDescription}}"
+                        team="{{.SeerSelectedPlayer.Team}}"
+                        alive="true"
+                        {{if and (ne .SeerSelectedPlayer.Lover 0) (eq .Player.PlayerID .SeerSelectedPlayer.Lover)}}lover{{end}}
+                    ></player-card>
                 </card-list>
-                {{end}}
                 {{else}}
                 <p><small>Choose a player to investigate, then confirm your choice.</small></p>
                 <card-list>
@@ -123,12 +130,15 @@
                     <input type="hidden" name="action" value="seer_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
                         selectable
                         {{if and $.SeerSelectedPlayer (eq $.SeerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -139,10 +149,22 @@
                 </form>
                 {{end}}
 
-                {{else if .IsDoctor}}
+                {{else if eq .Player.RoleName "Doctor"}}
                 <h3>Doctor: Your Protection</h3>
                 {{if .HasProtected}}
                 <p id="doctor-result"><em>You are protecting <strong>{{if .DoctorProtectingPlayer}}{{.DoctorProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
+                <card-list>
+                 <player-card
+                    data-player-id="{{.DoctorProtectingPlayer.ID}}"
+                    player-name="{{.DoctorProtectingPlayer.Name}}"
+                    role-name="{{.DoctorProtectingPlayer.RoleName}}"
+                    role-desc="{{.DoctorProtectingPlayer.RoleDescription}}"
+                    team="{{.DoctorProtectingPlayer.Team}}"
+                    alive="{{if .DoctorProtectingPlayer.IsAlive}}true{{else}}false{{end}}"
+                    {{if and (ne .DoctorProtectingPlayer.Lover 0) (eq .Player.PlayerID .DoctorProtectingPlayer.Lover)}}lover{{end}}>
+                </player-card>
+                </card-list>
+        
                 {{else}}
                 <p><small>Choose a player to protect, then confirm.</small></p>
                 <card-list>
@@ -151,12 +173,15 @@
                     <input type="hidden" name="action" value="doctor_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
                         selectable
                         {{if and $.DoctorSelectedPlayer (eq $.DoctorSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -167,7 +192,7 @@
                 </form>
                 {{end}}
 
-                {{else if .IsGuard}}
+                {{else if eq .Player.RoleName "Guard"}}
                 <h3>Guard: Your Protection</h3>
                 {{if .GuardHasProtected}}
                 <p id="guard-result"><em>You are protecting <strong>{{if .GuardProtectingPlayer}}{{.GuardProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
@@ -179,12 +204,15 @@
                     <input type="hidden" name="action" value="guard_select">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
                         selectable
                         {{if and $.GuardSelectedPlayer (eq $.GuardSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -195,7 +223,7 @@
                 </form>
                 {{end}}
 
-                {{else if .IsWitch}}
+                {{else if  eq .Player.RoleName "Witch"}}
                 <h3>Witch: Your Potions</h3>
                 {{if .WitchDoneThisNight}}
                 {{if .WitchHealedThisNight}}<p><em>✓ You saved <strong>{{if .WitchHealedPlayer}}{{.WitchHealedPlayer.Name}}{{end}}</strong> with your heal potion.</em></p>{{end}}
@@ -203,6 +231,7 @@
                 <p><em>Waiting for the night to end...</em></p>
                 {{else}}
 
+                <div id="witch-heal-section">
                 {{if not .HealPotionUsed}}
                 <h4>🧪 Heal Potion</h4>
                 {{if .WitchVictimPlayer}}
@@ -212,12 +241,15 @@
                     <input type="hidden" name="action" value="witch_select_heal">
                     <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer.PlayerID}}">
                     <player-card
+                        data-player-id="{{.WitchVictimPlayer.ID}}"
                         player-name="{{.WitchVictimPlayer.Name}}"
                         role-name="{{.WitchVictimPlayer.RoleName}}"
+                        role-desc="{{.WitchVictimPlayer.RoleDescription}}"
                         team="{{.WitchVictimPlayer.Team}}"
                         alive="true"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer.PlayerID)}}selected{{end}}
+                        {{if and (ne .WitchVictimPlayer.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer.Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{if .WitchVictimPlayer2}}
@@ -225,12 +257,15 @@
                     <input type="hidden" name="action" value="witch_select_heal">
                     <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer2.PlayerID}}">
                     <player-card
+                        data-player-id="{{.WitchVictimPlayer2.ID}}"
                         player-name="{{.WitchVictimPlayer2.Name}}"
                         role-name="{{.WitchVictimPlayer2.RoleName}}"
+                        role-desc="{{.WitchVictimPlayer2.RoleDescription}}"
                         team="{{.WitchVictimPlayer2.Team}}"
                         alive="true"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer2.PlayerID)}}selected{{end}}
+                        {{if and (ne .WitchVictimPlayer2.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer2.Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -241,22 +276,27 @@
                 {{else}}
                 <p><em>Your heal potion has been used.</em></p>
                 {{end}}
+                </div>
 
+                <div id="witch-poison-section">
                 {{if not .PoisonPotionUsed}}
                 <h4>☠️ Poison Potion</h4>
                 <p><small>Choose a player to poison (click to select, click again to deselect):</small></p>
-                <card-list>
+                <card-list id="witch-poison-targets">
                 {{range .AliveTargets}}
                 <form ws-send id="witch-select-poison-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
                     <input type="hidden" name="action" value="witch_select_poison">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
                         selectable
                         {{if and $.WitchSelectedPoisonPlayer (eq $.WitchSelectedPoisonPlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -264,6 +304,7 @@
                 {{else}}
                 <p><em>Your poison potion has been used.</em></p>
                 {{end}}
+                </div>
 
                 <form ws-send id="witch-apply-form" class="vote-form">
                     <input type="hidden" name="action" value="witch_apply">
@@ -271,18 +312,20 @@
                 </form>
                 {{end}}
 
-                {{else if .IsMason}}
+                {{else if eq .Player.RoleName "Mason"}}
                 <h3>Mason: Your Fellow Masons</h3>
                 {{if .Masons}}
                 <p><small>You know these confirmed villagers:</small></p>
                 <card-list id="mason-card-list">
                     {{range .Masons}}
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                     {{end}}
                 </card-list>
@@ -290,11 +333,32 @@
                 <p><em>You are the only Mason.</em></p>
                 {{end}}
 
-                {{else if .IsCupid}}
+                {{else if eq .Player.RoleName "Cupid"}}
                 <h3>Cupid: Link Two Lovers</h3>
                 {{if .CupidLinked}}
                 <p id="cupid-result"><em>You have linked <strong>{{if .CupidChosen1Player}}{{.CupidChosen1Player.Name}}{{end}}</strong> and <strong>{{if .CupidChosen2Player}}{{.CupidChosen2Player.Name}}{{end}}</strong> as lovers.</em></p>
-                {{else}}
+                <card-list>
+                    <player-card
+                        data-player-id="{{.CupidChosen1Player.ID}}"
+                        player-name="{{.CupidChosen1Player.Name}}"
+                        role-name="{{.CupidChosen1Player.RoleName}}"
+                        role-desc="{{.CupidChosen1Player.RoleDescription}}"
+                        team="{{.CupidChosen1Player.Team}}"
+                        alive="true"
+                        selectable
+                        {{if and (ne .CupidChosen1Player.Lover 0) (eq .Player.PlayerID .CupidChosen1Player.Lover)}}lover{{end}}
+                    ></player-card>
+                    <player-card
+                        data-player-id="{{.CupidChosen2Player.ID}}"
+                        player-name="{{.CupidChosen2Player.Name}}"
+                        role-name="{{.CupidChosen2Player.RoleName}}"
+                        role-desc="{{.CupidChosen2Player.RoleDescription}}"
+                        team="{{.CupidChosen2Player.Team}}"
+                        alive="true"
+                        selectable
+                        {{if and (ne .CupidChosen2Player.Lover 0) (eq .Player.PlayerID .CupidChosen2Player.Lover)}}lover{{end}}
+                    ></player-card>
+                </card-list>                {{else}}
                 {{if and .CupidChosen1Player .CupidChosen2Player}}
                 <p><small>Chosen: <strong>{{.CupidChosen1Player.Name}}</strong> and <strong>{{.CupidChosen2Player.Name}}</strong>. Click a card to deselect.</small></p>
                 {{else if or .CupidChosen1Player .CupidChosen2Player}}
@@ -308,12 +372,15 @@
                     <input type="hidden" name="action" value="cupid_choose">
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
-                        role-name="Unknown"
-                        team="unknown"
+                        role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
+                        team="{{.Team}}"
                         alive="true"
                         selectable
                         {{if or (and $.CupidChosen1Player (eq $.CupidChosen1Player.PlayerID .PlayerID)) (and $.CupidChosen2Player (eq $.CupidChosen2Player.PlayerID .PlayerID))}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                 </form>
                 {{end}}
@@ -334,7 +401,7 @@
 
         {{if .ShowSurvey}}
         <hr>
-        <section class="night-survey">
+        <section id="night-survey-section" class="night-survey">
             <h3>Your Thoughts</h3>
             <form ws-send id="night-survey-form">
                 <input type="hidden" name="action" value="night_survey">

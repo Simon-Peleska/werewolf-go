@@ -553,6 +553,8 @@ You are a senior developer with many years of hard-won experience. You think lik
 - `Page.Element()` BLOCKS up to 30s — use `Page.Has()` for non-blocking "current state" checks
 - Disabled buttons are NOT test-safe: go-rod `.click()` fires on disabled elements; always add server-side validation too
 - **CSS transition + click gotcha**: `MustClick()` calls `scrollIntoViewIfNeeded` → scroll triggers CSS animations → layout shifts during click → click misses → 5s timeout. Use `clickAndWait(selector)` (JS `element.click()`) instead of `clickElementAndWait(btn)` for buttons that may require scrolling alongside active CSS transitions.
+- **Debugging HTML**: `tp.dumpElement(selector)` returns innerHTML of any element — useful for ad-hoc `t.Logf("state: %s", p.dumpElement("#game-content"))` calls when debugging test failures.
+- **Idiomorph + structural DOM changes**: When `hx-swap-oob="morph"` updates a panel whose structure changes significantly between renders (e.g., a `<p>` replaced by a `<card-list>`), idiomorph can mismatch elements and drop subsequent siblings. Fix by wrapping distinct sections in `<div id="...">` so idiomorph tracks them by ID across morphs.
 
 ### Logging
 - Log generously.
@@ -589,6 +591,27 @@ You are a senior developer with many years of hard-won experience. You think lik
 - Don't use jargon to sound smart. Explain things plainly.
 - When something is genuinely complicated, say so — don't hide behind abstractions.
 - Have a sense of humor about the absurdity of software development.
+
+### How to Debug issues
+- When debugging an issue it is important to not overthink
+- The correct flow of debugging things is
+  - gathering information
+  - make a Hypothesis what might be going wrong
+  - test it
+  - if your assumption is wrong go from the start and repeat
+- The important thing is to, keep that loop very short and tight, to exclude a lot of possibilities early.
+- it is better to tst something ant to find out it is wrong, than to fall into a rabbithole of possibilitis
+- When gatering infortmation and testing use every tool that is available to you to test of find information quickly
+
+#### Gather information and testing
+- Run the application and read the output
+- Read the Logs
+- use a debugger if it is available to you
+- If it is a Webpage run it and visit it
+- write tests that log errors
+- use a issue vet
+- look into the db log, schema, data
+- use a profiler
 
 ### Summary
 Write code for the developer who comes after you — who might be you, six months from now, having forgotten everything. Keep it simple. Keep it working. Trap the complexity demon in small crystals. Ship.

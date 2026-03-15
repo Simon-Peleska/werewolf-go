@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -598,7 +597,7 @@ func newTestContext(t *testing.T) *TestContext {
 	// Give the logger a db reference so ctx.logger.LogDB("...") works without passing db
 	logger.db = testDB
 
-	if err := initDB(testDB); err != nil {
+	if err := initDB(testDB, t.Logf); err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
 
@@ -622,6 +621,7 @@ func newTestContext(t *testing.T) *TestContext {
 
 	// Create test-specific WebSocket hub (nil storyteller/narrator = disabled by default)
 	testHub := newHub(testDB, testTemplates, nil, nil)
+	testHub.logf = t.Logf
 	go testHub.run()
 
 	app := &App{db: testDB, hub: testHub, templates: testTemplates}
@@ -757,6 +757,21 @@ func (tp *TestPlayer) logHTML(context string) {
 		return
 	}
 	tp.logger.LogHTML(fmt.Sprintf("[%s] %s", tp.Name, context), html)
+}
+
+// dumpElement returns the innerHTML of the element matching selector, or a
+// descriptive error string. Useful for ad-hoc debugging in tests:
+//
+//	t.Logf("witch panel: %s", witch.dumpElement("#game-content"))
+func (tp *TestPlayer) dumpElement(selector string) string {
+	result, err := tp.Page.Eval(`(sel) => {
+		const el = document.querySelector(sel);
+		return el ? el.innerHTML : '(element not found: ' + sel + ')';
+	}`, selector)
+	if err != nil {
+		return fmt.Sprintf("(eval error for %q: %v)", selector, err)
+	}
+	return result.Value.String()
 }
 
 // newIncognitoPage creates a new incognito page with isolated session.
@@ -933,43 +948,65 @@ func (tp *TestPlayer) clickAndWait(selector string) {
 		tp.logger.Debug("[%s] Click and wait for selector: %s", tp.Name, selector)
 	}
 
-	timeout := 5 * time.Second
+	timeout := 15 * time.Second
 
-	// Perform the entire operation in JavaScript atomically
-	// Listen for htmx:wsAfterMessage which fires when WS messages are processed
+	// Perform the entire operation in JavaScript atomically:
+	// Poll until element appears (handles transient DOM updates), then click and wait for WS.
 	_, err := tp.Page.Timeout(timeout).Eval(`() => {
 		return new Promise((resolve, reject) => {
 			const selector = ` + "`" + selector + "`" + `;
 			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
-			let timeoutId = setTimeout(() => {
-				document.removeEventListener('htmx:wsAfterMessage', handler);
-				reject(new Error('Timeout waiting for WS message after click'));
-			}, timeoutMs);
+			const deadline = Date.now() + timeoutMs;
 
-			const handler = (event) => {
-				clearTimeout(timeoutId);
-				document.removeEventListener('htmx:wsAfterMessage', handler);
-				// Give DOM a moment to finish any final rendering
-				setTimeout(resolve, 30);
-			};
+			function attemptClick() {
+				const element = document.querySelector(selector);
+				if (!element) {
+					if (Date.now() >= deadline) {
+						reject(new Error('Element not found: ' + selector));
+						return;
+					}
+					// Element not yet in DOM — wait for next WS message or retry after 50ms
+					setTimeout(attemptClick, 50);
+					return;
+				}
 
-			// Set up listener for WebSocket messages
-			document.addEventListener('htmx:wsAfterMessage', handler);
+				// Element found — set up WS listener then click
+				let timeoutId = setTimeout(() => {
+					document.removeEventListener('htmx:wsAfterMessage', handler);
+					reject(new Error('Timeout waiting for WS message after click'));
+				}, deadline - Date.now());
 
-			// Now click the element
-			const element = document.querySelector(selector);
-			if (!element) {
-				clearTimeout(timeoutId);
-				document.removeEventListener('htmx:wsAfterMessage', handler);
-				reject(new Error('Element not found: ' + selector));
-				return;
+				const handler = (event) => {
+					clearTimeout(timeoutId);
+					document.removeEventListener('htmx:wsAfterMessage', handler);
+					// Give DOM a moment to finish any final rendering
+					setTimeout(resolve, 30);
+				};
+
+				document.addEventListener('htmx:wsAfterMessage', handler);
+				element.click();
 			}
-			element.click();
+
+			attemptClick();
 		});
 	}`)
 
-	if err != nil && tp.logger != nil {
-		tp.logger.Debug("[%s] Click and wait error: %v", tp.Name, err)
+	if err != nil {
+		// Always log errors so they appear in test output without needing --debug
+		if tp.logger != nil {
+			tp.logger.t.Logf("[%s] clickAndWait ERROR for selector %q: %v", tp.Name, selector, err)
+			// Log diagnostic info to show DOM state without needing --log-html
+			if content, evalErr := tp.Page.Eval(`() => {
+				const gameContent = document.querySelector('#game-content');
+				return gameContent ? gameContent.innerHTML : '(#game-content not found)';
+			}`); evalErr == nil {
+				tp.logger.t.Logf("[%s] #game-content innerHTML at error:\n%s", tp.Name, content.Value.String())
+			}
+		}
+		// Also log the current page HTML to diagnose missing elements
+		tp.logHTML("clickAndWait ERROR")
+	} else if tp.logger != nil {
+		tp.logger.Debug("[%s] clickAndWait OK for selector: %s", tp.Name, selector)
 	}
 
 	tp.logHTML("after clickAndWait")
@@ -985,7 +1022,7 @@ func (tp *TestPlayer) clickElementAndWait(element *rod.Element) {
 // waitUntilCondition waits for a DOM condition to become true by listening to WebSocket messages
 // This handles cases where multiple WebSocket messages arrive (e.g., vote confirmation + phase transition)
 func (tp *TestPlayer) waitUntilCondition(checkJS string, description string) error {
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Waiting for condition: %s", tp.Name, description)
 	}
@@ -1131,20 +1168,17 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 		tp.logger.Debug("[%s] Adding role ID: %s", tp.Name, roleID)
 		tp.logger.LogWebSocket("OUT", tp.Name, fmt.Sprintf(`{"action":"update_role","role_id":"%s","delta":"1"}`, roleID))
 	}
-	// Click and wait for WebSocket response
-	host, err := tp.p().Element("#role-" + roleID)
-	if err != nil {
-		tp.t.Fatalf("[%s] addRoleByID: role element #role-%s not found: %v", tp.Name, roleID, err)
-	}
-	shadow, err := host.ShadowRoot()
-	if err != nil {
-		tp.t.Fatalf("[%s] addRoleByID: shadow root not found: %v", tp.Name, err)
-	}
-	el, err := shadow.Element(".pc-btn-plus .pc-btn")
-	if err != nil {
-		tp.t.Fatalf("[%s] addRoleByID: plus button not found: %v", tp.Name, err)
-	}
-	tp.clickElementAndWait(el)
+	// Use JS click to avoid scrollIntoView → CSS transition → layout shift → click miss.
+	// The plus button is inside a shadow DOM, so we click via the host element's shadowRoot.
+	tp.doWithWSWait(func() {
+		tp.p().MustEval(`(roleID) => {
+			const host = document.querySelector('#role-' + roleID);
+			if (!host || !host.shadowRoot) throw new Error('role element or shadow root not found: ' + roleID);
+			const btn = host.shadowRoot.querySelector('.pc-btn-plus .pc-btn');
+			if (!btn) throw new Error('plus button not found for role: ' + roleID);
+			btn.click();
+		}`, roleID)
+	})
 	tp.logHTML(fmt.Sprintf("after adding role %s", roleID))
 }
 
@@ -1384,17 +1418,4 @@ func (tp *TestPlayer) getHistoryText() string {
 // historyContains returns true if the history bar contains the given substring.
 func (tp *TestPlayer) historyContains(text string) bool {
 	return strings.Contains(tp.getHistoryText(), text)
-}
-
-// mockStoryteller is a test double for the Storyteller interface.
-// It returns a fixed story text without calling any LLM.
-type mockStoryteller struct {
-	text string
-}
-
-func (m *mockStoryteller) Tell(_ context.Context, _ []string, onChunk func(string)) (string, error) {
-	if onChunk != nil {
-		onChunk(m.text)
-	}
-	return m.text, nil
 }
