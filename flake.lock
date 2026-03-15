@@ -18,6 +18,29 @@
         "type": "github"
       }
     },
+    "go-test-tui": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1773568684,
+        "narHash": "sha256-Zo5SVhIuF7LLNjCw7grZTncvFG4XkNQVDjxqot1Hwi0=",
+        "owner": "Simon-Peleska",
+        "repo": "go-test-tui",
+        "rev": "b9b9f782555506cdaa65defd3825a7238e263a89",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Simon-Peleska",
+        "repo": "go-test-tui",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1772624091,
@@ -37,6 +60,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "go-test-tui": "go-test-tui",
         "nixpkgs": "nixpkgs"
       }
     },

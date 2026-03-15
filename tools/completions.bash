@@ -27,19 +27,20 @@ _run_tests_completions() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     case "$prev" in
-        --test)
-            # Complete with test function names from *_test.go files
-            local tests
-            tests=$(grep -rh '^func Test' ./*.go 2>/dev/null | sed 's/func \(Test[^(]*\).*/\1/')
-            COMPREPLY=($(compgen -W "$tests" -- "$cur"))
-            return
-            ;;
-        --output-dir|--count)
-            return
-            ;;
+        --output-dir) return ;;
     esac
 
-    local opts="-v --verbose --debug --log-requests --log-html --log-db --log-ws --all-logs --output-dir --test --count --keep-logs --clean --help"
+    # After -- : delegate to go-test-tui's go test flag completions
+    local i
+    for (( i=1; i<COMP_CWORD; i++ )); do
+        if [[ "${COMP_WORDS[i]}" == "--" ]]; then
+            local go_flags="-run -count -parallel -timeout -v -race -bench -benchtime -benchmem -coverprofile -failfast -short"
+            COMPREPLY=($(compgen -W "$go_flags" -- "$cur"))
+            return
+        fi
+    done
+
+    local opts="--debug --log-requests --log-html --log-db --log-ws --all-logs --output-dir --keep-logs --clean --"
     COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 }
 
@@ -61,3 +62,6 @@ _start_chromium_completions() {
 complete -F _run_server_completions     run_server.sh ./tools/run_server.sh tools/run_server.sh
 complete -F _run_tests_completions      run_tests.sh  ./tools/run_tests.sh  tools/run_tests.sh
 complete -F _start_chromium_completions start_chromium.sh ./tools/start_chromium.sh tools/start_chromium.sh
+
+# go-test-tui completions are sourced in the Nix devShell shellHook from
+# the flake input source tree. Nothing to do here.

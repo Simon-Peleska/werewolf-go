@@ -4,9 +4,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    go-test-tui = {
+      url = "github:Simon-Peleska/go-test-tui";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, go-test-tui }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -65,6 +70,9 @@
             inotify-tools  # run_server.sh --watch
             chromium       # start_chromium.sh manual testing
             jq             # run_tests.sh per-test log splitting
+
+            # Test runner TUI
+            go-test-tui.packages.${system}.default
           ];
 
           # CGO flags so `go build` / `go test` work inside the shell
@@ -74,6 +82,11 @@
             # Load tab completions for tools/*.sh scripts
             if [ -f "$PWD/tools/completions.bash" ]; then
               source "$PWD/tools/completions.bash"
+            fi
+
+            # go-test-tui completions (sourced from flake input source tree)
+            if [ -f "${go-test-tui}/completions.bash" ]; then
+              source "${go-test-tui}/completions.bash"
             fi
 
             # Make tools/*.sh scripts callable without the path prefix
