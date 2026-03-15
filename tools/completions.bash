@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Bash completions for werewolf-go tools scripts.
-# Source this file to enable tab completion:
+# The Nix devShell installs these automatically via installShellCompletion.
+# To enable manually (outside nix develop):
 #   source ./tools/completions.bash
-# Or add to ~/.bashrc:
-#   source /path/to/werewolf-go/tools/completions.bash
 
 _run_server_completions() {
     local cur prev
@@ -62,6 +61,3 @@ _start_chromium_completions() {
 complete -F _run_server_completions     run_server.sh ./tools/run_server.sh tools/run_server.sh
 complete -F _run_tests_completions      run_tests.sh  ./tools/run_tests.sh  tools/run_tests.sh
 complete -F _start_chromium_completions start_chromium.sh ./tools/start_chromium.sh tools/start_chromium.sh
-
-# go-test-tui completions are sourced in the Nix devShell shellHook from
-# the flake input source tree. Nothing to do here.

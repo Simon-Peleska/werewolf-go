@@ -20,6 +20,16 @@
         cgoBuildInputs = with pkgs; [ sqlite ];
         cgoNativeBuildInputs = with pkgs; [ gcc pkg-config ];
 
+        # Installs bash completions for the tools/*.sh scripts via installShellFiles
+        # so bash-completion can lazy-load them through XDG_DATA_DIRS.
+        tools-completions = pkgs.runCommand "werewolf-tools-completions" {
+          nativeBuildInputs = [ pkgs.installShellFiles ];
+        } ''
+          installShellCompletion --cmd run_server.sh    --bash ${./tools/completions.bash}
+          installShellCompletion --cmd run_tests.sh     --bash ${./tools/completions.bash}
+          installShellCompletion --cmd start_chromium.sh --bash ${./tools/completions.bash}
+        '';
+
       in {
         # `nix build` / `nix run`
         packages.default = pkgs.buildGoModule {
@@ -73,28 +83,20 @@
 
             # Test runner TUI
             go-test-tui.packages.${system}.default
+
+            # Bash completions for tools/*.sh and go-test-tui
+            tools-completions
           ];
 
           # CGO flags so `go build` / `go test` work inside the shell
           CGO_ENABLED = "1";
 
           shellHook = ''
-            # Load tab completions for tools/*.sh scripts
-            if [ -f "$PWD/tools/completions.bash" ]; then
-              source "$PWD/tools/completions.bash"
-            fi
-
-            # go-test-tui completions (sourced from flake input source tree)
-            if [ -f "${go-test-tui}/completions.bash" ]; then
-              source "${go-test-tui}/completions.bash"
-            fi
-
             # Make tools/*.sh scripts callable without the path prefix
             export PATH="$PWD/tools:$PATH"
 
-            # Register completion files via XDG so bash-completion lazy-loads
-            # them per-command (works in nix develop and nix-direnv)
-            export XDG_DATA_DIRS="$PWD/tools/share:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+            # Register completion share dirs so bash-completion lazy-loads them.
+            export XDG_DATA_DIRS="${tools-completions}/share:${go-test-tui.packages.${system}.default}/share:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
             echo "Werewolf dev shell"
             echo "  run_server.sh      - start dev server"

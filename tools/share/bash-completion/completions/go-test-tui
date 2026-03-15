@@ -1,3 +1,0 @@
-# go-test-tui completions are loaded directly in the Nix devShell shellHook.
-# This stub exists so XDG lazy-loading doesn't fail if bash-completion
-# tries to source this file outside the devShell.
