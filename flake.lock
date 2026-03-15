@@ -41,6 +41,22 @@
         "type": "github"
       }
     },
+    "mcp-dap-server-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773329591,
+        "narHash": "sha256-aS/bczAJKvQ2mUzGwADDEBEF9UfDg2SW41LtsztoR6E=",
+        "owner": "go-delve",
+        "repo": "mcp-dap-server",
+        "rev": "b667d9ec074fee1c3e843c96927deb9d8effef44",
+        "type": "github"
+      },
+      "original": {
+        "owner": "go-delve",
+        "repo": "mcp-dap-server",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1772624091,
@@ -61,6 +77,7 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "go-test-tui": "go-test-tui",
+        "mcp-dap-server-src": "mcp-dap-server-src",
         "nixpkgs": "nixpkgs"
       }
     },

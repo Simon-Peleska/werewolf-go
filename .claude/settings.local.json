@@ -1,7 +1,13 @@
 {
   "permissions": {
-    "allow": []
+    "allow": [
+      "Bash(run_tests.sh list:*)",
+      "Bash(./tools/run_tests.sh list:*)"
+    ]
   },
+  "enabledMcpjsonServers": [
+    "delve"
+  ],
   "hooks": {
     "PostToolUse": [
       {
@@ -14,5 +20,6 @@
         ]
       }
     ]
-  }
+  },
+  "spinnerTipsEnabled": false
 }

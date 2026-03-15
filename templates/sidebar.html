@@ -17,30 +17,27 @@
   {{end}}
 
   <section>
-    <p><strong>{{.Player.Name}}</strong> <small>(Code: <code id="secret-code-display">{{.Player.SecretCode}}</code>)</small></p>
+    <p><strong>{{.Player.Name}}</strong> <small>(Code: <code
+          id="secret-code-display">{{.Player.SecretCode}}</code>)</small></p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
   </section>
 
   <hr>
 
-  {{ $self := .Player }}
-  {{ $loverID := .LoverPartnerID }}
   <section>
     <h3>Players</h3>
     <card-list id="player-list">
       {{range .Players}}
-      {{$isSelf := eq .PlayerID $self.PlayerID}}
-      {{$isLover := and (ne $loverID 0) (eq .PlayerID $loverID)}}
       <player-card
-        {{if $isSelf}}id="sidebar-role-card"{{end}}
+        {{if eq .PlayerID $.Player.PlayerID}}id="sidebar-role-card"{{end}}
         data-player-id="{{.ID}}"
         player-name="{{.Name}}"
         role-name="{{.RoleName}}"
         role-desc="{{.RoleDescription}}"
         team="{{.Team}}"
         alive="{{if .IsAlive}}true{{else}}false{{end}}"
-        {{if $isLover}}lover{{end}}
-        {{if not $isSelf}}collapsed{{end}}></player-card>
+        {{if eq .Lover $.Player.ID}}lover{{end}}
+        {{if not (eq .PlayerID $.Player.PlayerID)}}collapsed{{end}}></player-card>
       {{end}}
     </card-list>
   </section>

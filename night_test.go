@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -42,7 +45,13 @@ func (tp *TestPlayer) waitForDayPhase() error {
 		const heading = document.querySelector('#topbar-phase-label');
 		return heading && heading.textContent.trim().startsWith('Day');
 	})`
-	return tp.waitUntilCondition(checkJS, "day phase")
+	err := tp.waitUntilCondition(checkJS, "day phase")
+
+	if tp.logger != nil {
+		tp.logger.Debug("[%s] Is in day phase", tp.Name)
+	}
+	return err
+
 }
 
 // waitForNightPhase waits for the player to transition to night phase by listening to WebSocket messages
@@ -152,7 +161,14 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 	tp.logHTML("after voting for " + targetName)
 	// Auto-press End Vote if the button is present and enabled (all werewolves have voted)
 	if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn:not([disabled])"); has {
+		if tp.logger != nil {
+			tp.logger.Debug("[%s] Auto-pressing End Vote after voting for %s", tp.Name, targetName)
+		}
 		tp.clickElementAndWait(endVoteBtn)
+	} else {
+		if tp.logger != nil {
+			tp.logger.Debug("[%s] End Vote button not yet available after voting for %s", tp.Name, targetName)
+		}
 	}
 }
 
@@ -280,10 +296,10 @@ func TestVillagerCannotSeeWerewolfVotes(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing villager cannot see werewolf votes ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing villager cannot see werewolf votes ===")
 
 	// Setup: 2 villagers, 1 werewolf
 	players := setupNightPhaseGame(ctx, browser, 2, 1)
@@ -323,10 +339,10 @@ func TestWerewolfCanVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing werewolf can vote ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing werewolf can vote ===")
 
 	// Setup: 1 villager, 2 werewolves (need 2 so first vote doesn't resolve immediately)
 	players := setupNightPhaseGame(ctx, browser, 1, 2)
@@ -387,10 +403,10 @@ func TestWerewolfVoteCountsShownOnCards(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing werewolf vote counts on cards ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing werewolf vote counts on cards ===")
 
 	// 1 villager, 2 werewolves — first wolf's vote won't resolve night (need End Vote)
 	players := setupNightPhaseGame(ctx, browser, 1, 2)
@@ -429,10 +445,10 @@ func TestWerewolfCanChangeVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing werewolf can change vote ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing werewolf can change vote ===")
 
 	// Setup: 2 villagers, 2 werewolves (need 2 werewolves so vote doesn't resolve, 2 villagers to switch between)
 	players := setupNightPhaseGame(ctx, browser, 2, 2)
@@ -473,10 +489,10 @@ func TestWerewolfCanUnselectVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing werewolf can unselect vote ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing werewolf can unselect vote ===")
 
 	// 1 villager, 2 werewolves so first vote doesn't auto-resolve
 	players := setupNightPhaseGame(ctx, browser, 1, 2)
@@ -520,10 +536,10 @@ func TestDayTransitionOnMajorityVote(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing day transition on majority vote ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing day transition on majority vote ===")
 
 	// Setup: 1 villager, 1 werewolf (simplest case - 1 werewolf = automatic majority)
 	players := setupNightPhaseGame(ctx, browser, 2, 1)
@@ -571,10 +587,10 @@ func TestStayInNightWithoutMajority(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing stay in night without majority ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing stay in night without majority ===")
 
 	// Setup: 1 villager, 2 werewolves (need both to vote for majority)
 	players := setupNightPhaseGame(ctx, browser, 1, 2)
@@ -613,10 +629,10 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing correct player gets killed ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing correct player gets killed ===")
 
 	// Setup: 2 villagers, 1 werewolf
 	players := setupNightPhaseGame(ctx, browser, 2, 1)
@@ -692,10 +708,10 @@ func TestWerewolvesVoteSplitNoKill(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing split vote stays in night ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing split vote stays in night ===")
 
 	// Setup: 2 villagers, 2 werewolves (they can split their vote)
 	players := setupNightPhaseGame(ctx, browser, 2, 2)
@@ -736,10 +752,10 @@ func TestWerewolfCanPass(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing werewolf can pass (no kill) ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing werewolf can pass (no kill) ===")
 
 	// Setup: 2 villagers, 1 werewolf
 	players := setupNightPhaseGame(ctx, browser, 2, 1)
@@ -804,6 +820,8 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Test: Witch heals victim ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -823,10 +841,17 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	players[0].addRoleByID(RoleWerewolf)
 	players[0].startGame()
 
+	// Wait for all players to reach night phase
+	for _, p := range players {
+		err := p.waitForNightPhase()
+		if err != nil {
+			ctx.logger.Debug("Warning: timeout waiting for night phase on %s: %v", p.Name, err)
+		}
+	}
+
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
 
-	ctx.logger.Debug("=== Test: Witch heals victim ===")
 	ctx.logger.Debug("Players: %d werewolves, %d villagers", len(werewolves), len(villagers))
 
 	// Find witch
@@ -856,9 +881,20 @@ func TestWitchHealSavesVictim(t *testing.T) {
 
 	// Select heal target by clicking the victim's card in the heal section
 	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + targetVillager.Name + "']")
+	// Wait for server to confirm selection (card gains `selected` attribute)
+	witch.waitUntilCondition(
+		`() => !!document.querySelector('[id^="witch-select-heal-form-"] player-card[selected]')`,
+		"witch heal target selected",
+	)
 
 	// Witch clicks Done to apply and end night
+	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
 	witch.clickAndWait("#witch-apply-button")
+	// Wait for server to confirm apply (shows waiting or survey form)
+	witch.waitUntilCondition(
+		`() => !!document.querySelector('#night-survey-form') || document.body.textContent.includes('Waiting for the night to end')`,
+		"witch apply done",
+	)
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -894,6 +930,8 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Test: Witch poison kills player ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -924,8 +962,6 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
 
-	ctx.logger.Debug("=== Test: Witch poison kills player ===")
-
 	// Find witch
 	var witch *TestPlayer
 	var otherVillager *TestPlayer
@@ -948,11 +984,28 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
 
+	// Wait for EndVote broadcast to reach witch's page (victim card appears in heal section)
+	// This is a required sync point: ensures the WS message was processed and HTMX re-initialized ws-send forms.
+	if !witch.witchCanSeeVictim(targetVillager.Name) {
+		t.Fatalf("Witch did not see victim card for %s in time", targetVillager.Name)
+	}
+
 	// Select poison target by clicking the player's card in the poison section
 	witch.clickAndWait("[id^='witch-select-poison-form-'] player-card[player-name='" + otherVillager.Name + "']")
+	// Wait for server to confirm selection (card gains `selected` attribute)
+	witch.waitUntilCondition(
+		`() => !!document.querySelector('[id^="witch-select-poison-form-"] player-card[selected]')`,
+		"witch poison target selected",
+	)
 
 	// Witch clicks Done to apply and end night
+	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
 	witch.clickAndWait("#witch-apply-button")
+	// Wait for server to confirm apply (shows waiting or survey form)
+	witch.waitUntilCondition(
+		`() => !!document.querySelector('#night-survey-form') || document.body.textContent.includes('Waiting for the night to end')`,
+		"witch apply done",
+	)
 
 	submitNightSurveysForAllPlayers(players)
 
@@ -1016,6 +1069,8 @@ func TestWitchPassEndNight(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Test: Witch pass ends night ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -1046,8 +1101,6 @@ func TestWitchPassEndNight(t *testing.T) {
 	var werewolves, villagers []*TestPlayer
 	werewolves, villagers = findPlayersByRole(players)
 
-	ctx.logger.Debug("=== Test: Witch pass ends night ===")
-
 	// Find witch
 	var witch *TestPlayer
 	for _, p := range villagers {
@@ -1068,7 +1121,14 @@ func TestWitchPassEndNight(t *testing.T) {
 	werewolves[0].voteForPlayer(targetVillager.Name)
 	werewolves[1].voteForPlayer(targetVillager.Name)
 
+	// Wait for EndVote broadcast to reach witch's page (victim card appears in heal section)
+	// This is a required sync point: ensures the WS message was processed and HTMX re-initialized ws-send forms.
+	if !witch.witchCanSeeVictim(targetVillager.Name) {
+		t.Fatalf("Witch did not see victim card for %s in time", targetVillager.Name)
+	}
+
 	// Witch clicks Done without using any potions
+	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
 	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
@@ -1147,6 +1207,8 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Test: Masons know each other ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -1166,7 +1228,6 @@ func TestMasonsKnowEachOther(t *testing.T) {
 	players[0].startGame()
 
 	werewolves, villagers, masons := findPlayersByRoleWithMason(players)
-	ctx.logger.Debug("=== Test: Masons know each other ===")
 	ctx.logger.Debug("Werewolves: %v, Villagers: %v, Masons: %v",
 		playerNames(werewolves), playerNames(villagers), playerNames(masons))
 
@@ -1208,6 +1269,8 @@ func TestSingleMasonSeesNoOthers(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Test: Single mason sees no others ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -1227,7 +1290,6 @@ func TestSingleMasonSeesNoOthers(t *testing.T) {
 	players[0].startGame()
 
 	_, _, masons := findPlayersByRoleWithMason(players)
-	ctx.logger.Debug("=== Test: Single mason sees no others ===")
 
 	if len(masons) == 0 {
 		t.Fatal("Mason not found")
@@ -1283,10 +1345,10 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing Wolf Cub night kill triggers double kill ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing Wolf Cub night kill triggers double kill ===")
 
 	// Setup: 1 Wolf Cub + 1 Werewolf + 4 Villagers = 6 players (C1-C6)
 	var players []*TestPlayer
@@ -1371,6 +1433,7 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
@@ -1411,10 +1474,10 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing witch saves second victim in Wolf Cub double kill ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing witch saves second victim in Wolf Cub double kill ===")
 
 	// Setup: 1 Wolf Cub + 1 Werewolf + 1 Witch + 3 Villagers = 6 players (WK1-WK6)
 	var players []*TestPlayer
@@ -1456,6 +1519,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	wolfCub.voteForPlayer(wolfCub.Name)
 	werewolf.voteForPlayer(wolfCub.Name)
 	// Witch clicks Done without using any potions
+	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
 	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
@@ -1486,6 +1550,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
@@ -1508,6 +1573,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + victim2.Name + "']")
 
 	// Witch clicks Done to apply and end night
+	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
 	witch.clickAndWait("#witch-apply-button")
 
 	submitNightSurveysForAllPlayers(players)
@@ -1534,10 +1600,10 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing Wolf Cub day elimination triggers double kill ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing Wolf Cub day elimination triggers double kill ===")
 
 	// Setup: 1 Wolf Cub + 1 Werewolf + 4 Villagers = 6 players (C1-C6)
 	var players []*TestPlayer
@@ -1603,6 +1669,7 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
 	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")
 	}
@@ -1714,6 +1781,8 @@ func TestCupidLinksLovers(t *testing.T) {
 	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
+
+	ctx.logger.Debug("=== Testing cupid can link first lovers ===")
 
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
@@ -1833,10 +1902,10 @@ func TestCupidCanUnselectFirstLover(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing cupid can unselect first lover independently ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing cupid can unselect first lover independently ===")
 
 	var players []*TestPlayer
 	for _, name := range []string{"CU1", "CU2", "CU3", "CU4", "CU5"} {
@@ -1887,10 +1956,10 @@ func TestCupidCanUnselectSecondLover(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing cupid can unselect second lover independently ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
-
-	ctx.logger.Debug("=== Testing cupid can unselect second lover independently ===")
 
 	var players []*TestPlayer
 	for _, name := range []string{"CU1", "CU2", "CU3", "CU4", "CU5"} {
@@ -1942,6 +2011,8 @@ func TestHeartbreakOnNightKill(t *testing.T) {
 	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
+
+	ctx.logger.Debug("=== Testing lover dies from heartbreak if second lover dies ===")
 
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
@@ -2018,6 +2089,8 @@ func TestLoversWinCondition(t *testing.T) {
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing lovers can win together ===")
+
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
@@ -2078,14 +2151,90 @@ func TestLoversWinCondition(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+func createFakeOpenAiServer(t *testing.T, storyText []string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("no flusher")
+		}
+
+		type streamResp struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+
+		send := func(text string) {
+			resp := streamResp{
+				Choices: []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+				}{
+					{
+						Delta: struct {
+							Content string `json:"content"`
+						}{
+							Content: text,
+						},
+					},
+				},
+			}
+
+			b, _ := json.Marshal(resp)
+
+			w.Write([]byte("data: "))
+			w.Write(b)
+			w.Write([]byte("\n\n"))
+			flusher.Flush()
+		}
+
+		for _, text := range storyText {
+			send(text)
+		}
+
+		send("wept ")
+		send("in silence.")
+
+		w.Write([]byte("data: [DONE]\n\n"))
+		flusher.Flush()
+	}))
+}
+
 func TestAIStoryteller(t *testing.T) {
 	t.Parallel()
 	ctx := newTestContext(t)
 	defer ctx.cleanup()
 
+	ctx.logger.Debug("=== Testing Ai Storyteller can send story ===")
+
 	// Enable mock storyteller for this test; restore nil afterwards
-	storyText := "The village wept in silence."
-	ctx.app.hub.storyteller = &mockStoryteller{text: storyText}
+	storyText := []string{"The village ", "wept ", "in silence."}
+
+	// ── 2. Fake OpenAi server (mimics OpenAI /v1/response endpoint) ─────────
+
+	fakeOpenAi := createFakeOpenAiServer(t, storyText)
+	defer fakeOpenAi.Close()
+
+	storyteller := initStoryteller(AppConfig{
+		StorytellerProvider: "openai-compatible",
+		StorytellerModel:    "llm-1",
+		StorytellerURL:      fakeOpenAi.URL + "/v1/",
+		StorytellerAPIKey:   "test-key",
+	})
+
+	ctx.app.hub.storyteller = storyteller
 	defer func() { ctx.app.hub.storyteller = nil }()
 
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
@@ -2117,7 +2266,7 @@ func TestAIStoryteller(t *testing.T) {
 
 	// Wait for the async AI story to appear in the watcher's history
 	err := watcher.waitUntilCondition(
-		fmt.Sprintf(`() => { const h = document.querySelector('#history-bar'); return h && h.textContent.includes(%q); }`, storyText),
+		fmt.Sprintf(`() => { const h = document.querySelector('#history-bar'); return h && h.textContent.includes(%q); }`, strings.Join(storyText, "")),
 		"AI story appears in history",
 	)
 	if err != nil {
@@ -2126,7 +2275,7 @@ func TestAIStoryteller(t *testing.T) {
 	}
 
 	// Story is public — werewolf should see it too
-	if !werewolves[0].historyContains(storyText) {
+	if !werewolves[0].historyContains(strings.Join(storyText, "")) {
 		t.Errorf("Werewolf cannot see AI story in history")
 	}
 

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/jmoiron/sqlx"
 )
 
@@ -31,46 +29,54 @@ type Player struct {
 	Team            string `db:"team"`
 	IsAlive         bool   `db:"is_alive"`
 	IsObserver      bool   `db:"is_observer"`
+	Lover           int64  `db:"lover"`
 }
 
 func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 	var player Player
-	err := db.Get(&player, `SELECT g.rowid as id,
-			g.game_id as game_id,
-			g.player_id as player_id,
+	err := db.Get(&player, `
+		SELECT gp.rowid as id,
+			g.rowid as game_id,
+			p.rowid as player_id,
 			p.name as name,
 			p.secret_code as secret_code,
 			r.rowid as role_id,
 			r.name as role_name,
 			r.description as role_description,
 			r.team as team,
-			g.is_alive as is_alive,
-			g.is_observer as is_observer
-		FROM game_player g
-			JOIN player p on g.player_id = p.rowid
-			JOIN role r on g.role_id = r.rowid
-		WHERE g.game_id = ? AND g.player_id = ?`, gameID, playerID)
+			gp.is_alive as is_alive,
+			gp.is_observer as is_observer,
+			IFNULL(l.player2_id, 0) as lover
+		FROM game_player gp
+			JOIN player p on gp.player_id = p.rowid
+			JOIN game g on gp.game_id = g.rowid
+			JOIN role r on gp.role_id = r.rowid
+			LEFT JOIN game_lovers l on l.player1_id = p.rowid
+		WHERE gp.game_id = ? AND gp.player_id = ?`, gameID, playerID)
 	return player, err
 }
 
 func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 	var players []Player
 	err := db.Select(&players, `
-		SELECT g.rowid as id,
-			g.game_id as game_id,
-			g.player_id as player_id,
+		SELECT gp.rowid as id,
+			g.rowid as game_id,
+			p.rowid as player_id,
 			p.name as name,
 			p.secret_code as secret_code,
 			r.rowid as role_id,
 			r.name as role_name,
 			r.description as role_description,
 			r.team as team,
-			g.is_alive as is_alive,
-			is_observer as is_observer
-		FROM game_player g
-			JOIN player p on g.player_id = p.rowid
-			JOIN role r on g.role_id = r.rowid
-		WHERE g.game_id = ?`, id)
+			gp.is_alive as is_alive,
+			is_observer as is_observer,
+			IFNULL(l.player2_id, 0) as lover
+		FROM game_player gp
+			JOIN player p on gp.player_id = p.rowid
+			JOIN game g on gp.game_id = g.rowid
+			JOIN role r on gp.role_id = r.rowid
+			LEFT JOIN game_lovers l on l.player1_id = p.rowid
+		WHERE g.rowid = ?`, id)
 	return players, err
 }
 
@@ -206,7 +212,7 @@ func getLoverPartner(db *sqlx.DB, gameID, playerID int64) int64 {
 	return partnerID
 }
 
-func initDB(db *sqlx.DB) error {
+func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	schema := `
 	PRAGMA journal_mode=WAL;
 
@@ -224,8 +230,8 @@ func initDB(db *sqlx.DB) error {
 		role_id INTEGER NOT NULL DEFAULT 1,
 		is_alive INTEGER NOT NULL DEFAULT 1,
 		is_observer INTEGER NOT NULL DEFAULT 0,
-		FOREIGN KEY (game_id) REFERENCES game(id),
-		FOREIGN KEY (player_id) REFERENCES players(id),
+		FOREIGN KEY (game_id) REFERENCES game(rowid),
+		FOREIGN KEY (player_id) REFERENCES player(rowid),
 		UNIQUE(game_id, player_id)
 	);
 	CREATE TABLE IF NOT EXISTS role (
@@ -237,12 +243,12 @@ func initDB(db *sqlx.DB) error {
 		game_id INTEGER NOT NULL,
 		role_id INTEGER NOT NULL,
 		count INTEGER NOT NULL DEFAULT 0,
-		FOREIGN KEY (game_id) REFERENCES game(id),
-		FOREIGN KEY (role_id) REFERENCES role(id),
+		FOREIGN KEY (game_id) REFERENCES game(rowid),
+		FOREIGN KEY (role_id) REFERENCES role(rowid),
 		UNIQUE(game_id, role_id)
 	);
 	CREATE TABLE IF NOT EXISTS session (
-		token INTEGER PRIMARY KEY,
+		token INTEGER,
 		player_id INTEGER NOT NULL,
 		FOREIGN KEY (player_id) REFERENCES player(rowid)
 	);
@@ -295,9 +301,9 @@ func initDB(db *sqlx.DB) error {
 	`
 	_, err := db.Exec(schema)
 	if err != nil {
-		log.Printf("initDB error: %v", err)
+		logfn("initDB error: %v", err)
 		return err
 	}
-	log.Printf("Database initialized successfully")
+	logfn("Database initialized successfully")
 	return nil
 }

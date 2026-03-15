@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"database/sql"
-	"log"
 	"math/big"
 )
 
@@ -28,13 +27,13 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSUpdateRole: getOrCreateCurrentGame", err)
+		h.logError("handleWSUpdateRole: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
 	if game.Status != "lobby" {
-		log.Printf("Cannot update roles: game status is '%s', expected 'lobby'", game.Status)
+		h.logf("Cannot update roles: game status is '%s', expected 'lobby'", game.Status)
 		h.sendErrorToast(client.playerID, "Cannot update roles: game already started")
 		return
 	}
@@ -49,7 +48,7 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 		var playerCount int
 		h.db.Get(&playerCount, "SELECT COUNT(*) FROM game_player WHERE game_id = ?", game.ID)
 		if totalRoles >= playerCount {
-			log.Printf("Rejected role addition: %d roles already cover all %d players", totalRoles, playerCount)
+			h.logf("Rejected role addition: %d roles already cover all %d players", totalRoles, playerCount)
 			return
 		}
 	}
@@ -87,15 +86,15 @@ func handleWSStartGame(client *Client) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSStartGame: getOrCreateCurrentGame", err)
+		h.logError("handleWSStartGame: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
 
-	log.Printf("Starting game: id=%d, status='%s'", game.ID, game.Status)
+	h.logf("Starting game: id=%d, status='%s'", game.ID, game.Status)
 
 	if game.Status != "lobby" {
-		log.Printf("Cannot start: game status is '%s', expected 'lobby'", game.Status)
+		h.logf("Cannot start: game status is '%s', expected 'lobby'", game.Status)
 		h.sendErrorToast(client.playerID, "Game already started")
 		return
 	}
@@ -103,21 +102,21 @@ func handleWSStartGame(client *Client) {
 	// Get players
 	players, err := getPlayersByGameId(h.db, game.ID)
 	if err != nil {
-		logError("handleWSStartGame: getPlayersByGameId", err)
+		h.logError("handleWSStartGame: getPlayersByGameId", err)
 		h.sendErrorToast(client.playerID, "Failed to get players")
 		return
 	}
-	log.Printf("Found %d players in game", len(players))
+	h.logf("Found %d players in game", len(players))
 
 	// Get role configuration
 	var roleConfigs []GameRoleConfig
 	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
-		logError("handleWSStartGame: db.Select roleConfigs", err)
+		h.logError("handleWSStartGame: db.Select roleConfigs", err)
 		h.sendErrorToast(client.playerID, "Failed to get role configuration")
 		return
 	}
-	log.Printf("Found %d role configs", len(roleConfigs))
+	h.logf("Found %d role configs", len(roleConfigs))
 
 	// Build role pool
 	var rolePool []int64
@@ -126,43 +125,43 @@ func handleWSStartGame(client *Client) {
 			rolePool = append(rolePool, rc.RoleID)
 		}
 	}
-	log.Printf("Role pool size: %d", len(rolePool))
+	h.logf("Role pool size: %d", len(rolePool))
 
 	if len(rolePool) != len(players) {
-		log.Printf("Cannot start: role count (%d) != player count (%d)", len(rolePool), len(players))
+		h.logf("Cannot start: role count (%d) != player count (%d)", len(rolePool), len(players))
 		h.sendErrorToast(client.playerID, "Role count must match player count")
 		return
 	}
 
 	// Shuffle role pool
 	shuffleRoles(rolePool)
-	log.Printf("Roles shuffled, assigning to players...")
+	h.logf("Roles shuffled, assigning to players...")
 
 	// Assign roles to players
 	for i, gp := range players {
-		log.Printf("Assigning role %d to player %d (game_player id=%d)", rolePool[i], gp.PlayerID, gp.ID)
+		h.logf("Assigning role %d to player %d (game_player id=%d)", rolePool[i], gp.PlayerID, gp.ID)
 		_, err := h.db.Exec("UPDATE game_player SET role_id = ? WHERE rowid = ?", rolePool[i], gp.ID)
 		if err != nil {
-			logError("handleWSStartGame: db.Exec assign role", err)
+			h.logError("handleWSStartGame: db.Exec assign role", err)
 			h.sendErrorToast(client.playerID, "Failed to assign roles")
 			return
 		}
 	}
-	log.Printf("Roles assigned, updating game status...")
+	h.logf("Roles assigned, updating game status...")
 
 	// Update game status and set night 1
 	_, err = h.db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
-		logError("handleWSStartGame: db.Exec update game status", err)
+		h.logError("handleWSStartGame: db.Exec update game status", err)
 		h.sendErrorToast(client.playerID, "Failed to start game")
 		return
 	}
-	log.Printf("Game status updated to 'night' (night 1), broadcasting...")
+	h.logf("Game status updated to 'night' (night 1), broadcasting...")
 	DebugLog("handleWSStartGame", "Game %d started, transitioning to night phase (night 1)", game.ID)
 	h.logDBState("after game start")
 
 	h.triggerBroadcast()
-	log.Printf("Game started successfully!")
+	h.logf("Game started successfully!")
 }
 
 // renderLobby renders the lobby component for a player

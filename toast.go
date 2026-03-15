@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"html/template"
-	"log"
 	"strconv"
 )
 
@@ -18,12 +17,12 @@ type Toast struct {
 // renderToast renders a toast notification HTML fragment
 var toastCounter int64
 
-func renderToast(tmpl *template.Template, toastType, message string) string {
+func renderToast(tmpl *template.Template, logfn func(string, ...any), toastType, message string) string {
 	var buf bytes.Buffer
 	toastCounter++
 	toast := Toast{ID: strconv.FormatInt(toastCounter, 10), Type: toastType, Message: message}
 	if err := tmpl.ExecuteTemplate(&buf, "toast.html", toast); err != nil {
-		log.Printf("Failed to render toast: %v", err)
+		logfn("Failed to render toast: %v", err)
 		return ""
 	}
 	return buf.String()
@@ -31,7 +30,7 @@ func renderToast(tmpl *template.Template, toastType, message string) string {
 
 // sendErrorToast sends an error toast to a specific player via WebSocket
 func (h *Hub) sendErrorToast(playerID int64, message string) {
-	html := renderToast(h.templates, "error", message)
+	html := renderToast(h.templates, h.logf, "error", message)
 	if html != "" {
 		h.sendToPlayer(playerID, []byte(html))
 	}
@@ -43,7 +42,7 @@ func (h *Hub) broadcastSoundToast(toastType, message string) {
 	toastCounter++
 	toast := Toast{ID: strconv.FormatInt(toastCounter, 10), Type: toastType, Message: message, Sound: true}
 	if err := h.templates.ExecuteTemplate(&buf, "toast.html", toast); err != nil {
-		log.Printf("Failed to render sound toast: %v", err)
+		h.logf("Failed to render sound toast: %v", err)
 		return
 	}
 	h.broadcast <- buf.Bytes()

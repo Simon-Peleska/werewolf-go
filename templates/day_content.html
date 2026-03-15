@@ -9,10 +9,13 @@
                     <card-list>
                     {{range .NightVictims}}
                     <player-card
+                        data-player-id="{{.ID}}"
                         player-name="{{.Name}}"
-                        role-name="{{.Role}}"
+                        role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
-                        alive="false"
+                        alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                        {{if not (eq .Lover 0)}}lover{{end}}
                         collapsed
                     ></player-card>
                     {{end}}
@@ -31,7 +34,7 @@
                         <p>They were a <strong>{{.HunterVictimPlayer.RoleName}}</strong>.</p>
                         {{end}}
                     </div>
-                    {{else if .IsTheHunter}}
+                    {{else if eq .Player.RoleName "Hunter"}}
                     <div class="phase-heading" style="margin-bottom:0.75rem">
                         <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
                         <h3 style="margin:0">Your Last Shot</h3>
@@ -43,10 +46,13 @@
                         <input type="hidden" name="action" value="hunter_select">
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
+                            data-player-id="{{.ID}}"
                             player-name="{{.Name}}"
                             role-name="{{.RoleName}}"
+                            role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
-                            alive="true"
+                            alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                            {{if eq $.Player.ID .Lover}}lover{{end}}
                             selectable
                             {{if and $.HunterSelectedPlayer (eq $.HunterSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         ></player-card>
@@ -68,22 +74,24 @@
     {{if not .HunterRevengeNeeded | or .HunterRevengeDone}}
     <section>
         <h3>Vote to Eliminate</h3>
-        {{if .IsAlive}}
+        {{if .Player.IsAlive}}
         <p><small>Choose a player to eliminate, or pass. Majority vote required.</small></p>
 
         <card-list>
         {{range .AliveTargets}}
-        {{$voteCount := index $.DayVoteCounts .PlayerID}}
         <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
             <input type="hidden" name="action" value="day_vote">
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
             <player-card
+                data-player-id="{{.ID}}"
                 player-name="{{.Name}}"
                 role-name="{{.RoleName}}"
+                role-desc="{{.RoleDescription}}"
                 team="{{.Team}}"
-                alive="true"
+                alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                {{if eq $.Player.ID .Lover}}lover{{end}}
                 selectable
-                count="{{$voteCount}}"
+                count="{{index $.DayVoteCounts .PlayerID}}"
                 {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
             ></player-card>
         </form>

@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,7 +44,27 @@ func generateA4PCM(sampleRate int, durationSecs float64) []byte {
 //  6. _nextPlayTime > 0 confirms the Web Audio API actually scheduled the audio.
 func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	t.Parallel()
-	// ── 1. Generate A4 (440 Hz) tone: 0.5 s @ 24 kHz, 16-bit mono = 24 000 bytes ──
+
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	// ── 1. Fake OpenAi server (mimics OpenAI /v1/response endpoint) ─────────
+	storyText := []string{"The village ", "wept ", "in silence."}
+	fakeOpenAi := createFakeOpenAiServer(t, storyText)
+	defer fakeOpenAi.Close()
+
+	// ── 2. Build Storyteller pointing at the fake server ────────────────────────────
+	storyteller := initStoryteller(AppConfig{
+		StorytellerProvider: "openai-compatible",
+		StorytellerModel:    "llm-1",
+		StorytellerURL:      fakeOpenAi.URL + "/v1/",
+		StorytellerAPIKey:   "test-key",
+	})
+
+	ctx.app.hub.storyteller = storyteller
+	defer func() { ctx.app.hub.storyteller = nil }()
+
+	// ── 3. Generate A4 (440 Hz) tone: 0.5 s @ 24 kHz, 16-bit mono = 24 000 bytes ──
 	const sampleRate = 24000
 	const durationSecs = 0.5
 	pcm := generateA4PCM(sampleRate, durationSecs)
@@ -52,7 +74,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	serverHashHex := hex.EncodeToString(serverSum[:])
 	t.Logf("PCM: %d bytes, SHA-256 = %s", len(pcm), serverHashHex)
 
-	// ── 2. Fake TTS server (mimics OpenAI /v1/audio/speech PCM endpoint) ─────────
+	// ── 4. Fake TTS server (mimics OpenAI /v1/audio/speech PCM endpoint) ─────────
 	const chunkSize = 4096
 	fakeTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
@@ -75,7 +97,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	}))
 	defer fakeTTS.Close()
 
-	// ── 3. Build narrator pointing at the fake server ────────────────────────────
+	// ── 5. Build narrator pointing at the fake server ────────────────────────────
 	narrator := initNarrator(AppConfig{
 		NarratorProvider:   "openai-compatible",
 		NarratorURL:        fakeTTS.URL + "/v1",
@@ -88,25 +110,28 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 		t.Fatal("initNarrator returned nil for openai-compatible provider")
 	}
 
-	// ── 4. Game + browser setup ──────────────────────────────────────────────────
-	ctx := newTestContext(t)
-	defer ctx.cleanup()
-
 	// Attach narrator to the hub (newTestContext starts with nil narrator).
 	ctx.app.hub.narrator = narrator
+	defer func() { ctx.app.hub.narrator = nil }()
 
+	// ── 6. Game + browser setup ──────────────────────────────────────────────────
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()
 
 	// Sign up a player; they land on game.html which includes the audio playback JS.
-	player := browser.signupPlayer(ctx.baseURL, "NarratorTest")
-	player.waitUntilCondition(`() => document.querySelector('#game-content') !== null`,
+	// 1 werewolf + 2 villagers
+	var players []*TestPlayer
+	for _, name := range []string{"ST1", "ST2", "ST3"} {
+		players = append(players, browser.signupPlayer(ctx.baseURL, name))
+	}
+
+	players[0].waitUntilCondition(`() => document.querySelector('#game-content') !== null`,
 		"game-content loaded")
 
-	// ── 5. Inject byte accumulator + wrap playPCMChunk ───────────────────────────
+	// ── 7. Inject byte accumulator + wrap playPCMChunk ───────────────────────────
 	// We wrap the global playPCMChunk (declared as a named function in game.html)
 	// so we can capture every chunk that flows through the audio pipeline.
-	_, err := player.p().Eval(`() => {
+	_, err := players[0].p().Eval(`() => {
 		window._testAudioChunks = [];
 		var orig = window.playPCMChunk;
 		window.playPCMChunk = function(ab) {
@@ -119,15 +144,39 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 		t.Fatalf("inject audio accumulator: %v", err)
 	}
 
-	// ── 6. Trigger the narrator ──────────────────────────────────────────────────
-	// maybeSpeakStory fetches the narrator from the hub and runs it asynchronously.
-	// We need a valid game ID; getOrCreateCurrentGame creates one if absent.
-	game, gameErr := getOrCreateCurrentGame(ctx.app.db)
-	if gameErr != nil {
-		t.Fatalf("getOrCreateCurrentGame: %v", gameErr)
+	// ── 7. Play Game ───────────────────────────----------------------------------
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].startGame()
+
+	werewolves, villagers := findPlayersByRole(players)
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
 	}
-	ctx.logger.Debug("Triggering maybeSpeakStory for game %d", game.ID)
-	ctx.app.hub.maybeSpeakStory(game.ID, "The village trembles as the night grows dark.")
+
+	target := villagers[0]
+	watcher := villagers[1]
+
+	// Werewolf kills target (voteForPlayer auto-presses End Vote)
+	werewolves[0].voteForPlayer(target.Name)
+
+	submitNightSurveysForAllPlayers(players)
+
+	// Wait for the async AI story to appear in the watcher's history
+	err = watcher.waitUntilCondition(
+		fmt.Sprintf(`() => { const h = document.querySelector('#history-bar'); return h && h.textContent.includes(%q); }`, strings.Join(storyText, "")),
+		"AI story appears in history",
+	)
+	if err != nil {
+		ctx.logger.LogDB("FAIL: AI story not in history")
+		t.Errorf("AI story did not appear in history: %v", err)
+	}
+
+	// Story is public — werewolf should see it too
+	if !werewolves[0].historyContains(strings.Join(storyText, "")) {
+		t.Errorf("Werewolf cannot see AI story in history")
+	}
 
 	// ── 7. Wait for all bytes to arrive at the browser ───────────────────────────
 	// Poll the accumulator total. At 24 kHz / 16-bit the narrator finishes in <100 ms;
@@ -135,7 +184,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	expectedBytes := len(pcm)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		res, evalErr := player.p().Eval(`() =>
+		res, evalErr := players[0].p().Eval(`() =>
 			window._testAudioChunks.reduce(function(a, b) { return a + b.length; }, 0)`)
 		if evalErr == nil && res.Value.Int() >= expectedBytes {
 			break
@@ -144,7 +193,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	}
 
 	// ── 8. Verify total bytes received ───────────────────────────────────────────
-	bytesRes, err := player.p().Eval(
+	bytesRes, err := players[0].p().Eval(
 		`() => window._testAudioChunks.reduce(function(a, b) { return a + b.length; }, 0)`)
 	if err != nil {
 		t.Fatalf("eval total bytes: %v", err)
@@ -158,7 +207,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	// ── 9. Browser-side SHA-256 via Web Crypto API ───────────────────────────────
 	// crypto.subtle is available on localhost (Chrome treats localhost as secure).
 	// page.Eval awaits Promises, so the async function resolves before returning.
-	hashRes, err := player.p().Eval(`async function() {
+	hashRes, err := players[0].p().Eval(`async function() {
 		var chunks = window._testAudioChunks;
 		var totalLen = chunks.reduce(function(a, b) { return a + b.length; }, 0);
 		var combined = new Uint8Array(totalLen);
@@ -187,7 +236,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 
 	// ── 11. Web Audio API scheduling check ───────────────────────────────────────
 	// _nextPlayTime > 0 proves createBufferSource().start() was called at least once.
-	nextPlayRes, err := player.p().Eval(`() => _nextPlayTime`)
+	nextPlayRes, err := players[0].p().Eval(`() => _nextPlayTime`)
 	if err != nil {
 		t.Fatalf("eval _nextPlayTime: %v", err)
 	}
@@ -206,7 +255,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	// the last scheduled AudioBufferSourceNode has finished playing.
 	// In a suspended context this will never advance, so we skip the wait.
 	ctx.logger.Debug("Waiting for audio playback to finish (nextPlayTime=%.3fs)…", nextPlayTime)
-	_, err = player.p().Timeout(browserTimeout).Eval(`() => new Promise(function(resolve) {
+	_, err = players[0].p().Timeout(browserTimeout).Eval(`() => new Promise(function(resolve) {
 		if (!_audioCtx || _audioCtx.state === 'suspended') { resolve(); return; }
 		(function poll() {
 			if (_audioCtx.currentTime >= _nextPlayTime) { resolve(); return; }
@@ -219,7 +268,7 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	ctx.logger.Debug("Playback finished")
 
 	// ── 13. AudioContext state ───────────────────────────────────────────────────
-	stateRes, err := player.p().Eval(`() => _audioCtx ? _audioCtx.state : 'not created'`)
+	stateRes, err := players[0].p().Eval(`() => _audioCtx ? _audioCtx.state : 'not created'`)
 	if err != nil {
 		t.Fatalf("eval AudioContext state: %v", err)
 	}

@@ -169,7 +169,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 			SELECT description FROM game_action
 			WHERE game_id = ? AND description != '' AND visibility = ?
 			ORDER BY rowid ASC`, gameID, VisibilityPublic); err != nil {
-			log.Printf("maybeGenerateStory: fetch history: %v", err)
+			h.logf("maybeGenerateStory: fetch history: %v", err)
 			return
 		}
 
@@ -180,7 +180,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 			VALUES (?, ?, ?, ?, ?, ?, '')`,
 			gameID, round, phase, actorPlayerID, ActionStory, VisibilityPublic)
 		if err != nil {
-			logError("maybeGenerateStory: insert placeholder", err)
+			h.logError("maybeGenerateStory: insert placeholder", err)
 			return
 		}
 		storyRowID, _ := result.LastInsertId()
@@ -225,7 +225,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 		close(done)
 
 		if err != nil {
-			log.Printf("maybeGenerateStory: storyteller error: %v", err)
+			h.logf("maybeGenerateStory: storyteller error: %v", err)
 			h.db.Exec(`DELETE FROM game_action WHERE rowid=? AND description=''`, storyRowID)
 			return
 		}
@@ -241,7 +241,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 		}
 
 		h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
-		log.Printf("Storyteller: completed story for game %d round %d %s", gameID, round, phase)
+		h.logf("Storyteller: completed story for game %d round %d %s", gameID, round, phase)
 		h.triggerBroadcast()
 		h.maybeSpeakStory(gameID, finalText)
 	}()
@@ -255,14 +255,14 @@ func (h *Hub) maybeSpeakStory(gameID int64, text string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		log.Printf("Narrator: starting TTS for game %d", gameID)
+		h.logf("Narrator: starting TTS for game %d", gameID)
 		err := h.narrator.Speak(ctx, text, func(chunk []byte) {
 			h.broadcastAudio(chunk)
 		})
 		if err != nil {
-			log.Printf("Narrator: TTS error for game %d: %v", gameID, err)
+			h.logf("Narrator: TTS error for game %d: %v", gameID, err)
 		} else {
-			log.Printf("Narrator: TTS completed for game %d", gameID)
+			h.logf("Narrator: TTS completed for game %d", gameID)
 		}
 	}()
 }

@@ -49,7 +49,7 @@ func (c *Client) writer() {
 			mt = websocket.BinaryMessage
 		}
 		if err := c.conn.WriteMessage(mt, msg.data); err != nil {
-			log.Printf("WebSocket write error to player %d: %v", c.playerID, err)
+			c.hub.logf("WebSocket write error to player %d: %v", c.playerID, err)
 			return
 		}
 	}
@@ -71,6 +71,7 @@ type Hub struct {
 	templates   *template.Template
 	storyteller Storyteller
 	narrator    Narrator
+	logf        func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
 }
 
 func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator) *Hub {
@@ -85,7 +86,13 @@ func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, 
 		templates:      templates,
 		storyteller:    storyteller,
 		narrator:       narrator,
+		logf:           log.Printf,
 	}
+}
+
+// logError logs an error with context, routed through hub's logf so tests see it via t.Logf.
+func (h *Hub) logError(context string, err error) {
+	h.logf("ERROR [%s]: %v", context, err)
 }
 
 // triggerBroadcast signals the broadcast worker to call broadcastGameUpdate.
@@ -128,7 +135,7 @@ func (h *Hub) sendToPlayer(playerID int64, message []byte) {
 			select {
 			case client.send <- hubMsg{data: message}:
 			default:
-				log.Printf("WebSocket send buffer full for player %d, dropping message", playerID)
+				h.logf("WebSocket send buffer full for player %d, dropping message", playerID)
 			}
 		}
 	}
@@ -142,7 +149,7 @@ func (h *Hub) broadcastAudio(data []byte) {
 		select {
 		case client.send <- hubMsg{binary: true, data: data}:
 		default:
-			log.Printf("WebSocket audio buffer full for player %d, dropping chunk", client.playerID)
+			h.logf("WebSocket audio buffer full for player %d, dropping chunk", client.playerID)
 		}
 	}
 }
@@ -182,7 +189,7 @@ func (h *Hub) run() {
 			go client.writer()
 			var playerName string
 			h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
-			log.Printf("WebSocket client connected (player %d: %s). Total: %d", client.playerID, playerName, len(h.clients))
+			h.logf("WebSocket client connected (player %d: %s). Total: %d", client.playerID, playerName, len(h.clients))
 			DebugLog("hub.register", "Player '%s' (ID: %d) connected via WebSocket", playerName, client.playerID)
 			h.addPlayerToLobby(client.playerID)
 
@@ -208,21 +215,21 @@ func (h *Hub) run() {
 				}
 
 				if !hasOtherConn {
-					log.Printf("Player '%s' (ID: %d) has no more connections, removing from lobby", playerName, playerID)
+					h.logf("Player '%s' (ID: %d) has no more connections, removing from lobby", playerName, playerID)
 					DebugLog("hub.unregister", "Player '%s' (ID: %d) has no more connections, removing from lobby", playerName, playerID)
 					removePlayerID = playerID
 				} else {
-					log.Printf("Player '%s' (ID: %d)  still has other connections", playerName, playerID)
+					h.logf("Player '%s' (ID: %d) still has other connections", playerName, playerID)
 					DebugLog("hub.unregister", "Player '%s' (ID: %d) still has other connections", playerName, playerID)
 				}
 			}
 			h.mu.Unlock()
-			log.Printf("WebSocket client disconnected. Total: %d", len(h.clients))
+			h.logf("WebSocket client disconnected. Total: %d", len(h.clients))
 			// Call removePlayerFromLobby after releasing mutex — it calls triggerBroadcast
 			// which needs no lock, but the pattern is consistent with before.
 			if removePlayerID != 0 {
 				h.removePlayerFromLobby(removePlayerID)
-				log.Printf("Removed Player: %d", removePlayerID)
+				h.logf("Removed Player: %d", removePlayerID)
 			}
 
 		case message := <-h.broadcast:
@@ -231,7 +238,7 @@ func (h *Hub) run() {
 				select {
 				case client.send <- hubMsg{data: message}:
 				default:
-					log.Printf("WebSocket broadcast buffer full for player %d, dropping message", client.playerID)
+					h.logf("WebSocket broadcast buffer full for player %d, dropping message", client.playerID)
 				}
 			}
 			h.mu.RUnlock()
@@ -258,13 +265,13 @@ func (h *Hub) connectedPlayerIDs() []int64 {
 func (h *Hub) broadcastGameUpdate() {
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
+		h.logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
 		return
 	}
 
 	players, err := getPlayersByGameId(h.db, game.ID)
 	if err != nil {
-		logError("broadcastGameUpdate: getPlayersByGameId", err)
+		h.logError("broadcastGameUpdate: getPlayersByGameId", err)
 		return
 	}
 
@@ -276,9 +283,9 @@ func (h *Hub) broadcastGameUpdate() {
 		// which means clients receive a consistent update in one htmx:wsAfterMessage event.
 		var combined bytes.Buffer
 
-		buf, err := getGameComponent(h.db, h.templates, p.PlayerID, game)
+		buf, err := getGameComponent(h, p.PlayerID, game)
 		if err != nil {
-			logError("broadcastGameUpdate: getGameComponent", err)
+			h.logError("broadcastGameUpdate: getGameComponent", err)
 			continue
 		}
 		combined.Write(buf.Bytes())
@@ -295,7 +302,7 @@ func (h *Hub) broadcastGameUpdate() {
 
 		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game)
 		if err != nil {
-			logError("broadcastGameHistory: getGameHistory", err)
+			h.logError("broadcastGameHistory: getGameHistory", err)
 			continue
 		}
 		combined.Write(historyBuf.Bytes())
@@ -316,7 +323,7 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("addPlayerToLobby: getOrCreateCurrentGame", err)
+		h.logError("addPlayerToLobby: getOrCreateCurrentGame", err)
 		return
 	}
 
@@ -327,18 +334,16 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 
 	result, err := h.db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", game.ID, playerID)
 	if err != nil {
-		logError("addPlayerToLobby: db.Exec insert", err)
+		h.logError("addPlayerToLobby: db.Exec insert", err)
 		return
 	}
 
 	rows, _ := result.RowsAffected()
 	if rows > 0 {
-		log.Printf("Player %d (%s) added to lobby (connected)", playerID, playerName)
+		h.logf("Player %d (%s) added to lobby", playerID, playerName)
 		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) joined game %d lobby", playerName, playerID, game.ID)
 		h.logDBState("after player join: " + playerName)
 		h.triggerBroadcast()
-
-		log.Printf("Player %d (%s) added to lobby (triggered broadcast )", playerID, playerName)
 	} else {
 		DebugLog("addPlayerToLobby", "Player '%s' (ID: %d) already in game %d", playerName, playerID, game.ID)
 	}
@@ -351,7 +356,7 @@ func (h *Hub) removePlayerFromLobby(playerID int64) {
 
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("removePlayerFromLobby: getOrCreateCurrentGame", err)
+		h.logError("removePlayerFromLobby: getOrCreateCurrentGame", err)
 		return
 	}
 
@@ -362,11 +367,11 @@ func (h *Hub) removePlayerFromLobby(playerID int64) {
 
 	_, err = h.db.Exec("DELETE FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
 	if err != nil {
-		logError("removePlayerFromLobby: db.Exec delete", err)
+		h.logError("removePlayerFromLobby: db.Exec delete", err)
 		return
 	}
 
-	log.Printf("Player %d (%s) removed from lobby (disconnected)", playerID, playerName)
+	h.logf("Player %d (%s) removed from lobby (disconnected)", playerID, playerName)
 	DebugLog("removePlayerFromLobby", "Player '%s' (ID: %d) left game %d lobby", playerName, playerID, game.ID)
 	h.logDBState("after player leave: " + playerName)
 	h.triggerBroadcast()
@@ -383,7 +388,6 @@ func getOrCreateCurrentGame(db *sqlx.DB) (*Game, error) {
 		}
 		gameID, _ := result.LastInsertId()
 		game = Game{ID: gameID, Status: "lobby", Round: 0}
-		log.Printf("Created new game: id=%d, status='lobby'", gameID)
 		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
 	} else if err != nil {
 		return nil, err
@@ -412,7 +416,7 @@ func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error for player %d (%s): %v", playerID, playerName, err)
+		app.hub.logf("WebSocket upgrade error for player %d (%s): %v", playerID, playerName, err)
 		return
 	}
 

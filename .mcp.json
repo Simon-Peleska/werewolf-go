@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "delve": {
+      "type": "stdio",
+      "command": "mcp-dap-server",
+      "args": []
+    }
+  }
+}

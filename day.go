@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strconv"
 )
 
@@ -22,9 +21,10 @@ type NightVictim struct {
 
 // DayData holds all data needed to render the day phase
 type DayData struct {
+	Player               *Player  // this player's current vote (nil = no vote / pass)
 	AliveTargets         []Player // alive players; visibility pre-applied
 	NightNumber          int
-	NightVictims         []NightVictim // all players killed last night
+	NightVictims         []Player // all players killed last night
 	Votes                []DayVote
 	DayVoteCounts        map[int64]int // vote count per target player ID
 	CurrentVotePlayer    *Player       // this player's current vote (nil = no vote / pass)
@@ -60,7 +60,7 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 			}
 			_, err := h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, partnerID)
 			if err != nil {
-				logError("applyHeartbreaks: kill partner", err)
+				h.logError("applyHeartbreaks: kill partner", err)
 				continue
 			}
 			// Record public heartbreak action: actor=trigger person, target=heartbreak victim
@@ -74,7 +74,7 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 			heartbreakDesc := fmt.Sprintf("%s %d: %s died of heartbreak after their lover %s was killed", phaseLabel, game.Round, partnerName, killedName)
 			_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				game.ID, game.Round, phase, killed, ActionLoverHeartbreak, partnerID, VisibilityPublic, heartbreakDesc)
-			log.Printf("Heartbreak: '%s' died after their lover '%s' was killed", partnerName, killedName)
+			h.logf("Heartbreak: '%s' died after their lover '%s' was killed", partnerName, killedName)
 			DebugLog("applyHeartbreaks", "'%s' died from heartbreak (lover '%s' was killed)", partnerName, killedName)
 			nextRound = append(nextRound, partnerID)
 			allHeartbroken = append(allHeartbroken, partnerID)
@@ -88,7 +88,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSDayVote: getOrCreateCurrentGame", err)
+		h.logError("handleWSDayVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -101,7 +101,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 	// Check that the player is alive
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
-		logError("handleWSDayVote: getPlayerInGame", err)
+		h.logError("handleWSDayVote: getPlayerInGame", err)
 		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
@@ -138,11 +138,11 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND actor_player_id = ? AND action_type = ?`,
 			game.ID, game.Round, client.playerID, ActionDayVote)
 		if err != nil {
-			logError("handleWSDayVote: db.Exec delete vote", err)
+			h.logError("handleWSDayVote: db.Exec delete vote", err)
 			h.sendErrorToast(client.playerID, "Failed to clear vote")
 			return
 		}
-		log.Printf("Player %d (%s) unselected day vote for player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+		h.logf("Player %d (%s) unselected day vote for player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
 		h.triggerBroadcast()
 		return
 	}
@@ -156,12 +156,12 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		DO UPDATE SET target_player_id = ?, description = ?`,
 		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, dayVoteDesc, targetID, dayVoteDesc)
 	if err != nil {
-		logError("handleWSDayVote: db.Exec insert vote", err)
+		h.logError("handleWSDayVote: db.Exec insert vote", err)
 		h.sendErrorToast(client.playerID, "Failed to record vote")
 		return
 	}
 
-	log.Printf("Player %d (%s) voted to eliminate player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
+	h.logf("Player %d (%s) voted to eliminate player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
 	DebugLog("handleWSDayVote", "Player '%s' voted to eliminate '%s'", voter.Name, target.Name)
 	LogDBState(h.db, "after day vote")
 
@@ -172,7 +172,7 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSDayPass: getOrCreateCurrentGame", err)
+		h.logError("handleWSDayPass: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -184,7 +184,7 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
-		logError("handleWSDayPass: getPlayerInGame", err)
+		h.logError("handleWSDayPass: getPlayerInGame", err)
 		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
@@ -203,12 +203,12 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 		DO UPDATE SET target_player_id = NULL, description = ?`,
 		game.ID, game.Round, client.playerID, ActionDayVote, VisibilityPublic, passDesc, passDesc)
 	if err != nil {
-		logError("handleWSDayPass: db.Exec", err)
+		h.logError("handleWSDayPass: db.Exec", err)
 		h.sendErrorToast(client.playerID, "Failed to record pass")
 		return
 	}
 
-	log.Printf("Player %d (%s) passed the day vote", client.playerID, voter.Name)
+	h.logf("Player %d (%s) passed the day vote", client.playerID, voter.Name)
 	h.triggerBroadcast()
 }
 
@@ -216,7 +216,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSDayEndVote: getOrCreateCurrentGame", err)
+		h.logError("handleWSDayEndVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -228,7 +228,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
-		logError("handleWSDayEndVote: getPlayerInGame", err)
+		h.logError("handleWSDayEndVote: getPlayerInGame", err)
 		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
@@ -255,7 +255,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	log.Printf("Day End Vote triggered by player %d (%s)", client.playerID, voter.Name)
+	h.logf("Day End Vote triggered by player %d (%s)", client.playerID, voter.Name)
 	h.resolveDayVotes(game)
 }
 
@@ -269,18 +269,18 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		JOIN player p ON g.player_id = p.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
 	if err != nil {
-		logError("resolveDayVotes: get alive players", err)
+		h.logError("resolveDayVotes: get alive players", err)
 		return
 	}
 
 	// Get all day votes for this round
 	voteCounts, totalVotes, err := getVoteCounts(h.db, game.ID, game.Round, "day", ActionDayVote)
 	if err != nil {
-		logError("resolveDayVotes: getVoteCounts", err)
+		h.logError("resolveDayVotes: getVoteCounts", err)
 		return
 	}
 
-	log.Printf("Day vote check: %d alive players, %d votes", len(alivePlayers), totalVotes)
+	h.logf("Day vote check: %d alive players, %d votes", len(alivePlayers), totalVotes)
 
 	// Check if majority passed — if so, skip elimination
 	realVoteCount := 0
@@ -289,7 +289,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 	}
 	passCount := totalVotes - realVoteCount
 	if passCount > len(alivePlayers)/2 {
-		log.Printf("Majority passed (%d/%d) — no elimination this day", passCount, len(alivePlayers))
+		h.logf("Majority passed (%d/%d) — no elimination this day", passCount, len(alivePlayers))
 		h.transitionToNight(game)
 		return
 	}
@@ -311,7 +311,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 	// Check for majority (more than half of alive players)
 	majority := len(alivePlayers)/2 + 1
 	if maxVotes < majority || isTie {
-		log.Printf("No majority reached (need %d, max is %d, tie: %v) - no elimination", majority, maxVotes, isTie)
+		h.logf("No majority reached (need %d, max is %d, tie: %v) - no elimination", majority, maxVotes, isTie)
 		// No elimination, transition to night
 		h.transitionToNight(game)
 		return
@@ -320,7 +320,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 	// Eliminate the player
 	_, err = h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, eliminatedID)
 	if err != nil {
-		logError("resolveDayVotes: eliminate player", err)
+		h.logError("resolveDayVotes: eliminate player", err)
 		return
 	}
 
@@ -335,9 +335,9 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		VALUES (?, ?, 'day', ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic, eliminationDesc)
 	if err != nil {
-		logError("resolveDayVotes: record elimination", err)
+		h.logError("resolveDayVotes: record elimination", err)
 	}
-	log.Printf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
+	h.logf("Village eliminated %s (player ID %d)", eliminatedName, eliminatedID)
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
 	h.maybeGenerateStory(game.ID, game.Round, "day", eliminatedID)
 
@@ -351,7 +351,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		if deadRole == "Hunter" {
 			var deadName string
 			h.db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
-			log.Printf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", deadName)
+			h.logf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", deadName)
 			LogDBState(h.db, "after hunter elimination - waiting for revenge")
 			h.triggerBroadcast()
 			return
@@ -373,7 +373,7 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSHunterSelect: getOrCreateCurrentGame", err)
+		h.logError("handleWSHunterSelect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -383,7 +383,7 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 	}
 	hunter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
-		logError("handleWSHunterSelect: getPlayerInGame", err)
+		h.logError("handleWSHunterSelect: getPlayerInGame", err)
 		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
@@ -425,12 +425,12 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 		// Same player clicked again → deselect
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
 			game.ID, game.Round, client.playerID, ActionHunterSelect)
-		log.Printf("Hunter '%s' deselected revenge target", hunter.Name)
+		h.logf("Hunter '%s' deselected revenge target", hunter.Name)
 	} else {
 		// Select (or replace prior selection)
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'day', ?, ?, ?, ?, '')`,
 			game.ID, game.Round, client.playerID, ActionHunterSelect, targetID, VisibilityActor)
-		log.Printf("Hunter '%s' selected revenge target %d", hunter.Name, targetID)
+		h.logf("Hunter '%s' selected revenge target %d", hunter.Name, targetID)
 	}
 
 	h.triggerBroadcast()
@@ -440,7 +440,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	h := client.hub
 	game, err := getOrCreateCurrentGame(h.db)
 	if err != nil {
-		logError("handleWSHunterRevenge: getOrCreateCurrentGame", err)
+		h.logError("handleWSHunterRevenge: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -452,7 +452,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 
 	hunter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
-		logError("handleWSHunterRevenge: getPlayerInGame", err)
+		h.logError("handleWSHunterRevenge: getPlayerInGame", err)
 		h.sendErrorToast(client.playerID, "You are not in this game")
 		return
 	}
@@ -508,7 +508,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	// Kill the target
 	_, err = h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, targetID)
 	if err != nil {
-		logError("handleWSHunterRevenge: kill target", err)
+		h.logError("handleWSHunterRevenge: kill target", err)
 		h.sendErrorToast(client.playerID, "Failed to kill target")
 		return
 	}
@@ -520,10 +520,10 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		VALUES (?, ?, 'day', ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic, hunterRevengeDesc)
 	if err != nil {
-		logError("handleWSHunterRevenge: record action", err)
+		h.logError("handleWSHunterRevenge: record action", err)
 	}
 
-	log.Printf("Hunter '%s' took revenge on '%s'", hunter.Name, target.Name)
+	h.logf("Hunter '%s' took revenge on '%s'", hunter.Name, target.Name)
 	DebugLog("handleWSHunterRevenge", "Hunter '%s' shot '%s'", hunter.Name, target.Name)
 	LogDBState(h.db, "after hunter revenge")
 	h.maybeGenerateStory(game.ID, game.Round, "day", targetID)
@@ -538,7 +538,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		if deadRole == "Hunter" {
 			var deadName string
 			h.db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
-			log.Printf("Hunter '%s' was killed — entering chained revenge", deadName)
+			h.logf("Hunter '%s' was killed — entering chained revenge", deadName)
 			h.triggerBroadcast()
 			return
 		}

@@ -20,6 +20,12 @@ func TestMain(m *testing.M) {
 			Headless(true).
 			// Allow AudioContext to start without a user gesture so TTS audio tests work.
 			Set("autoplay-policy", "no-user-gesture-required").
+			// Prevent Chrome from throttling background tabs when many tests run in parallel.
+			// Without these flags, JS event loops in background tabs can be suspended for
+			// 30–60 s under heavy load, causing WS message handlers to never fire.
+			Set("disable-background-timer-throttling", "").
+			Set("disable-backgrounding-occluded-windows", "").
+			Set("disable-renderer-backgrounding", "").
 			Launch()
 		if err == nil {
 			b := rod.New().ControlURL(u)

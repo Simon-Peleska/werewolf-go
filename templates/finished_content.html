@@ -21,10 +21,13 @@
         <card-list class="win-list">
             {{range .Winners}}
             <player-card
+                data-player-id="{{.ID}}"
                 role-name="{{.RoleName}}"
                 role-desc="{{.RoleDescription}}"
                 player-name="{{.Name}}"
                 team="{{.Team}}"
+                alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                {{if ne .Lover 0}}lover{{end}}
                 winner></player-card>
             {{end}}
         </card-list>
@@ -38,12 +41,15 @@
         <card-list class="win-list">
             {{range .Losers}}
             <player-card
+                data-player-id="{{.ID}}"
+                player-name="{{.Name}}"
                 role-name="{{.RoleName}}"
                 role-desc="{{.RoleDescription}}"
-                player-name="{{.Name}}"
                 team="{{.Team}}"
+                alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                {{if ne .Lover 0}}lover{{end}}
                 loser
-                collapsible></player-card>
+                ></player-card>
             {{end}}
         </card-list>
     </section>
