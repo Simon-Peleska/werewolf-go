@@ -24,6 +24,13 @@ Werewolf is a hidden-role game. Players are secretly assigned roles. Each night,
 | Mason | Good | Knows who the other Masons are from the start |
 | Cupid | Good | Night 1 only: links two players as lovers — if one dies, the other dies too |
 
+## About the Project
+
+This Project is an experimentel hobby Project to test, if I can quickly build a software project that is reliabel and high quality under heavy use of AI.
+As Part of the exeriment I chose a programming language and architecture i was unfamilliar with.
+Most of the code and assets and documentation are Ai generated.
+Im still learning the technology so a lot of is not built ideally, but it is a lot of fun to work with.
+
 ## Running
 
 ### Without Nix
