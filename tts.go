@@ -182,7 +182,7 @@ func initNarrator(cfg AppConfig) Narrator {
 		}
 
 	case "elevenlabs":
-		if cfg.NarratorAPIKey == "" || cfg.NarratorVoice == "" {
+		if cfg.NarratorAPIKey == "" {
 			log.Printf("Narrator: NARRATOR_API_KEY and NARRATOR_VOICE (voice ID) required for elevenlabs")
 			return nil
 		}

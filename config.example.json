@@ -1,0 +1,27 @@
+{
+  "db": "werewolf.db",
+  "addr": ":8080",
+  "dev": false,
+
+  "log_output_dir": "./logs",
+  "log_requests": false,
+  "log_html": false,
+  "log_db": false,
+  "log_ws": false,
+  "log_debug": false,
+
+  "storyteller_provider": "openai",
+  "storyteller_model": "llama-3.3-70b-versatile",
+  "storyteller_url": "https://api.groq.com/openai/v1",
+  "storyteller_api_key": "gsk_...",
+  "storyteller_temperature": "1.2",
+  "storyteller_thinking": "",
+  "storyteller_system_prompt": "",
+
+  "narrator_provider": "elevenlabs",
+  "narrator_model": "eleven_flash_v2_5",
+  "narrator_voice": "<elevenlabs-voice-id>",
+  "narrator_api_key": "<elevenlabs-api-key>",
+  "narrator_url": "",
+  "narrator_sample_rate": 24000
+}

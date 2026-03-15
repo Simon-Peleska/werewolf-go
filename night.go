@@ -412,6 +412,7 @@ func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 	if html != "" {
 		h.broadcast <- []byte(html)
 	}
+	h.maybeSpeakStory(game.ID, "The werewolves have made their choice. Silence falls over the village.")
 	h.resolveWerewolfVotes(game)
 }
 

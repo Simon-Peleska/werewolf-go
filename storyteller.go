@@ -15,12 +15,16 @@ import (
 	"time"
 )
 
-const storytellerSystemPrompt = `You are a dramatic storyteller for a medieval werewolf game. When players are killed, you tell a short atmospheric story about their fate. Keep it to 2-3 sentences. Be gothic and dramatic, fitting for a village plagued by werewolves.`
+const defaultSystemPrompt = `You are a dramatically over-the-top storyteller for a medieval werewolf game. When a player is killed, you do two things:
+
+First, narrate their death in 4-5 sentences. Draw inspiration from the night survey answers — the suspects named, the theories floated, the cryptic notes left behind. Go completely unhinged: mix gothic dread with absurd exaggeration, ridiculous metaphors, and unexpected details. The death should feel both terrifying and faintly ridiculous.
+
+Then, in 2-4 sentences, wildly speculate about who the werewolves might be. Base your suspicions on the survey answers, the victim's history, or pure unhinged gut feeling. Be dramatic, accusatory, and at least slightly wrong.`
 
 // Storyteller generates a dramatic story after deaths in the game.
 // onChunk is called with each text chunk as it streams in.
 type Storyteller interface {
-	Tell(ctx context.Context, history []string, onChunk func(string)) (string, error)
+	Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error)
 }
 
 // ── OpenAI-compatible ────────────────────────────────────────────────────────
@@ -28,14 +32,15 @@ type Storyteller interface {
 // POST /v1/chat/completions SSE streaming protocol.
 
 type openaiStoryteller struct {
-	baseURL     string
-	apiKey      string
-	model       string
-	temperature float64
-	hasTemp     bool
+	baseURL      string
+	apiKey       string
+	model        string
+	systemPrompt string
+	temperature  float64
+	hasTemp      bool
 }
 
-func (s *openaiStoryteller) Tell(ctx context.Context, history []string, onChunk func(string)) (string, error) {
+func (s *openaiStoryteller) Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -44,8 +49,8 @@ func (s *openaiStoryteller) Tell(ctx context.Context, history []string, onChunk 
 		"model":  s.model,
 		"stream": true,
 		"messages": []message{
-			{Role: "system", Content: storytellerSystemPrompt},
-			{Role: "user", Content: buildUserPrompt(history)},
+			{Role: "system", Content: s.systemPrompt},
+			{Role: "user", Content: buildUserPrompt(history, alivePlayers)},
 		},
 	}
 	if s.hasTemp {
@@ -112,22 +117,23 @@ type claudeStoryteller struct {
 	baseURL        string
 	apiKey         string
 	model          string
+	systemPrompt   string
 	temperature    float64
 	hasTemp        bool
 	thinkingBudget int // 0 = disabled; >0 enables extended thinking
 }
 
-func (s *claudeStoryteller) Tell(ctx context.Context, history []string, onChunk func(string)) (string, error) {
+func (s *claudeStoryteller) Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
 	body := map[string]any{
 		"model":      s.model,
-		"max_tokens": 1024,
+		"max_tokens": 2048,
 		"stream":     true,
-		"system":     storytellerSystemPrompt,
-		"messages":   []message{{Role: "user", Content: buildUserPrompt(history)}},
+		"system":     s.systemPrompt,
+		"messages":   []message{{Role: "user", Content: buildUserPrompt(history, alivePlayers)}},
 	}
 	if s.thinkingBudget > 0 {
 		// Extended thinking requires temperature=1
@@ -210,9 +216,14 @@ func nextSentence(text string) (sentence, rest string) {
 	return "", text
 }
 
-func buildUserPrompt(history []string) string {
-	return "Game history so far:\n" + strings.Join(history, "\n") +
-		"\n\nTell a short dramatic story (2-3 sentences) about what just happened to the victim."
+func buildUserPrompt(history []string, alivePlayers []string) string {
+	prompt := "Game history so far:\n" + strings.Join(history, "\n")
+	if len(alivePlayers) > 0 {
+		prompt += "\n\nStill alive: " + strings.Join(alivePlayers, ", ") + "."
+		prompt += " Only speculate about these players — no one else exists."
+	}
+	prompt += "\n\nNarrate the victim's death and then speculate wildly about who the werewolves are."
+	return prompt
 }
 
 // thinkingBudget maps a thinking-mode string to a token budget for Claude.
@@ -235,15 +246,20 @@ func thinkingBudget(mode string) int {
 func initStoryteller(cfg AppConfig) Storyteller {
 	model := cfg.StorytellerModel
 
-	var temperature float64
-	var hasTemp bool
+	// Default temperature: 1.2 (above average for more varied storytelling)
+	temperature := 1.2
+	hasTemp := true
 	if cfg.StorytellerTemperature != "" {
 		if f, err := strconv.ParseFloat(cfg.StorytellerTemperature, 64); err == nil {
 			temperature = f
-			hasTemp = true
 		} else {
 			log.Printf("Storyteller: invalid temperature %q: %v", cfg.StorytellerTemperature, err)
 		}
+	}
+
+	systemPrompt := defaultSystemPrompt
+	if cfg.StorytellerSystemPrompt != "" {
+		systemPrompt = cfg.StorytellerSystemPrompt
 	}
 
 	switch cfg.StorytellerProvider {
@@ -252,8 +268,8 @@ func initStoryteller(cfg AppConfig) Storyteller {
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
-		log.Printf("Storyteller: openai model=%s url=%s temperature=%v", model, baseURL, cfg.StorytellerTemperature)
-		return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, temperature: temperature, hasTemp: hasTemp}
+		log.Printf("Storyteller: openai model=%s url=%s temperature=%.2f", model, baseURL, temperature)
+		return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp}
 
 	case "claude":
 		baseURL := strings.TrimRight(cfg.StorytellerURL, "/")
@@ -261,8 +277,8 @@ func initStoryteller(cfg AppConfig) Storyteller {
 			baseURL = "https://api.anthropic.com"
 		}
 		budget := thinkingBudget(cfg.StorytellerThinking)
-		log.Printf("Storyteller: claude model=%s url=%s temperature=%v thinking=%s", model, baseURL, cfg.StorytellerTemperature, cfg.StorytellerThinking)
-		return &claudeStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, temperature: temperature, hasTemp: hasTemp, thinkingBudget: budget}
+		log.Printf("Storyteller: claude model=%s url=%s temperature=%.2f thinking=%s", model, baseURL, temperature, cfg.StorytellerThinking)
+		return &claudeStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp, thinkingBudget: budget}
 
 	default:
 		log.Printf("Storyteller: disabled (set storyteller_provider to openai or claude)")
@@ -289,6 +305,16 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 			ORDER BY rowid ASC`, gameID, VisibilityPublic); err != nil {
 			h.logf("maybeGenerateStory: fetch history: %v", err)
 			return
+		}
+
+		// Fetch alive player names so the storyteller only speculates about real players
+		var aliveNames []string
+		if err := h.db.Select(&aliveNames, `
+			SELECT p.name FROM player p
+			JOIN game_player gp ON gp.player_id = p.rowid
+			WHERE gp.game_id = ? AND gp.is_alive = 1
+			ORDER BY p.name ASC`, gameID); err != nil {
+			h.logf("maybeGenerateStory: fetch alive players: %v", err)
 		}
 
 		// Insert placeholder row (empty description = hidden from history until text arrives)
@@ -356,7 +382,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 		// sentenceBuf accumulates tokens until a sentence boundary is detected.
 		// Tell is blocking and calls onChunk synchronously, so no mutex needed here.
 		var sentenceBuf strings.Builder
-		_, err = h.storyteller.Tell(ctx, descriptions, func(chunk string) {
+		_, err = h.storyteller.Tell(ctx, descriptions, aliveNames, func(chunk string) {
 			mu.Lock()
 			buf.WriteString(chunk)
 			mu.Unlock()

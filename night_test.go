@@ -2030,6 +2030,76 @@ func TestCupidCanUnselectSecondLover(t *testing.T) {
 	ctx.logger.Debug("=== Test passed ===")
 }
 
+// TestCupidUIHiddenOnNight2 verifies that the Cupid "Link Two Lovers" UI does
+// not appear on Night 2 (Cupid only acts on Night 1).
+func TestCupidUIHiddenOnNight2(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// 1 Cupid + 1 Werewolf + 4 Villagers = 6 players.
+	// Cupid links V1+V2. Wolf kills V3 (unlinked — no heartbreak).
+	// Day 1 vote eliminates V4. 4 players survive to Night 2.
+	var players []*TestPlayer
+	for _, name := range []string{"CU1", "CU2", "CU3", "CU4", "CU5", "CU6"} {
+		players = append(players, browser.signupPlayer(ctx.baseURL, name))
+	}
+	players[0].addRoleByID(RoleCupid)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	werewolves, villagers, cupids := findPlayersByRoleWithCupid(players)
+	if len(cupids) == 0 || len(werewolves) == 0 || len(villagers) < 4 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+
+	cupid := cupids[0]
+	wolf := werewolves[0]
+
+	// Night 1: Cupid must see the UI.
+	if !cupid.canSeeCupidUI() {
+		t.Fatal("Cupid should see the link lovers UI on Night 1")
+	}
+
+	// Cupid links villagers[0]+villagers[1]. Wolf kills villagers[2] (unlinked).
+	cupid.cupidPickLover(villagers[0].Name)
+	cupid.cupidPickLover(villagers[1].Name)
+	cupid.clickAndWait(`#cupid-link-button`)
+
+	wolf.voteForPlayer(villagers[2].Name)
+	submitNightSurveysForAllPlayers(players)
+
+	// Day 1: vote out villagers[3] so the game continues into Night 2.
+	if err := wolf.waitForDayPhase(); err != nil {
+		t.Fatalf("Day 1 did not start: %v", err)
+	}
+	// 5 players alive after night kill (wolf + cupid + V0 + V1 + V3).
+	// Vote out V3 — 4 survive, game continues. All 5 must vote for End Vote to trigger.
+	wolf.dayVoteForPlayer(villagers[3].Name)
+	cupid.dayVoteForPlayer(villagers[3].Name)
+	villagers[0].dayVoteForPlayer(villagers[3].Name)
+	villagers[1].dayVoteForPlayer(villagers[3].Name)
+	villagers[3].dayVoteForPlayer(wolf.Name) // V3 votes wolf; 4/5 votes for V3 = majority
+
+	if err := wolf.waitForNightPhase(); err != nil {
+		t.Fatalf("Night 2 did not start: %v", err)
+	}
+
+	// Night 2: Cupid UI must NOT be shown.
+	if cupid.canSeeCupidUI() {
+		t.Error("Cupid 'Link Two Lovers' UI should not appear on Night 2")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
 // TestHeartbreakOnNightKill verifies that when a lover is killed at night,
 // their partner dies from heartbreak and both deaths appear in the morning.
 func TestHeartbreakOnNightKill(t *testing.T) {
@@ -2445,6 +2515,105 @@ func TestNightSurveyAnswersVisibleInHistory(t *testing.T) {
 			ctx.logger.LogDB("FAIL: survey not in history for " + viewer.Name)
 			t.Errorf("[%s] Survey not in history.\nExpected: %q\nGot: %s", viewer.Name, expected, viewer.getHistoryText())
 		}
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestNightSurveyFormNotResetByOtherPlayerSubmit verifies that when player B
+// submits their night survey, the form fields player A has already typed into
+// are NOT cleared by the resulting broadcast/morph update.
+func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// 1 werewolf + 2 villagers — villagers have no night action so they see the
+	// survey form immediately after the wolf locks in the kill vote.
+	players := setupNightPhaseGame(ctx, browser, 2, 1)
+	werewolves, villagers := findPlayersByRole(players)
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Fatal("Need at least 1 werewolf and 2 villagers")
+	}
+
+	villager1 := villagers[0]
+	villager2 := villagers[1]
+	wolf := werewolves[0]
+
+	// Wolf votes — single wolf so End Vote fires immediately, revealing the
+	// survey form to all players.
+	wolf.voteForPlayer(villager1.Name)
+
+	// Wait for the survey form to appear for villager1.
+	villager1.waitUntilCondition(`() => !!document.querySelector('#night-survey-form')`, "survey form appears for villager1")
+
+	// Villager1 fills in all three fields but does NOT submit yet.
+	const theory = "it was definitely the baker"
+	const notes = "suspicious bread crumbs near the body"
+
+	selEl, err := villager1.p().Element("select[name='suspect_player_id']")
+	if err != nil {
+		t.Fatalf("[%s] suspect select: %v", villager1.Name, err)
+	}
+	if err := selEl.Select([]string{wolf.Name}, true, "text"); err != nil {
+		t.Fatalf("[%s] select suspect: %v", villager1.Name, err)
+	}
+	el, err := villager1.p().Element("input[name='death_theory']")
+	if err != nil {
+		t.Fatalf("[%s] death_theory input: %v", villager1.Name, err)
+	}
+	if err := el.Input(theory); err != nil {
+		t.Fatalf("[%s] input theory: %v", villager1.Name, err)
+	}
+	el2, err := villager1.p().Element("textarea[name='notes']")
+	if err != nil {
+		t.Fatalf("[%s] notes textarea: %v", villager1.Name, err)
+	}
+	if err := el2.Input(notes); err != nil {
+		t.Fatalf("[%s] input notes: %v", villager1.Name, err)
+	}
+
+	// Set up a WS message counter on villager1's page so we can wait for the
+	// broadcast that villager2's submit will trigger.
+	if _, err := villager1.p().Eval(`() => {
+		window._wsCount = 0;
+		document.body.addEventListener('htmx:wsAfterMessage', () => { window._wsCount++; });
+	}`); err != nil {
+		t.Fatalf("inject WS counter: %v", err)
+	}
+
+	// Villager2 submits their survey — triggers a broadcast to all players.
+	villager2.submitNightSurvey()
+
+	// Wait until villager1 has received the broadcast.
+	villager1.waitUntilCondition(`() => window._wsCount > 0`, "villager1 receives broadcast after villager2 submit")
+
+	// All three fields must survive the morph triggered by villager2's submit.
+	suspectRes, err := villager1.p().Eval(`() => document.querySelector("select[name='suspect_player_id']")?.value ?? ""`)
+	if err != nil {
+		t.Fatalf("read suspect value: %v", err)
+	}
+	theoryRes, err := villager1.p().Eval(`() => document.querySelector("input[name='death_theory']")?.value ?? ""`)
+	if err != nil {
+		t.Fatalf("read theory value: %v", err)
+	}
+	notesRes, err := villager1.p().Eval(`() => document.querySelector("textarea[name='notes']")?.value ?? ""`)
+	if err != nil {
+		t.Fatalf("read notes value: %v", err)
+	}
+
+	// Select value is the playerID; just check it's non-zero (wolf was selected).
+	if got := suspectRes.Value.Str(); got == "" || got == "0" {
+		t.Errorf("suspect select was reset by broadcast: want wolf playerID, got %q", got)
+	}
+	if got := theoryRes.Value.Str(); got != theory {
+		t.Errorf("death_theory was reset by broadcast: want %q, got %q", theory, got)
+	}
+	if got := notesRes.Value.Str(); got != notes {
+		t.Errorf("notes was reset by broadcast: want %q, got %q", notes, got)
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

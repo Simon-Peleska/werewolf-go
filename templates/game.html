@@ -14,6 +14,12 @@
     // Must be set before HTMX creates the WebSocket so binary frames
     // arrive as ArrayBuffer instead of Blob.
     htmx.config.wsBinaryType = 'arraybuffer';
+    // Prevent idiomorph from resetting values that the user has typed into
+    // form fields. Without this, any broadcast re-render wipes input values.
+    Idiomorph.defaults.callbacks.beforeAttributeUpdated = function(attr, node) {
+      if (attr === 'value'    && (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) return false;
+      if (attr === 'selected' && node instanceof HTMLOptionElement) return false;
+    };
   </script>
   <style>
     body {
