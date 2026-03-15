@@ -100,13 +100,37 @@ func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, 
 	}
 
 	if suspect != nil {
-		tp.p().MustElement("select[name='suspect_player_id']").MustSelect(suspect.Name)
+		el, err := tp.p().Element("select[name='suspect_player_id']")
+		if err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: suspect dropdown not found: %v", tp.Name, err)
+			return
+		}
+		if err := el.Select([]string{suspect.Name}, true, "text"); err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: could not select suspect %q: %v", tp.Name, suspect.Name, err)
+			return
+		}
 	}
 	if theory != "" {
-		tp.p().MustElement("input[name='death_theory']").MustInput(theory)
+		el, err := tp.p().Element("input[name='death_theory']")
+		if err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: death_theory input not found: %v", tp.Name, err)
+			return
+		}
+		if err := el.Input(theory); err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: could not input theory: %v", tp.Name, err)
+			return
+		}
 	}
 	if notes != "" {
-		tp.p().MustElement("textarea[name='notes']").MustInput(notes)
+		el, err := tp.p().Element("textarea[name='notes']")
+		if err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: notes textarea not found: %v", tp.Name, err)
+			return
+		}
+		if err := el.Input(notes); err != nil {
+			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: could not input notes: %v", tp.Name, err)
+			return
+		}
 	}
 
 	tp.clickAndWait("#night-survey-form button[type='submit']")
@@ -235,7 +259,8 @@ func (tp *TestPlayer) getGameContent() string {
 	if err != nil {
 		return ""
 	}
-	return el.MustText()
+	text, _ := el.Text()
+	return text
 }
 
 // setupNightPhaseGame creates a game with specified villagers and werewolves and starts it

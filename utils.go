@@ -1171,13 +1171,16 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 	// Use JS click to avoid scrollIntoView → CSS transition → layout shift → click miss.
 	// The plus button is inside a shadow DOM, so we click via the host element's shadowRoot.
 	tp.doWithWSWait(func() {
-		tp.p().MustEval(`(roleID) => {
+		_, err := tp.p().Eval(`(roleID) => {
 			const host = document.querySelector('#role-' + roleID);
 			if (!host || !host.shadowRoot) throw new Error('role element or shadow root not found: ' + roleID);
 			const btn = host.shadowRoot.querySelector('.pc-btn-plus .pc-btn');
 			if (!btn) throw new Error('plus button not found for role: ' + roleID);
 			btn.click();
 		}`, roleID)
+		if err != nil {
+			tp.t.Fatalf("[%s] addRoleByID %q: %v", tp.Name, roleID, err)
+		}
 	})
 	tp.logHTML(fmt.Sprintf("after adding role %s", roleID))
 }
@@ -1379,7 +1382,8 @@ func (tp *TestPlayer) getStatusMessage() string {
 	if err != nil {
 		return ""
 	}
-	status := strings.TrimSpace(el.MustText())
+	raw, _ := el.Text()
+	status := strings.TrimSpace(raw)
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Status message: %s", tp.Name, status)
 	}
@@ -1388,18 +1392,24 @@ func (tp *TestPlayer) getStatusMessage() string {
 
 // isOnGamePage checks if the player is on the game page
 func (tp *TestPlayer) isOnGamePage() bool {
-	url := tp.p().MustInfo().URL
-	onGame := strings.Contains(url, "/game")
+	info, err := tp.p().Info()
+	if err != nil {
+		return false
+	}
+	onGame := strings.Contains(info.URL, "/game")
 	if tp.logger != nil {
-		tp.logger.Debug("[%s] On game page: %v (URL: %s)", tp.Name, onGame, url)
+		tp.logger.Debug("[%s] On game page: %v (URL: %s)", tp.Name, onGame, info.URL)
 	}
 	return onGame
 }
 
 // isOnIndexPage checks if the player is still on the index page
 func (tp *TestPlayer) isOnIndexPage() bool {
-	url := tp.p().MustInfo().URL
-	return !strings.Contains(url, "/game")
+	info, err := tp.p().Info()
+	if err != nil {
+		return true // assume on index if we can't tell
+	}
+	return !strings.Contains(info.URL, "/game")
 }
 
 // getHistoryText returns the full text content of the history bar for this player.
@@ -1408,7 +1418,7 @@ func (tp *TestPlayer) getHistoryText() string {
 	if err != nil || !found {
 		return ""
 	}
-	text := el.MustText()
+	text, _ := el.Text()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] History text: %s", tp.Name, strings.ReplaceAll(text, "\n", " | "))
 	}

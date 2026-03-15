@@ -1033,7 +1033,7 @@ func (tp *TestPlayer) getDoctorResult() string {
 	if err != nil {
 		return ""
 	}
-	text := el.MustText()
+	text, _ := el.Text()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Doctor result: %s", tp.Name, text)
 	}
@@ -1461,7 +1461,7 @@ func (tp *TestPlayer) getGuardResult() string {
 	if err != nil {
 		return ""
 	}
-	text := el.MustText()
+	text, _ := el.Text()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Guard result: %s", tp.Name, text)
 	}
@@ -1989,7 +1989,7 @@ func (tp *TestPlayer) getHunterRevengeResult() string {
 	if err != nil {
 		return ""
 	}
-	text := el.MustText()
+	text, _ := el.Text()
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Hunter revenge result: %s", tp.Name, text)
 	}
