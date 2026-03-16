@@ -403,16 +403,28 @@
         <hr>
         <section id="night-survey-section" class="night-survey">
             <h3>Your Thoughts</h3>
+            <label>Who do you think is a Werewolf?</label>
+            <card-list id="survey-suspects">
+            {{range .SurveyTargets}}
+            <form ws-send id="survey-suspect-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                <input type="hidden" name="action" value="night_survey_suspect">
+                <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+                <player-card
+                    data-player-id="{{.ID}}"
+                    player-name="{{.Name}}"
+                    role-name="{{.RoleName}}"
+                    role-desc="{{.RoleDescription}}"
+                    team="{{.Team}}"
+                    alive="true"
+                    selectable
+                    {{if and $.SurveySelectedSuspect (eq $.SurveySelectedSuspect.PlayerID .PlayerID)}}selected{{end}}
+                    {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+                ></player-card>
+            </form>
+            {{end}}
+            </card-list>
             <form ws-send id="night-survey-form">
                 <input type="hidden" name="action" value="night_survey">
-                <label>Who do you think is a Werewolf?
-                    <select id="survey-suspect" name="suspect_player_id">
-                        <option value="0">— no suspicion —</option>
-                        {{range .SurveyTargets}}
-                        <option value="{{.PlayerID}}">{{.Name}}</option>
-                        {{end}}
-                    </select>
-                </label>
                 <label>How do you think the victim died?
                     <input id="survey-death-theory" type="text" name="death_theory" placeholder="(optional)">
                 </label>

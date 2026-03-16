@@ -484,6 +484,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSCupidChoose(client, msg)
 	case "cupid_link":
 		handleWSCupidLink(client)
+	case "night_survey_suspect":
+		handleWSNightSurveySuspect(client, msg)
 	case "night_survey":
 		handleWSNightSurvey(client, msg)
 	case "new_game":
@@ -1001,6 +1003,21 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 				game.ID, game.Round, ActionNightSurvey)
 			data.AliveCount = len(aliveTargets)
 			data.SurveyTargets = aliveTargets
+			var suspectPlayer Player
+			if err := db.Get(&suspectPlayer, `
+				SELECT gp.rowid as id, g.rowid as game_id, p.rowid as player_id, p.name, p.secret_code,
+				       r.rowid as role_id, r.name as role_name, r.description as role_description, r.team,
+				       gp.is_alive, gp.is_observer, IFNULL(l.player2_id, 0) as lover
+				FROM game_action ga
+				JOIN game_player gp ON gp.player_id = ga.target_player_id AND gp.game_id = ga.game_id
+				JOIN player p ON p.rowid = gp.player_id
+				JOIN game g ON g.rowid = gp.game_id
+				JOIN role r ON r.rowid = gp.role_id
+				LEFT JOIN game_lovers l ON l.player1_id = p.rowid
+				WHERE ga.game_id=? AND ga.round=? AND ga.actor_player_id=? AND ga.action_type=?`,
+				game.ID, game.Round, player.PlayerID, ActionNightSurveySuspect); err == nil {
+				data.SurveySelectedSuspect = &suspectPlayer
+			}
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "night_content.html", data); err != nil {

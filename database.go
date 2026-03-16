@@ -121,31 +121,32 @@ type GameAction struct {
 
 // Action types
 const (
-	ActionWerewolfKill      = "werewolf_kill"
-	ActionDayVote           = "day_vote"
-	ActionElimination       = "elimination"
-	ActionSeerSelect        = "seer_select" // pending investigation selection (toggled, committed on Investigate)
-	ActionSeerInvestigate   = "seer_investigate"
-	ActionDoctorSelect      = "doctor_select" // pending protection target (toggled, committed on Protect)
-	ActionDoctorProtect     = "doctor_protect"
-	ActionGuardSelect       = "guard_select" // pending protection target (toggled, committed on Protect)
-	ActionGuardProtect      = "guard_protect"
-	ActionHunterSelect      = "hunter_select" // pending revenge target (toggled, committed on Shoot)
-	ActionHunterRevenge     = "hunter_revenge"
-	ActionWitchSelectHeal   = "witch_select_heal"   // pending heal selection (toggled, committed on Apply)
-	ActionWitchSelectPoison = "witch_select_poison" // pending poison selection (toggled, committed on Apply)
-	ActionWitchHeal         = "witch_heal"          // committed heal (written by witch_apply)
-	ActionWitchKill         = "witch_kill"          // committed kill (written by witch_apply)
-	ActionWitchApply        = "witch_apply"         // witch presses Done; replaces witch_pass
-	ActionWerewolfKill2     = "werewolf_kill_2"     // second kill on Wolf Cub death night
-	ActionCupidLink         = "cupid_link"          // tracks Cupid's step-1 lover choice (Night 1 only)
-	ActionCupidLink2        = "cupid_link_2"        // tracks Cupid's step-2 lover choice (Night 1 only)
-	ActionLoverHeartbreak   = "lover_heartbreak"    // partner dies of heartbreak when their lover is killed
-	ActionWerewolfEndVote   = "werewolf_end_vote"   // one wolf presses End Vote to lock in first kill
-	ActionWerewolfEndVote2  = "werewolf_end_vote_2" // one wolf presses End Vote to lock in second kill (Wolf Cub)
-	ActionNightKill         = "night_kill"          // public death record inserted when any player dies at night
-	ActionStory             = "story"               // AI-generated story shown in history after deaths
-	ActionNightSurvey       = "night_survey"        // one per player when they press Continue (visibility=resolved)
+	ActionWerewolfKill       = "werewolf_kill"
+	ActionDayVote            = "day_vote"
+	ActionElimination        = "elimination"
+	ActionSeerSelect         = "seer_select" // pending investigation selection (toggled, committed on Investigate)
+	ActionSeerInvestigate    = "seer_investigate"
+	ActionDoctorSelect       = "doctor_select" // pending protection target (toggled, committed on Protect)
+	ActionDoctorProtect      = "doctor_protect"
+	ActionGuardSelect        = "guard_select" // pending protection target (toggled, committed on Protect)
+	ActionGuardProtect       = "guard_protect"
+	ActionHunterSelect       = "hunter_select" // pending revenge target (toggled, committed on Shoot)
+	ActionHunterRevenge      = "hunter_revenge"
+	ActionWitchSelectHeal    = "witch_select_heal"    // pending heal selection (toggled, committed on Apply)
+	ActionWitchSelectPoison  = "witch_select_poison"  // pending poison selection (toggled, committed on Apply)
+	ActionWitchHeal          = "witch_heal"           // committed heal (written by witch_apply)
+	ActionWitchKill          = "witch_kill"           // committed kill (written by witch_apply)
+	ActionWitchApply         = "witch_apply"          // witch presses Done; replaces witch_pass
+	ActionWerewolfKill2      = "werewolf_kill_2"      // second kill on Wolf Cub death night
+	ActionCupidLink          = "cupid_link"           // tracks Cupid's step-1 lover choice (Night 1 only)
+	ActionCupidLink2         = "cupid_link_2"         // tracks Cupid's step-2 lover choice (Night 1 only)
+	ActionLoverHeartbreak    = "lover_heartbreak"     // partner dies of heartbreak when their lover is killed
+	ActionWerewolfEndVote    = "werewolf_end_vote"    // one wolf presses End Vote to lock in first kill
+	ActionWerewolfEndVote2   = "werewolf_end_vote_2"  // one wolf presses End Vote to lock in second kill (Wolf Cub)
+	ActionNightKill          = "night_kill"           // public death record inserted when any player dies at night
+	ActionStory              = "story"                // AI-generated story shown in history after deaths
+	ActionNightSurvey        = "night_survey"         // one per player when they press Continue (visibility=resolved)
+	ActionNightSurveySuspect = "night_survey_suspect" // pending suspect selection (toggled, committed on Continue)
 )
 
 // Visibility types

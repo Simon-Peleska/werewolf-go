@@ -86,7 +86,7 @@ func submitNightSurveysForAllPlayers(players []*TestPlayer) {
 }
 
 // submitNightSurveyWithAnswers fills in the survey form with the given answers before submitting.
-// Pass nil for suspect to leave the dropdown at "no suspicion".
+// Pass nil for suspect to leave no suspect selected.
 func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, notes string) {
 	checkJS := `() => {
 		return !!document.querySelector('#night-survey-form') ||
@@ -100,15 +100,7 @@ func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, 
 	}
 
 	if suspect != nil {
-		el, err := tp.p().Element("select[name='suspect_player_id']")
-		if err != nil {
-			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: suspect dropdown not found: %v", tp.Name, err)
-			return
-		}
-		if err := el.Select([]string{suspect.Name}, true, "text"); err != nil {
-			tp.t.Fatalf("[%s] submitNightSurveyWithAnswers: could not select suspect %q: %v", tp.Name, suspect.Name, err)
-			return
-		}
+		tp.clickAndWait(fmt.Sprintf("#survey-suspects player-card[player-name='%s']", suspect.Name))
 	}
 	if theory != "" {
 		el, err := tp.p().Element("input[name='death_theory']")
@@ -2554,13 +2546,8 @@ func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
 	const theory = "it was definitely the baker"
 	const notes = "suspicious bread crumbs near the body"
 
-	selEl, err := villager1.p().Element("select[name='suspect_player_id']")
-	if err != nil {
-		t.Fatalf("[%s] suspect select: %v", villager1.Name, err)
-	}
-	if err := selEl.Select([]string{wolf.Name}, true, "text"); err != nil {
-		t.Fatalf("[%s] select suspect: %v", villager1.Name, err)
-	}
+	villager1.clickAndWait(fmt.Sprintf("#survey-suspects player-card[player-name='%s']", wolf.Name))
+
 	el, err := villager1.p().Element("input[name='death_theory']")
 	if err != nil {
 		t.Fatalf("[%s] death_theory input: %v", villager1.Name, err)
@@ -2592,7 +2579,8 @@ func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
 	villager1.waitUntilCondition(`() => window._wsCount > 0`, "villager1 receives broadcast after villager2 submit")
 
 	// All three fields must survive the morph triggered by villager2's submit.
-	suspectRes, err := villager1.p().Eval(`() => document.querySelector("select[name='suspect_player_id']")?.value ?? ""`)
+	// The suspect is stored server-side; check that the card still has [selected].
+	suspectRes, err := villager1.p().Eval(`() => document.querySelector("#survey-suspects player-card[selected]")?.dataset.playerId ?? ""`)
 	if err != nil {
 		t.Fatalf("read suspect value: %v", err)
 	}
@@ -2605,9 +2593,9 @@ func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
 		t.Fatalf("read notes value: %v", err)
 	}
 
-	// Select value is the playerID; just check it's non-zero (wolf was selected).
-	if got := suspectRes.Value.Str(); got == "" || got == "0" {
-		t.Errorf("suspect select was reset by broadcast: want wolf playerID, got %q", got)
+	// Check a suspect card is still marked selected (wolf was selected).
+	if got := suspectRes.Value.Str(); got == "" {
+		t.Errorf("suspect selection was reset by broadcast: no card has [selected] attribute")
 	}
 	if got := theoryRes.Value.Str(); got != theory {
 		t.Errorf("death_theory was reset by broadcast: want %q, got %q", theory, got)

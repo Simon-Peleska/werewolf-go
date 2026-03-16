@@ -64,7 +64,8 @@ type NightData struct {
 	HasSubmittedSurvey        bool     // this player already pressed Continue
 	SurveyCount               int      // how many alive players have submitted the survey
 	AliveCount                int      // total alive players
-	SurveyTargets             []Player // alive players for the suspect dropdown
+	SurveyTargets             []Player // alive players for the suspect selection
+	SurveySelectedSuspect     *Player  // pending suspect selection (nil = none selected)
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
@@ -1541,6 +1542,65 @@ func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Play
 	}
 }
 
+// handleWSNightSurveySuspect toggles the player's pending suspect selection.
+// Clicking the same player again deselects; clicking a different player replaces the selection.
+func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
+	h := client.hub
+	game, err := getOrCreateCurrentGame(h.db)
+	if err != nil {
+		h.logError("handleWSNightSurveySuspect: getOrCreateCurrentGame", err)
+		h.sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" {
+		h.sendErrorToast(client.playerID, "Survey only available during night phase")
+		return
+	}
+	player, err := getPlayerInGame(h.db, game.ID, client.playerID)
+	if err != nil || !player.IsAlive {
+		h.sendErrorToast(client.playerID, "You must be alive to submit the survey")
+		return
+	}
+	// Don't allow changes after survey is submitted
+	var submitted int
+	h.db.Get(&submitted, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
+		game.ID, game.Round, ActionNightSurvey, client.playerID)
+	if submitted > 0 {
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		h.sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		h.sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := h.db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// Same player clicked again → deselect
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+			game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
+		h.logf("Player '%s' deselected survey suspect", player.Name)
+	} else {
+		// Select (or replace prior selection)
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
+			game.ID, game.Round, client.playerID, ActionNightSurveySuspect, targetID, VisibilityActor)
+		h.logf("Player '%s' selected survey suspect %d", player.Name, targetID)
+	}
+
+	h.triggerBroadcast()
+}
+
 // handleWSNightSurvey records a player's night survey answers.
 // Once all alive players have submitted, the game transitions to day.
 func handleWSNightSurvey(client *Client, msg WSMessage) {
@@ -1571,8 +1631,17 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 		return
 	}
 
+	// Read suspect from pre-selection (night_survey_suspect action)
+	var suspectID int64
+	var suspectAction GameAction
+	if err := h.db.Get(&suspectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionNightSurveySuspect); err == nil && suspectAction.TargetPlayerID != nil {
+		suspectID = *suspectAction.TargetPlayerID
+	}
+
 	// Build description from non-empty fields
-	suspectID, _ := strconv.ParseInt(msg.SuspectPlayerID, 10, 64)
 	deathTheory := strings.TrimSpace(msg.DeathTheory)
 	notes := strings.TrimSpace(msg.Notes)
 
@@ -1604,6 +1673,10 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 		h.sendErrorToast(client.playerID, "Failed to record survey")
 		return
 	}
+
+	// Clean up the pending suspect selection now that it's committed
+	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
+		game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
 
 	h.logf("Survey submitted by '%s' (game %d round %d)", player.Name, game.ID, game.Round)
 
