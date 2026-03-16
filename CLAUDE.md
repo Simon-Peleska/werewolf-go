@@ -327,7 +327,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 
 | Field | Env Var | JSON key | CLI flag | Default | Description |
 |-------|---------|----------|----------|---------|-------------|
-| Config file | — | — | `-config` | `config.json` | Path to JSON config file |
+| Config file | — | — | `-config` | `/etc/werewolf/config.json` | Path to JSON config file |
 | DB | `DB` | `db` | `-db` | `file::memory:?cache=shared` | SQLite connection string |
 | Dev mode | `DEV` | `dev` | `-dev` | `false` | Verbose logging, DB dumps on errors |
 | Listen address | `ADDR` | `addr` | `-addr` | `:8080` | HTTP listen address |

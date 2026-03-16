@@ -237,7 +237,7 @@ type flagValues struct {
 // Call flag.Parse() after this, then applyTo to layer them over the loaded config.
 func registerFlags() flagValues {
 	return flagValues{
-		configPath:              flag.String("config", "config.json", "path to JSON config file"),
+		configPath:              flag.String("config", "/etc/werewolf/config.json", "path to JSON config file"),
 		db:                      flag.String("db", "", "database connection string"),
 		dev:                     flag.Bool("dev", false, "enable development mode (verbose logging, db dumps on error)"),
 		addr:                    flag.String("addr", "", "HTTP listen address (e.g. :8080)"),

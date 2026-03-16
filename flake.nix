@@ -16,6 +16,9 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, go-test-tui, mcp-dap-server-src }:
+    # nixosModules is system-independent — lives outside eachDefaultSystem.
+    { nixosModules.werewolf = import ./nixos-module.nix; }
+    //
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
