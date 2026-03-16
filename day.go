@@ -86,7 +86,7 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 
 func handleWSDayVote(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -170,7 +170,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 
 func handleWSDayPass(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayPass: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -214,7 +214,7 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 
 func handleWSDayEndVote(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayEndVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -371,7 +371,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSHunterSelect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSHunterSelect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -438,7 +438,7 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 
 func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSHunterRevenge: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")

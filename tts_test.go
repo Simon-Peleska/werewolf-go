@@ -61,8 +61,8 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 		StorytellerAPIKey:   "test-key",
 	})
 
-	ctx.app.hub.storyteller = storyteller
-	defer func() { ctx.app.hub.storyteller = nil }()
+	ctx.app.hubs["test-game"].storyteller = storyteller
+	defer func() { ctx.app.hubs["test-game"].storyteller = nil }()
 
 	// ── 3. Generate A4 (440 Hz) tone: 0.5 s @ 24 kHz, 16-bit mono = 24 000 bytes ──
 	const sampleRate = 24000
@@ -111,8 +111,8 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 	}
 
 	// Attach narrator to the hub (newTestContext starts with nil narrator).
-	ctx.app.hub.narrator = narrator
-	defer func() { ctx.app.hub.narrator = nil }()
+	ctx.app.hubs["test-game"].narrator = narrator
+	defer func() { ctx.app.hubs["test-game"].narrator = nil }()
 
 	// ── 6. Game + browser setup ──────────────────────────────────────────────────
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)

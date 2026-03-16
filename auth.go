@@ -66,10 +66,17 @@ func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gameName := r.FormValue("game_name")
+	if gameName == "" {
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Game name is required")))
+		return
+	}
+
 	name := r.FormValue("name")
 	if name == "" {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Name is required")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name is required")))
 		return
 	}
 
@@ -77,44 +84,44 @@ func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 	err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
 	if err == nil {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Name already taken. Use login with secret code if this is you.")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name already taken. Use login with secret code if this is you.")))
 		return
 	}
 	if err != sql.ErrNoRows {
-		app.hub.logError("handleSignup: db.Get player", err)
+		app.logf("ERROR [handleSignup: db.Get player]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
 
 	secretCode, err := generateSecretCode()
 	if err != nil {
-		app.hub.logError("handleSignup: generateSecretCode", err)
+		app.logf("ERROR [handleSignup: generateSecretCode]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
 
 	result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, secretCode)
 	if err != nil {
-		app.hub.logError("handleSignup: db.Exec insert player", err)
+		app.logf("ERROR [handleSignup: db.Exec insert player]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
 
 	playerID, _ := result.LastInsertId()
-	app.hub.logf("New player created: name='%s', id=%d", name, playerID)
+	app.logf("New player created: name='%s', id=%d", name, playerID)
 	DebugLog("handleSignup", "Player '%s' signed up with ID %d", name, playerID)
 	LogDBState(app.db, "after signup: "+name)
 
 	if err := setSessionCookie(app.db, w, playerID); err != nil {
-		app.hub.logError("handleSignup: setSessionCookie", err)
+		app.logf("ERROR [handleSignup: setSessionCookie]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
-	w.Header().Set("HX-Redirect", "/game")
+	w.Header().Set("HX-Redirect", "/game/"+gameName)
 }
 
 func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -123,12 +130,19 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gameName := r.FormValue("game_name")
+	if gameName == "" {
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Game name is required")))
+		return
+	}
+
 	name := r.FormValue("name")
 	secretCode := r.FormValue("secret_code")
 
 	if name == "" || secretCode == "" {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Name and secret code are required")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name and secret code are required")))
 		return
 	}
 
@@ -136,25 +150,25 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	err := app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ? AND secret_code = ?", name, secretCode)
 	if err == sql.ErrNoRows {
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Invalid name or secret code")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Invalid name or secret code")))
 		return
 	}
 	if err != nil {
-		app.hub.logError("handleLogin: db.Get player", err)
+		app.logf("ERROR [handleLogin: db.Get player]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
 
-	app.hub.logf("Player logged in: name='%s', id=%d", name, player.ID)
+	app.logf("Player logged in: name='%s', id=%d", name, player.ID)
 	DebugLog("handleLogin", "Player '%s' logged in with ID %d", name, player.ID)
 	if err := setSessionCookie(app.db, w, player.ID); err != nil {
-		app.hub.logError("handleLogin: setSessionCookie", err)
+		app.logf("ERROR [handleLogin: setSessionCookie]: %v", err)
 		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
 		return
 	}
-	w.Header().Set("HX-Redirect", "/game")
+	w.Header().Set("HX-Redirect", "/game/"+gameName)
 }
 
 func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +182,7 @@ func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 		app.db.Exec("DELETE FROM session WHERE token = ?", token)
 	}
 
-	app.hub.logf("Player logged out: name='%s', id=%d", playerName, playerID)
+	app.logf("Player logged out: name='%s', id=%d", playerName, playerID)
 	DebugLog("handleLogout", "Player '%s' (ID: %d) logged out", playerName, playerID)
 
 	http.SetCookie(w, &http.Cookie{

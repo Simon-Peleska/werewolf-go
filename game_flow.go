@@ -85,7 +85,7 @@ func (h *Hub) checkWinConditions(game *Game) bool {
 // handleWSNewGame resets the game: creates a new lobby game with the same role counts,
 // cleans up the finished game, and puts all connected players into the new lobby.
 func (h *Hub) handleWSNewGame(client *Client) {
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNewGame: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -107,8 +107,16 @@ func (h *Hub) handleWSNewGame(client *Client) {
 		return
 	}
 
-	// Create new lobby game
-	result, err := h.db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
+	// Delete the old game and all its associated data first (frees the unique name)
+	oldGameID := game.ID
+	h.db.Exec("DELETE FROM game_action WHERE game_id = ?", oldGameID)
+	h.db.Exec("DELETE FROM game_lovers WHERE game_id = ?", oldGameID)
+	h.db.Exec("DELETE FROM game_role_config WHERE game_id = ?", oldGameID)
+	h.db.Exec("DELETE FROM game_player WHERE game_id = ?", oldGameID)
+	h.db.Exec("DELETE FROM game WHERE rowid = ?", oldGameID)
+
+	// Create new lobby game with same name
+	result, err := h.db.Exec("INSERT INTO game (name, status, round) VALUES (?, 'lobby', 0)", h.gameName)
 	if err != nil {
 		h.logError("handleWSNewGame: create new game", err)
 		h.sendErrorToast(client.playerID, "Failed to create new game")
@@ -123,14 +131,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 			h.logError("handleWSNewGame: copy role config", err)
 		}
 	}
-
-	// Delete the old game and all its associated data
-	oldGameID := game.ID
-	h.db.Exec("DELETE FROM game_action WHERE game_id = ?", oldGameID)
-	h.db.Exec("DELETE FROM game_lovers WHERE game_id = ?", oldGameID)
-	h.db.Exec("DELETE FROM game_role_config WHERE game_id = ?", oldGameID)
-	h.db.Exec("DELETE FROM game_player WHERE game_id = ?", oldGameID)
-	h.db.Exec("DELETE FROM game WHERE rowid = ?", oldGameID)
 
 	// Add all currently connected players to the new lobby
 	playerIDs := h.connectedPlayerIDs()

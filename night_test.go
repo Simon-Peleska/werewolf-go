@@ -2321,8 +2321,8 @@ func TestAIStoryteller(t *testing.T) {
 		StorytellerAPIKey:   "test-key",
 	})
 
-	ctx.app.hub.storyteller = storyteller
-	defer func() { ctx.app.hub.storyteller = nil }()
+	ctx.app.hubs["test-game"].storyteller = storyteller
+	defer func() { ctx.app.hubs["test-game"].storyteller = nil }()
 
 	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
 	defer browserCleanup()

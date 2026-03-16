@@ -6,6 +6,8 @@ import (
 	"embed"
 	"encoding/json"
 	"flag"
+	"sync"
+
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"html/template"
@@ -26,15 +28,40 @@ var devMode bool
 
 // App holds per-server resources to enable full isolation between tests.
 type App struct {
-	db        *sqlx.DB
-	hub       *Hub
-	templates *template.Template
+	db           *sqlx.DB
+	templates    *template.Template
+	hubs         map[string]*Hub
+	hubsMu       sync.RWMutex
+	storyteller  Storyteller
+	narrator     Narrator
+	endingPrompt string
+	logf         func(format string, args ...any) // log.Printf in prod, t.Logf in tests
+}
+
+func (app *App) getOrCreateHub(gameName string) *Hub {
+	app.hubsMu.RLock()
+	h, ok := app.hubs[gameName]
+	app.hubsMu.RUnlock()
+	if ok {
+		return h
+	}
+	app.hubsMu.Lock()
+	defer app.hubsMu.Unlock()
+	if h, ok = app.hubs[gameName]; ok {
+		return h
+	}
+	h = newHub(app.db, app.templates, app.storyteller, app.narrator, gameName)
+	h.endingPrompt = app.endingPrompt
+	go h.run()
+	app.hubs[gameName] = h
+	return h
 }
 
 type GameData struct {
 	Player        *Player
 	Players       []Player
 	Game          *Game
+	GameName      string
 	IsInGame      bool
 	GameComponent template.HTML
 	SidebarHTML   template.HTML
@@ -69,9 +96,12 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := getOrCreateCurrentGame(app.db)
+	gameName := r.PathValue("name")
+	hub := app.getOrCreateHub(gameName)
+
+	game, err := getOrCreateGameByName(app.db, gameName)
 	if err != nil {
-		app.hub.logError("handleGame: getOrCreateCurrentGame", err)
+		hub.logError("handleGame: getOrCreateGameByName", err)
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
@@ -80,7 +110,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	var player Player
 	err = app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
 	if err != nil {
-		app.hub.logError("handleGame: db.Get player", err)
+		hub.logError("handleGame: db.Get player", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -93,7 +123,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	if game.Status == "lobby" {
 		result, _ := app.db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", game.ID, playerID)
 		if rows, _ := result.RowsAffected(); rows > 0 {
-			app.hub.triggerBroadcast()
+			hub.triggerBroadcast()
 		}
 	}
 
@@ -123,12 +153,12 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	// Get all players in the game
 	players, err := getPlayersByGameId(app.db, game.ID)
 	if err != nil {
-		app.hub.logError("handleGame: getPlayersByGameId", err)
+		hub.logError("handleGame: getPlayersByGameId", err)
 	}
 
-	buf, err := getGameComponent(app.hub, playerID, game)
+	buf, err := getGameComponent(hub, playerID, game)
 	if err != nil {
-		app.hub.logError("handleGame: getGameComponent", err)
+		hub.logError("handleGame: getGameComponent", err)
 	}
 
 	// Build sidebar HTML inline so the page is fully rendered before WebSocket connects.
@@ -149,6 +179,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		Player:        &player,
 		Players:       players,
 		Game:          game,
+		GameName:      gameName,
 		IsInGame:      isInGame,
 		GameComponent: template.HTML(buf.String()),
 		SidebarHTML:   template.HTML(sidebarBuf.String()),
@@ -255,105 +286,6 @@ func applyCardVisibility(viewer Player, targets []Player, seerInvestigated map[i
 	return out
 }
 
-func (app *App) handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(app.db, r)
-	if err != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	game, err := getOrCreateCurrentGame(app.db)
-	if err != nil {
-		app.hub.logError("handleSidebarInfo: getOrCreateCurrentGame", err)
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		return
-	}
-
-	// Get player info — include role data if game has started
-	var player Player
-	if game.Status != "lobby" {
-		player, err = getPlayerInGame(app.db, game.ID, playerID)
-		if err != nil {
-			app.hub.logError("handleSidebarInfo: getPlayerInGame", err)
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-	} else {
-		err = app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
-		if err != nil {
-			app.hub.logError("handleSidebarInfo: db.Get player", err)
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		player.PlayerID = playerID
-	}
-	DebugLog("handleSidebarInfo", "Player '%s' (ID: %d) accessing sidebar, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
-
-	// Get all players in the game
-	players, err := getPlayersByGameId(app.db, game.ID)
-	if err != nil {
-		app.hub.logError("handleGame: getPlayersByGameId", err)
-	}
-
-	seerInvestigated := getSeerInvestigated(app.db, game.ID, playerID)
-	data := SidebarData{
-		Player:         &player,
-		Players:        applyCardVisibility(player, selfFirstPlayers(players, playerID), seerInvestigated),
-		Game:           game,
-		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
-	}
-
-	app.templates.ExecuteTemplate(w, "sidebar.html", data)
-}
-
-func (app *App) handleGameComponent(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(app.db, r)
-	if err != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	game, err := getOrCreateCurrentGame(app.db)
-	if err != nil {
-		app.hub.logError("handleGameComponent: getOrCreateCurrentGame", err)
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
-		return
-	}
-
-	buf, err := getGameComponent(app.hub, playerID, game)
-	if err != nil {
-		app.hub.logError("handleGameComponent: getGameComponent", err)
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
-		return
-	}
-
-	buf.WriteTo(w)
-}
-
-func (app *App) handleGameHistory(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(app.db, r)
-	if err != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	game, err := getOrCreateCurrentGame(app.db)
-	if err != nil {
-		app.hub.logError("handleGameComponent: getOrCreateCurrentGame", err)
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
-		return
-	}
-
-	buf, err := getGameHistory(app.db, app.templates, playerID, game)
-	if err != nil {
-		app.hub.logError("handleGameHistory: getGameHistory", err)
-		w.Write([]byte(renderToast(app.templates, app.hub.logf, "error", "Something went wrong")))
-		return
-	}
-
-	buf.WriteTo(w)
-}
-
 func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game) (*bytes.Buffer, error) {
 	viewer, err := getPlayerInGame(db, game.ID, playerID)
 	if err != nil {
@@ -427,9 +359,9 @@ func handleWSMessage(client *Client, message []byte) {
 
 	LogWSMessage("IN", playerName, msg.Action)
 
-	game, err := getOrCreateCurrentGame(client.hub.db)
+	game, err := client.hub.getGame()
 	if err != nil {
-		client.hub.logError("handleWSMessage: getOrCreateCurrentGame", err)
+		client.hub.logError("handleWSMessage: getGame", err)
 		client.hub.sendErrorToast(client.playerID, "Failed to get game")
 		return
 	}
@@ -1303,11 +1235,15 @@ func main() {
 		log.Fatal("Failed to parse templates:", err)
 	}
 
-	h := newHub(db, tmpl, storyteller, narrator)
-	h.endingPrompt = cfg.StorytellerEndingPrompt
-	go h.run()
-
-	app := &App{db: db, hub: h, templates: tmpl}
+	app := &App{
+		db:           db,
+		templates:    tmpl,
+		hubs:         make(map[string]*Hub),
+		storyteller:  storyteller,
+		narrator:     narrator,
+		endingPrompt: cfg.StorytellerEndingPrompt,
+		logf:         log.Printf,
+	}
 
 	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
@@ -1325,11 +1261,12 @@ func main() {
 	wrapHandler("/signup", app.handleSignup)
 	wrapHandler("/login", app.handleLogin)
 	wrapHandler("/logout", app.handleLogout)
-	wrapHandler("/game", app.handleGame)
-	wrapHandler("/ws", func(w http.ResponseWriter, r *http.Request) { handleWebSocket(app, w, r) })
-	wrapHandler("/game/component", app.handleGameComponent)
-	wrapHandler("/game/history", app.handleGameHistory)
-	wrapHandler("/game/sidebar", app.handleSidebarInfo)
+	wrapHandler("/game/{name}", app.handleGame)
+	wrapHandler("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
+		gameName := r.PathValue("name")
+		hub := app.getOrCreateHub(gameName)
+		handleWebSocket(hub, w, r)
+	})
 
 	// Serve static files with compression for text-based files (CSS, JS, SVG)
 	// Binary formats like images will be served without compression

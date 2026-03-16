@@ -462,7 +462,7 @@ type LoggingHandler struct {
 
 func (l *LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// WebSocket upgrades need http.Hijacker, so pass them through directly
-	if r.URL.Path == "/ws" {
+	if strings.HasPrefix(r.URL.Path, "/ws/") {
 		l.Logger.LogRequest(r.Method, r.URL.String(), nil, nil, []byte("[WebSocket upgrade]"))
 		l.Handler.ServeHTTP(w, r)
 		return
@@ -619,12 +619,17 @@ func newTestContext(t *testing.T) *TestContext {
 		t.Fatalf("Failed to parse templates: %v", tmplErr)
 	}
 
-	// Create test-specific WebSocket hub (nil storyteller/narrator = disabled by default)
-	testHub := newHub(testDB, testTemplates, nil, nil)
+	// Create test-specific app with hubs map (nil storyteller/narrator = disabled by default)
+	testHub := newHub(testDB, testTemplates, nil, nil, "test-game")
 	testHub.logf = t.Logf
 	go testHub.run()
 
-	app := &App{db: testDB, hub: testHub, templates: testTemplates}
+	app := &App{
+		db:        testDB,
+		templates: testTemplates,
+		hubs:      map[string]*Hub{"test-game": testHub},
+		logf:      t.Logf,
+	}
 
 	// Create handlers
 	mux := http.NewServeMux()
@@ -640,11 +645,12 @@ func newTestContext(t *testing.T) *TestContext {
 	wrapHandler("/", app.handleIndex)
 	wrapHandler("/signup", app.handleSignup)
 	wrapHandler("/login", app.handleLogin)
-	wrapHandler("/game", app.handleGame)
-	wrapHandler("/ws", func(w http.ResponseWriter, r *http.Request) { handleWebSocket(app, w, r) })
-	wrapHandler("/game/component", app.handleGameComponent)
-	wrapHandler("/game/sidebar", app.handleSidebarInfo)
-	wrapHandler("/game/history", app.handleGameHistory)
+	wrapHandler("/game/{name}", app.handleGame)
+	wrapHandler("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
+		gameName := r.PathValue("name")
+		hub := app.getOrCreateHub(gameName)
+		handleWebSocket(hub, w, r)
+	})
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 
 	server := &http.Server{
@@ -660,7 +666,15 @@ func newTestContext(t *testing.T) *TestContext {
 			logger.AppLogger.LogDB(testDB, "before cleanup")
 			logger.Debug("Cleaning up test server")
 			server.Close() // closes WebSocket connections; buffered unregister channel accepts them
-			testHub.stop() // hub goroutine processes remaining unregisters then exits
+			app.hubsMu.RLock()
+			var hubs []*Hub
+			for _, h := range app.hubs {
+				hubs = append(hubs, h)
+			}
+			app.hubsMu.RUnlock()
+			for _, h := range hubs {
+				h.stop()
+			}
 			testDB.Close()
 			logger.Close()
 
@@ -794,11 +808,17 @@ func (tb *TestBrowser) newIncognitoPage(url string) *rod.Page {
 	return page
 }
 
-// signupPlayer signs up a new player and waits for redirect to game
-// Uses incognito context so each player has their own session
+// signupPlayer signs up a new player into the default "test-game" game.
+// Uses incognito context so each player has their own session.
 func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
+	return tb.signupPlayerInGame(baseURL, name, "test-game")
+}
+
+// signupPlayerInGame signs up a new player into the specified game and waits for redirect.
+// Uses incognito context so each player has their own session.
+func (tb *TestBrowser) signupPlayerInGame(baseURL, name, gameName string) *TestPlayer {
 	if tb.logger != nil {
-		tb.logger.Debug("Signing up player: %s", name)
+		tb.logger.Debug("Signing up player: %s (game: %s)", name, gameName)
 	}
 
 	page := tb.newIncognitoPage(baseURL)
@@ -812,6 +832,9 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 
 	// Fill form and submit; sidebar is rendered inline so it's present as soon as /game loads.
 	p := page.Timeout(browserTimeout)
+	if el, err := p.Element("#signup-game-name"); err == nil {
+		el.Input(gameName)
+	}
 	if el, err := p.Element("#signup-name"); err == nil {
 		el.Input(name)
 	}
@@ -829,7 +852,7 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 	// Wait until this player appears in the player list. The player list is updated via
 	// WebSocket OOB swap from broadcastGameUpdate (triggered by addPlayerToLobby after
 	// hub processes the WS registration). This ensures hub has registered the connection
-	// before signupPlayer returns — preventing startGame from running before all players
+	// before signupPlayerInGame returns — preventing startGame from running before all players
 	// are in game_player.
 	player.waitUntilCondition(`() => {
 		const cards = document.querySelectorAll('#player-list player-card');
@@ -845,11 +868,17 @@ func (tb *TestBrowser) signupPlayer(baseURL, name string) *TestPlayer {
 	return player
 }
 
-// signupPlayerNoRedirect signs up but expects failure (stays on page)
-// Uses incognito context for isolated session
+// signupPlayerNoRedirect signs up into "test-game" but expects failure (stays on page).
+// Uses incognito context for isolated session.
 func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer {
+	return tb.signupPlayerNoRedirectInGame(baseURL, name, "test-game")
+}
+
+// signupPlayerNoRedirectInGame signs up into the specified game but expects failure (stays on page).
+// Uses incognito context for isolated session.
+func (tb *TestBrowser) signupPlayerNoRedirectInGame(baseURL, name, gameName string) *TestPlayer {
 	if tb.logger != nil {
-		tb.logger.Debug("Attempting signup (expecting failure): %s", name)
+		tb.logger.Debug("Attempting signup (expecting failure): %s (game: %s)", name, gameName)
 	}
 
 	page := tb.newIncognitoPage(baseURL)
@@ -864,6 +893,9 @@ func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer 
 	// Fill form and submit, expecting failure
 	player.doWithHTMXSwap(func() {
 		p := page.Timeout(browserTimeout)
+		if el, err := p.Element("#signup-game-name"); err == nil {
+			el.Input(gameName)
+		}
 		if el, err := p.Element("#signup-name"); err == nil {
 			el.Input(name)
 		}
@@ -1262,10 +1294,17 @@ func (tp *TestPlayer) disconnect() {
 	tp.Page.Close()
 }
 
-// loginPlayer logs in an existing player (uses incognito for isolated session)
+// loginPlayer logs in an existing player into the default "test-game" game.
+// Uses incognito context for isolated session.
 func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer {
+	return tb.loginPlayerInGame(baseURL, name, secretCode, "test-game")
+}
+
+// loginPlayerInGame logs in an existing player into the specified game.
+// Uses incognito context for isolated session.
+func (tb *TestBrowser) loginPlayerInGame(baseURL, name, secretCode, gameName string) *TestPlayer {
 	if tb.logger != nil {
-		tb.logger.Debug("Logging in player: %s", name)
+		tb.logger.Debug("Logging in player: %s (game: %s)", name, gameName)
 	}
 
 	page := tb.newIncognitoPage(baseURL)
@@ -1280,6 +1319,9 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 
 	// Fill form and submit, wait for redirect
 	p := page.Timeout(browserTimeout)
+	if el, err := p.Element("#login-game-name"); err == nil {
+		el.Input(gameName)
+	}
 	if el, err := p.Element("#login-name"); err == nil {
 		el.Input(name)
 	}
@@ -1306,11 +1348,17 @@ func (tb *TestBrowser) loginPlayer(baseURL, name, secretCode string) *TestPlayer
 	return player
 }
 
-// loginPlayerNoRedirect tries to login but expects failure
-// Uses incognito context for isolated session
+// loginPlayerNoRedirect tries to login into "test-game" but expects failure.
+// Uses incognito context for isolated session.
 func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *TestPlayer {
+	return tb.loginPlayerNoRedirectInGame(baseURL, name, secretCode, "test-game")
+}
+
+// loginPlayerNoRedirectInGame tries to login into the specified game but expects failure.
+// Uses incognito context for isolated session.
+func (tb *TestBrowser) loginPlayerNoRedirectInGame(baseURL, name, secretCode, gameName string) *TestPlayer {
 	if tb.logger != nil {
-		tb.logger.Debug("Attempting login (expecting failure): %s", name)
+		tb.logger.Debug("Attempting login (expecting failure): %s (game: %s)", name, gameName)
 	}
 
 	page := tb.newIncognitoPage(baseURL)
@@ -1326,6 +1374,9 @@ func (tb *TestBrowser) loginPlayerNoRedirect(baseURL, name, secretCode string) *
 	// Fill form and submit, expecting failure
 	player.doWithHTMXSwap(func() {
 		p := page.Timeout(browserTimeout)
+		if el, err := p.Element("#login-game-name"); err == nil {
+			el.Input(gameName)
+		}
 		if el, err := p.Element("#login-name"); err == nil {
 			el.Input(name)
 		}

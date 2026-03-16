@@ -25,7 +25,7 @@ type RoleConfigDisplay struct {
 
 func handleWSUpdateRole(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSUpdateRole: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -84,7 +84,7 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 
 func handleWSStartGame(client *Client) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSStartGame: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")

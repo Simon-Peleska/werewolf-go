@@ -70,7 +70,7 @@ type NightData struct {
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -168,7 +168,7 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 
 func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -264,7 +264,7 @@ func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 
 func handleWSWerewolfPass(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfPass: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -313,7 +313,7 @@ func handleWSWerewolfPass(client *Client, msg WSMessage) {
 
 func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -362,7 +362,7 @@ func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 
 func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -419,7 +419,7 @@ func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 
 func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote2: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -471,7 +471,7 @@ func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSSeerSelect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSSeerSelect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -538,7 +538,7 @@ func handleWSSeerSelect(client *Client, msg WSMessage) {
 
 func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -637,7 +637,7 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSDoctorSelect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoctorSelect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -704,7 +704,7 @@ func handleWSDoctorSelect(client *Client, msg WSMessage) {
 
 func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoctorProtect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -793,7 +793,7 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSGuardSelect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSGuardSelect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -864,7 +864,7 @@ func handleWSGuardSelect(client *Client, msg WSMessage) {
 
 func handleWSGuardProtect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSGuardProtect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -972,7 +972,7 @@ func handleWSGuardProtect(client *Client, msg WSMessage) {
 // Picks are staged (replaceable) until Cupid explicitly confirms via handleWSCupidLink.
 func handleWSCupidChoose(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSCupidChoose: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1095,7 +1095,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 // handleWSCupidLink finalizes Cupid's staged lover choices on Night 1.
 func handleWSCupidLink(client *Client) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSCupidLink: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1194,7 +1194,7 @@ func handleWSCupidLink(client *Client) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchSelectHeal: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1266,7 +1266,7 @@ func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 // handleWSWitchSelectPoison toggles the witch's pending poison selection.
 func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchSelectPoison: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1338,7 +1338,7 @@ func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 // handleWSWitchApply commits the witch's pending selections and ends her night turn.
 func handleWSWitchApply(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchApply: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1546,7 +1546,7 @@ func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Play
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNightSurveySuspect: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")
@@ -1605,7 +1605,7 @@ func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 // Once all alive players have submitted, the game transitions to day.
 func handleWSNightSurvey(client *Client, msg WSMessage) {
 	h := client.hub
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNightSurvey: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, "Failed to get game")

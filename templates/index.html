@@ -64,13 +64,32 @@
             <div id="auth-container">
                 {{if .}}
                 <section>
-                    <a href="/game" role="button">Join Game</a>
+                    <h2>Join Game</h2>
+                    <form id="join-game-form" onsubmit="return joinGame(event)">
+                        <label for="join-game-name">
+                            Game Name
+                            <input type="text" id="join-game-name" name="game_name" placeholder="Enter game name" required>
+                        </label>
+                        <button type="submit" id="btn-join">Join Game</button>
+                    </form>
                     <a href="/logout" role="button" class="secondary">Logout</a>
                 </section>
+                <script>
+                function joinGame(e) {
+                    e.preventDefault();
+                    var name = document.getElementById('join-game-name').value.trim();
+                    if (name) window.location.href = '/game/' + encodeURIComponent(name);
+                    return false;
+                }
+                </script>
                 {{else}}
                 <section>
                     <h2>New Player</h2>
                     <form hx-post="/signup" hx-target="#auth-container" hx-swap="innerHTML">
+                        <label for="signup-game-name">
+                            Game Name
+                            <input type="text" id="signup-game-name" name="game_name" placeholder="Enter game name" required>
+                        </label>
                         <label for="signup-name">
                             Choose your name
                             <input type="text" id="signup-name" name="name" placeholder="Enter your name" required>
@@ -85,6 +104,10 @@
                     <h2>Returning Player</h2>
                     <p>Already signed up on another device? Enter your name and secret code.</p>
                     <form hx-post="/login" hx-target="#auth-container" hx-swap="innerHTML">
+                        <label for="login-game-name">
+                            Game Name
+                            <input type="text" id="login-game-name" name="game_name" placeholder="Enter game name" required>
+                        </label>
                         <label for="login-name">
                             Name
                             <input type="text" id="login-name" name="name" placeholder="Your name" required>

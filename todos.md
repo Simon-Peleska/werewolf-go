@@ -1,11 +1,8 @@
 # Todos
-- show cards in all selection results 
-- make narator properly streaming
-- replace llm dependecy
-- add more extensive narator
 - add multigame support
+- allow setting photo
 - deploy on host provider
-- add licence
+- write good prompt
 - add different scenario support
 - add i18n support
  

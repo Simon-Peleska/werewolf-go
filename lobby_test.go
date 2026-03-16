@@ -364,3 +364,76 @@ func TestGameStartWithMixedRoles(t *testing.T) {
 		t.Errorf("Doctor count mismatch: expected %d, got %d", d, roleCounts["Doctor"])
 	}
 }
+
+// TestMultiGameIsolation verifies that multiple simultaneous games are fully isolated:
+// - Players in different games see only their own game's lobby
+// - A player can be in two games at the same time
+// - Starting one game does not affect the other
+func TestMultiGameIsolation(t *testing.T) {
+	t.Parallel()
+
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Alice joins both games; Bob only alpha; Carol only beta.
+	alice1 := browser.signupPlayerInGame(ctx.baseURL, "Alice", "alpha")
+	alice1.SecretCode = alice1.getSecretCode()
+	alice2 := browser.loginPlayerInGame(ctx.baseURL, "Alice", alice1.SecretCode, "beta")
+	bob := browser.signupPlayerInGame(ctx.baseURL, "Bob", "alpha")
+	carol := browser.signupPlayerInGame(ctx.baseURL, "Carol", "beta")
+
+	// alpha lobby: Alice + Bob
+	alphaList := alice1.getPlayerList()
+	if !strings.Contains(alphaList, "Alice") {
+		t.Errorf("alpha: expected Alice in player list, got: %s", alphaList)
+	}
+	if !strings.Contains(alphaList, "Bob") {
+		t.Errorf("alpha: expected Bob in player list, got: %s", alphaList)
+	}
+	if strings.Contains(alphaList, "Carol") {
+		t.Errorf("alpha: Carol should not be in player list, got: %s", alphaList)
+	}
+
+	// beta lobby: Alice + Carol
+	betaList := alice2.getPlayerList()
+	if !strings.Contains(betaList, "Alice") {
+		t.Errorf("beta: expected Alice in player list, got: %s", betaList)
+	}
+	if !strings.Contains(betaList, "Carol") {
+		t.Errorf("beta: expected Carol in player list, got: %s", betaList)
+	}
+	if strings.Contains(betaList, "Bob") {
+		t.Errorf("beta: Bob should not be in player list, got: %s", betaList)
+	}
+
+	// Start game alpha (2 players: 1 werewolf + 1 villager)
+	alice1.addRoleByID(RoleWerewolf)
+	alice1.addRoleByID(RoleVillager)
+	alice1.startGame()
+
+	// After alpha starts, alice1 sees her night/day role — she's no longer in lobby
+	alphaRole := alice1.getRole()
+	if alphaRole == "" {
+		t.Errorf("alpha: Alice should have a role after game starts")
+	}
+
+	// Beta is still in lobby — Carol's view should still show the lobby
+	betaListAfter := carol.getPlayerList()
+	if !strings.Contains(betaListAfter, "Carol") {
+		t.Errorf("beta: Carol still in lobby after alpha started, got: %s", betaListAfter)
+	}
+	if !strings.Contains(betaListAfter, "Alice") {
+		t.Errorf("beta: Alice still in beta lobby after alpha started, got: %s", betaListAfter)
+	}
+
+	// Carol (beta) should still see the start button (lobby still active), not the game UI
+	_, err := carol.p().Element("#btn-start")
+	if err != nil {
+		t.Errorf("beta: Carol should still see start button (beta still in lobby): %v", err)
+	}
+
+	_ = bob
+}

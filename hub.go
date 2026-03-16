@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"html/template"
 	"log"
 	"net/http"
@@ -71,12 +70,13 @@ type Hub struct {
 	templates    *template.Template
 	storyteller  Storyteller
 	narrator     Narrator
-	endingPrompt string                           // custom ending prompt; empty = use default
+	endingPrompt string // custom ending prompt; empty = use default
+	gameName     string
 	logf         func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
 }
 
-func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator) *Hub {
-	return &Hub{
+func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator, gameName string) *Hub {
+	h := &Hub{
 		clients:        make(map[*websocket.Conn]*Client),
 		broadcast:      make(chan []byte),
 		register:       make(chan *Client),
@@ -87,8 +87,16 @@ func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, 
 		templates:      templates,
 		storyteller:    storyteller,
 		narrator:       narrator,
-		logf:           log.Printf,
+		gameName:       gameName,
 	}
+	h.logf = func(format string, args ...any) {
+		log.Printf("[game:"+gameName+"] "+format, args...)
+	}
+	return h
+}
+
+func (h *Hub) getGame() (*Game, error) {
+	return getOrCreateGameByName(h.db, h.gameName)
 }
 
 // logError logs an error with context, routed through hub's logf so tests see it via t.Logf.
@@ -264,9 +272,9 @@ func (h *Hub) connectedPlayerIDs() []int64 {
 
 // broadcastGameUpdate sends the current game state to all connected clients
 func (h *Hub) broadcastGameUpdate() {
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
-		h.logError("broadcastGameUpdate: getOrCreateCurrentGame", err)
+		h.logError("broadcastGameUpdate: getGame", err)
 		return
 	}
 
@@ -322,9 +330,9 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 	var playerName string
 	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
-		h.logError("addPlayerToLobby: getOrCreateCurrentGame", err)
+		h.logError("addPlayerToLobby: getGame", err)
 		return
 	}
 
@@ -355,9 +363,9 @@ func (h *Hub) removePlayerFromLobby(playerID int64) {
 	var playerName string
 	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 
-	game, err := getOrCreateCurrentGame(h.db)
+	game, err := h.getGame()
 	if err != nil {
-		h.logError("removePlayerFromLobby: getOrCreateCurrentGame", err)
+		h.logError("removePlayerFromLobby: getGame", err)
 		return
 	}
 
@@ -378,28 +386,10 @@ func (h *Hub) removePlayerFromLobby(playerID int64) {
 	h.triggerBroadcast()
 }
 
-// getOrCreateCurrentGame returns the current waiting game, or creates one if none exists
-func getOrCreateCurrentGame(db *sqlx.DB) (*Game, error) {
-	var game Game
-	err := db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
-	if err == sql.ErrNoRows {
-		result, err := db.Exec("INSERT INTO game (status, round) VALUES ('lobby', 0)")
-		if err != nil {
-			return nil, err
-		}
-		gameID, _ := result.LastInsertId()
-		game = Game{ID: gameID, Status: "lobby", Round: 0}
-		DebugLog("getOrCreateCurrentGame", "Created new game %d", gameID)
-	} else if err != nil {
-		return nil, err
-	}
-	return &game, nil
-}
+func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	currentHub := hub
 
-func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
-	currentHub := app.hub
-
-	playerID, err := getPlayerIdFromSession(app.db, r)
+	playerID, err := getPlayerIdFromSession(hub.db, r)
 	if err != nil {
 		DebugLog("handleWebSocket", "Rejected WebSocket connection - not logged in")
 		http.Error(w, "Not logged in", http.StatusUnauthorized)
@@ -407,7 +397,7 @@ func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
 	}
 
 	var playerName string
-	app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	hub.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 	DebugLog("handleWebSocket", "Player '%s' (ID: %d) initiating WebSocket connection", playerName, playerID)
 
 	var upgrader = websocket.Upgrader{
@@ -417,7 +407,7 @@ func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		app.hub.logf("WebSocket upgrade error for player %d (%s): %v", playerID, playerName, err)
+		hub.logf("WebSocket upgrade error for player %d (%s): %v", playerID, playerName, err)
 		return
 	}
 
@@ -425,11 +415,10 @@ func handleWebSocket(app *App, w http.ResponseWriter, r *http.Request) {
 
 	// Check if the player still exists in the current game.
 	// On reconnect after a disconnect, the player may have been removed.
-	var game Game
-	err = app.db.Get(&game, "SELECT rowid as id, status, round FROM game ORDER BY id DESC LIMIT 1")
+	game, err := hub.getGame()
 	if err == nil && game.Status != "lobby" {
 		var count int
-		app.db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
+		hub.db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
 		if count == 0 {
 			DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
 			conn.WriteMessage(websocket.TextMessage, []byte(`<div id="game-content" hx-swap-oob="innerHTML" hx-on::load="window.location.href='/'"></div>`))

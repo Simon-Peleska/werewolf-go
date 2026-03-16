@@ -6,6 +6,7 @@ import (
 
 type Game struct {
 	ID     int64  `db:"id"`
+	Name   string `db:"name"`
 	Status string `db:"status"` // lobby, night, day, finished
 	Round  int    `db:"round"`
 }
@@ -218,9 +219,11 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	PRAGMA journal_mode=WAL;
 
 	CREATE TABLE IF NOT EXISTS game (
+		name TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'lobby',
 		round INTEGER NOT NULL DEFAULT 0
 	);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_game_name ON game(name) WHERE name != '';
 	CREATE TABLE IF NOT EXISTS player (
 		name TEXT UNIQUE NOT NULL,
 		secret_code TEXT NOT NULL
@@ -307,4 +310,12 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	}
 	logfn("Database initialized successfully")
 	return nil
+}
+
+// getOrCreateGameByName returns the game with the given name, creating it if it doesn't exist.
+func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
+	db.Exec("INSERT OR IGNORE INTO game (name, status, round) VALUES (?, 'lobby', 0)", name)
+	var game Game
+	err := db.Get(&game, "SELECT rowid as id, name, status, round FROM game WHERE name = ?", name)
+	return &game, err
 }
