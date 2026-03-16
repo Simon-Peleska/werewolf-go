@@ -285,6 +285,32 @@ nix develop
 - After updating Go dependencies, recompute `vendorHash` by setting `pkgs.lib.fakeHash`, running `nix build`, and replacing with the hash from the error output
 - Docker image includes: binary, `sqlite`, `glibc`, `cacert` (for outbound HTTPS to AI providers)
 
+## Licensing
+
+The project uses the **Zero-Clause BSD License (0BSD)** for original source code. See `LICENSE` for the full text.
+
+### AI-Generated Assets
+Images in `static/seals/` and `static/backgrounds/` were generated with Google Gemini Nano Banana 2. AI-generated content carries no copyright claim and is provided without restrictions.
+
+### Third-Party Components
+Bundled third-party components and their licenses are documented in `THIRD_PARTY_LICENSES`. Currently:
+
+| Component | Files | License |
+|-----------|-------|---------|
+| PicoCSS | `static/pico.css` | MIT |
+| HTMX | `static/htmx.js`, `static/htmx-ws.js`, `static/idiomorph-ext.js` | 0BSD |
+| Metal Mania font | `static/fonts/MetalMania-Regular.ttf` | SIL OFL 1.1 |
+| IM Fell Great Primer font | `static/fonts/IMFellGreatPrimer-*.ttf` | SIL OFL 1.1 |
+
+### Keeping Licensing Up to Date
+**IMPORTANT: When adding, removing, or updating a bundled frontend dependency, update both `THIRD_PARTY_LICENSES` and the table above.**
+
+- **MIT** requires the copyright notice and license text to be included when distributing — add the full text to `THIRD_PARTY_LICENSES`.
+- **SIL OFL 1.1** requires the copyright notice and license text to be included — add the full text to `THIRD_PARTY_LICENSES`.
+- **0BSD / public domain / unlicense** — no attribution required, but adding a brief entry is good practice.
+- **GPL / LGPL / AGPL** — do not add without explicit approval; these are incompatible with 0BSD distribution.
+- When in doubt, check [choosealicense.com](https://choosealicense.com) or ask.
+
 ## Configuration
 
 All configuration goes through `AppConfig` in `config.go`. Three layers apply in order (highest wins):
