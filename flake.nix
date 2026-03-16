@@ -66,7 +66,7 @@
 
           # Run `nix build` once — it will print the correct hash.
           # Replace the placeholder below with the "got:" hash from the error.
-          vendorHash = "sha256-7L92A2x0TNbnPFgPQzIGZApHzUe6nYOIi3HqxxxtLBs=";
+          vendorHash = "sha256-TGb19d32UXfRzkmtNI1Zi1/GOuDDeI7+hsPfEoDf74g=";
         };
 
         # `nix build .#docker && docker load < result`

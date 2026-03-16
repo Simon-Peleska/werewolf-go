@@ -5,11 +5,11 @@
   ...
 }:
 
-# local.nix is gitignored — copy local.nix.example and fill in your values.
-# It must return an attrset with: domain, acmeEmail, flakeUrl, sshPubKeys.
 let
-  local = import ./local.nix;
-  inherit (local) domain sshPubKeys;
+  domain = "werewolf.simon-peleska.at";
+  sshPubKeys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwpQ60GkyiUQzKvQXwx+TEVrJ6Gtyr81OXkEshRm/SW"
+  ];
 
   # Set this to the disk device shown in rescue mode (lsblk).
   # Typically /dev/sda on HDD/SSD servers, /dev/nvme0n1 on NVMe.
@@ -72,7 +72,7 @@ in
   # ── nginx + HTTPS ──────────────────────────────────────────────────────────
   security.acme = {
     acceptTerms = true;
-    # defaults.email = acmeEmail;   # used for expiry notifications
+    defaults.email = "";   # used for expiry notifications
   };
 
   services.nginx = {

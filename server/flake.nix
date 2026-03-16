@@ -3,7 +3,7 @@
 
   inputs = {
     # Use stable for servers — less churn, longer support window.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # Declarative disk partitioning — used by nixos-anywhere.
     disko = {
