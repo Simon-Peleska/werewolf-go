@@ -1287,6 +1287,7 @@ func main() {
 	}
 
 	h := newHub(db, tmpl, storyteller, narrator)
+	h.endingPrompt = cfg.StorytellerEndingPrompt
 	go h.run()
 
 	app := &App{db: db, hub: h, templates: tmpl}

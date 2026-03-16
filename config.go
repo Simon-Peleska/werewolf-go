@@ -32,6 +32,7 @@ type AppConfig struct {
 	StorytellerTemperature  string `json:"storyteller_temperature"`   // float 0-2 as string (default 1.2)
 	StorytellerThinking     string `json:"storyteller_thinking"`      // none | low | medium | high | auto (claude only)
 	StorytellerSystemPrompt string `json:"storyteller_system_prompt"` // custom system prompt (overrides default)
+	StorytellerEndingPrompt string `json:"storyteller_ending_prompt"` // custom ending prompt (overrides default)
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -123,6 +124,9 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("STORYTELLER_SYSTEM_PROMPT"); v != "" {
 		cfg.StorytellerSystemPrompt = v
 	}
+	if v := envStr("STORYTELLER_ENDING_PROMPT"); v != "" {
+		cfg.StorytellerEndingPrompt = v
+	}
 	if v := envStr("NARRATOR_PROVIDER"); v != "" {
 		cfg.NarratorProvider = v
 	}
@@ -190,6 +194,7 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
 	str("storyteller_thinking", &cfg.StorytellerThinking)
 	str("storyteller_system_prompt", &cfg.StorytellerSystemPrompt)
+	str("storyteller_ending_prompt", &cfg.StorytellerEndingPrompt)
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
 	str("narrator_voice", &cfg.NarratorVoice)
@@ -219,6 +224,7 @@ type flagValues struct {
 	storytellerTemperature  *string
 	storytellerThinking     *string
 	storytellerSystemPrompt *string
+	storytellerEndingPrompt *string
 	narratorProvider        *string
 	narratorModel           *string
 	narratorVoice           *string
@@ -248,6 +254,7 @@ func registerFlags() flagValues {
 		storytellerTemperature:  flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
 		storytellerThinking:     flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto (claude only)"),
 		storytellerSystemPrompt: flag.String("storyteller-system-prompt", "", "custom system prompt (overrides default)"),
+		storytellerEndingPrompt: flag.String("storyteller-ending-prompt", "", "custom ending prompt (overrides default)"),
 		narratorProvider:        flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
 		narratorModel:           flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
 		narratorVoice:           flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
@@ -294,6 +301,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerThinking = *fv.storytellerThinking
 		case "storyteller-system-prompt":
 			cfg.StorytellerSystemPrompt = *fv.storytellerSystemPrompt
+		case "storyteller-ending-prompt":
+			cfg.StorytellerEndingPrompt = *fv.storytellerEndingPrompt
 		case "narrator-provider":
 			cfg.NarratorProvider = *fv.narratorProvider
 		case "narrator-model":

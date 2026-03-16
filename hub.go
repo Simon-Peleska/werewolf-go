@@ -67,11 +67,12 @@ type Hub struct {
 	wg             sync.WaitGroup
 	clientWg       sync.WaitGroup // tracks active WebSocket reader goroutines
 
-	db          *sqlx.DB
-	templates   *template.Template
-	storyteller Storyteller
-	narrator    Narrator
-	logf        func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
+	db           *sqlx.DB
+	templates    *template.Template
+	storyteller  Storyteller
+	narrator     Narrator
+	endingPrompt string                           // custom ending prompt; empty = use default
+	logf         func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
 }
 
 func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator) *Hub {

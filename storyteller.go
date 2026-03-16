@@ -24,7 +24,7 @@ Then, in 2-4 sentences, wildly speculate about who the werewolves might be. Base
 // Storyteller generates a dramatic story after deaths in the game.
 // onChunk is called with each text chunk as it streams in.
 type Storyteller interface {
-	Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error)
+	Tell(ctx context.Context, userPrompt string, onChunk func(string)) (string, error)
 }
 
 // ── OpenAI-compatible ────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ type openaiStoryteller struct {
 	hasTemp      bool
 }
 
-func (s *openaiStoryteller) Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error) {
+func (s *openaiStoryteller) Tell(ctx context.Context, userPrompt string, onChunk func(string)) (string, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -50,7 +50,7 @@ func (s *openaiStoryteller) Tell(ctx context.Context, history []string, alivePla
 		"stream": true,
 		"messages": []message{
 			{Role: "system", Content: s.systemPrompt},
-			{Role: "user", Content: buildUserPrompt(history, alivePlayers)},
+			{Role: "user", Content: userPrompt},
 		},
 	}
 	if s.hasTemp {
@@ -123,7 +123,7 @@ type claudeStoryteller struct {
 	thinkingBudget int // 0 = disabled; >0 enables extended thinking
 }
 
-func (s *claudeStoryteller) Tell(ctx context.Context, history []string, alivePlayers []string, onChunk func(string)) (string, error) {
+func (s *claudeStoryteller) Tell(ctx context.Context, userPrompt string, onChunk func(string)) (string, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -133,7 +133,7 @@ func (s *claudeStoryteller) Tell(ctx context.Context, history []string, alivePla
 		"max_tokens": 2048,
 		"stream":     true,
 		"system":     s.systemPrompt,
-		"messages":   []message{{Role: "user", Content: buildUserPrompt(history, alivePlayers)}},
+		"messages":   []message{{Role: "user", Content: userPrompt}},
 	}
 	if s.thinkingBudget > 0 {
 		// Extended thinking requires temperature=1
@@ -216,6 +216,11 @@ func nextSentence(text string) (sentence, rest string) {
 	return "", text
 }
 
+const defaultEndingPrompt = `You are a dramatically over-the-top storyteller delivering the closing narration for a medieval werewolf game.
+The game is over and all roles are now revealed. Announce the winners with theatrical flair, then give a vivid recap of the key moments that decided the game.
+Call out standout plays, fatal mistakes, surprising twists, and any moments of betrayal or heroism.
+Keep it to 6-8 sentences total. Be dramatic, be specific, and make it feel like an epic conclusion.`
+
 func buildUserPrompt(history []string, alivePlayers []string) string {
 	prompt := "Game history so far:\n" + strings.Join(history, "\n")
 	if len(alivePlayers) > 0 {
@@ -224,6 +229,195 @@ func buildUserPrompt(history []string, alivePlayers []string) string {
 	}
 	prompt += "\n\nNarrate the victim's death and then speculate wildly about who the werewolves are."
 	return prompt
+}
+
+func buildEndingUserPrompt(winner string, players []Player, history []string) string {
+	var winnerDesc string
+	switch winner {
+	case "villagers":
+		winnerDesc = "the villagers — all werewolves have been hunted down and eliminated"
+	case "werewolves":
+		winnerDesc = "the werewolves — every last villager has been devoured"
+	case "lovers":
+		winnerDesc = "the lovers — the last two survivors, bound together until the end, regardless of which side they were on"
+	}
+
+	var roster []string
+	for _, p := range players {
+		status := "dead"
+		if p.IsAlive {
+			status = "alive"
+		}
+		roster = append(roster, fmt.Sprintf("%s (%s, %s)", p.Name, p.RoleName, status))
+	}
+
+	prompt := "The game is over. Winners: " + winnerDesc + ".\n\n"
+	prompt += "Full player roster (name, role, fate):\n" + strings.Join(roster, "\n") + "\n\n"
+	prompt += "Game history:\n" + strings.Join(history, "\n") + "\n\n"
+	prompt += "Deliver the closing narration."
+	return prompt
+}
+
+// maybeGenerateEnding generates a dramatic AI-written game summary and speaks it via TTS.
+// Falls back to a static maybeSpeakStory announcement if no storyteller is configured.
+func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
+	if h.storyteller == nil {
+		switch winner {
+		case "villagers":
+			h.maybeSpeakStory(gameID, "The villagers have triumphed! All werewolves have been eliminated.")
+		case "werewolves":
+			h.maybeSpeakStory(gameID, "The werewolves have won! They now rule the village.")
+		case "lovers":
+			h.maybeSpeakStory(gameID, "The lovers have won. They are the last ones standing, bound together forever.")
+		}
+		return
+	}
+
+	go func() {
+		// Fetch ALL actions — game is over, storyteller gets the full picture including private events
+		var descriptions []string
+		if err := h.db.Select(&descriptions, `
+			SELECT description FROM game_action
+			WHERE game_id = ? AND description != ''
+			ORDER BY rowid ASC`, gameID); err != nil {
+			h.logf("maybeGenerateEnding: fetch history: %v", err)
+			return
+		}
+
+		players, err := getPlayersByGameId(h.db, gameID)
+		if err != nil || len(players) == 0 {
+			h.logf("maybeGenerateEnding: fetch players: %v", err)
+			return
+		}
+
+		// Pick any player to satisfy the NOT NULL actor_player_id FK constraint
+		actorPlayerID := players[0].PlayerID
+
+		result, err := h.db.Exec(`
+			INSERT OR IGNORE INTO game_action
+				(game_id, round, phase, actor_player_id, action_type, visibility, description)
+			VALUES (?, ?, 'finished', ?, ?, ?, '')`,
+			gameID, round, actorPlayerID, ActionStory, VisibilityPublic)
+		if err != nil {
+			h.logError("maybeGenerateEnding: insert placeholder", err)
+			return
+		}
+		storyRowID, _ := result.LastInsertId()
+		if storyRowID == 0 {
+			return
+		}
+
+		var mu sync.Mutex
+		var buf strings.Builder
+
+		done := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(300 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					mu.Lock()
+					text := buf.String()
+					mu.Unlock()
+					if text != "" {
+						h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, strings.TrimSpace(text), storyRowID)
+						h.triggerBroadcast()
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		var sentenceCh chan string
+		if h.narrator != nil {
+			sentenceCh = make(chan string, 8)
+			go func() {
+				for sentence := range sentenceCh {
+					ttsCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					err := h.narrator.Speak(ttsCtx, sentence, func(chunk []byte) {
+						h.broadcastAudio(chunk)
+					})
+					cancel()
+					if err != nil {
+						h.logf("Narrator: TTS error: %v", err)
+					}
+				}
+			}()
+		}
+
+		endingPrompt := h.endingPrompt
+		if endingPrompt == "" {
+			endingPrompt = defaultEndingPrompt
+		}
+
+		// Use a copy of the storyteller with the ending system prompt
+		storyteller := h.storyteller
+		switch s := storyteller.(type) {
+		case *openaiStoryteller:
+			copy := *s
+			copy.systemPrompt = endingPrompt
+			storyteller = &copy
+		case *claudeStoryteller:
+			copy := *s
+			copy.systemPrompt = endingPrompt
+			storyteller = &copy
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		var sentenceBuf strings.Builder
+		_, err = storyteller.Tell(ctx, buildEndingUserPrompt(winner, players, descriptions), func(chunk string) {
+			mu.Lock()
+			buf.WriteString(chunk)
+			mu.Unlock()
+
+			if sentenceCh != nil {
+				sentenceBuf.WriteString(chunk)
+				for {
+					sentence, rest := nextSentence(sentenceBuf.String())
+					if sentence == "" {
+						break
+					}
+					sentenceCh <- sentence
+					sentenceBuf.Reset()
+					sentenceBuf.WriteString(rest)
+				}
+			}
+		})
+
+		close(done)
+
+		if sentenceCh != nil {
+			if err == nil {
+				if remaining := strings.TrimSpace(sentenceBuf.String()); remaining != "" {
+					sentenceCh <- remaining
+				}
+			}
+			close(sentenceCh)
+		}
+
+		if err != nil {
+			h.logf("maybeGenerateEnding: storyteller error: %v", err)
+			h.db.Exec(`DELETE FROM game_action WHERE rowid=? AND description=''`, storyRowID)
+			return
+		}
+
+		mu.Lock()
+		finalText := strings.TrimSpace(buf.String())
+		mu.Unlock()
+
+		if finalText == "" {
+			h.db.Exec(`DELETE FROM game_action WHERE rowid=?`, storyRowID)
+			return
+		}
+
+		h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, finalText, storyRowID)
+		h.logf("Storyteller: completed ending story for game %d", gameID)
+		h.triggerBroadcast()
+	}()
 }
 
 // thinkingBudget maps a thinking-mode string to a token budget for Claude.
@@ -382,7 +576,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 		// sentenceBuf accumulates tokens until a sentence boundary is detected.
 		// Tell is blocking and calls onChunk synchronously, so no mutex needed here.
 		var sentenceBuf strings.Builder
-		_, err = h.storyteller.Tell(ctx, descriptions, aliveNames, func(chunk string) {
+		_, err = h.storyteller.Tell(ctx, buildUserPrompt(descriptions, aliveNames), func(chunk string) {
 			mu.Lock()
 			buf.WriteString(chunk)
 			mu.Unlock()

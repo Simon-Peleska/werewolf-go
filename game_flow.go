@@ -161,12 +161,5 @@ func (h *Hub) endGame(game *Game, winner string) {
 	h.logDBState("after game end")
 
 	h.triggerBroadcast()
-	switch winner {
-	case "villagers":
-		h.maybeSpeakStory(game.ID, "The villagers have triumphed! All werewolves have been eliminated.")
-	case "werewolves":
-		h.maybeSpeakStory(game.ID, "The werewolves have won! They now rule the village.")
-	case "lovers":
-		h.maybeSpeakStory(game.ID, "The lovers have won. They are the last ones standing, bound together forever.")
-	}
+	h.maybeGenerateEnding(game.ID, game.Round, winner)
 }
