@@ -145,33 +145,33 @@ h1, h2, h3, h4, h5, h6 {
   --c-border:       #c4a870;   /* worn mortar */
   --c-amber:        #2c1c08;   /* dark timber — main text */
   --c-amber-bright: #4a2e10;   /* lighter timber */
-  --c-flame:        #3e6e9e;   /* clear medieval sky blue — primary accent */
+  --c-flame:        #3a7a3a;   /* forest green — primary accent */
   --c-bark:         #e4d9c0;   /* pale stone, used for secondary bg */
   --c-muted:        #7a6442;   /* worn earth */
   --c-success:      #4a7a2a;   /* meadow green */
   --c-danger:       #983018;   /* dried blood */
 
   /* ─ Component tints ─ */
-  --c-card-inner-glow:       rgba(62, 110, 158, 0.06);
-  --c-card-team-villager:    rgba(62, 110, 158, 0.18);
+  --c-card-inner-glow:       rgba(58, 122,  58, 0.06);
+  --c-card-team-villager:    rgba(58, 122,  58, 0.18);
   --c-card-team-werewolf:    rgba(150,  48,  24, 0.22);
-  --c-seal-ring:             rgba(62,  110, 158, 0.2);
+  --c-seal-ring:             rgba(58, 122,  58, 0.2);
   --c-seal-shadow:           rgba(0,   0,   0,  0.18);
-  --c-seal-ring-hover:       rgba(62,  110, 158, 0.4);
+  --c-seal-ring-hover:       rgba(58, 122,  58, 0.4);
   --c-seal-shadow-hover:     rgba(0,   0,   0,  0.26);
   --c-card-hover-shadow:     rgba(0,   0,   0,  0.1);
-  --c-card-hover-ring:       rgba(62,  110, 158, 0.28);
-  --c-card-active-ring:      rgba(62,  110, 158, 0.35);
+  --c-card-hover-ring:       rgba(58, 122,  58, 0.28);
+  --c-card-active-ring:      rgba(58, 122,  58, 0.35);
   --c-card-active-shadow:    rgba(0,   0,   0,  0.07);
   --c-count-text-shadow:     rgba(44,  28,   8, 0.25);
-  --c-vote-selected-bg:      rgba(62,  110, 158, 0.12);
-  --c-vote-selected-ring:    rgba(62,  110, 158, 0.35);
+  --c-vote-selected-bg:      rgba(58, 122,  58, 0.12);
+  --c-vote-selected-ring:    rgba(58, 122,  58, 0.35);
   --c-death-bg:              rgba(152,  48,  24, 0.07);
   --c-death-text:            #7a2a10;
   --c-winner-villagers-bg:   rgba(74,  122,  42, 0.12);
   --c-winner-werewolves-bg:  rgba(152,  48,  24, 0.1);
-  --c-winner-lovers-bg:      rgba(62,  110, 158, 0.08);
-  --c-team-villager-label:   rgba(40,   90, 150, 0.9);
+  --c-winner-lovers-bg:      rgba(58, 122,  58, 0.08);
+  --c-team-villager-label:   rgba(34,  100,  34, 0.9);
   --c-team-werewolf-label:   rgba(150,  48,  24, 0.9);
   --c-lover-border:          rgba(200,  80, 130, 0.55);
   --c-lover-ring:            rgba(200,  80, 130, 0.14);
@@ -188,11 +188,11 @@ h1, h2, h3, h4, h5, h6 {
   --pico-primary:                  var(--c-flame);
   --pico-primary-background:       var(--c-flame);
   --pico-primary-border:           var(--c-flame);
-  --pico-primary-underline:        rgba(62, 110, 158, 0.5);
+  --pico-primary-underline:        rgba(58, 122, 58, 0.5);
   --pico-primary-hover:            var(--c-amber);
-  --pico-primary-hover-background: #2e5a84;
-  --pico-primary-hover-border:     #2e5a84;
-  --pico-primary-focus:            rgba(62, 110, 158, 0.3);
+  --pico-primary-hover-background: #2a5e2a;
+  --pico-primary-hover-border:     #2a5e2a;
+  --pico-primary-focus:            rgba(58, 122, 58, 0.3);
   --pico-primary-inverse:          #f2ead6;
 
   --pico-secondary:                  var(--c-muted);
@@ -208,8 +208,8 @@ h1, h2, h3, h4, h5, h6 {
 
   --pico-h1-color: var(--c-amber);
   --pico-h2-color: var(--c-amber-bright);
-  --pico-h3-color: #345e82;
-  --pico-h4-color: #2a4e6e;
+  --pico-h3-color: #2a6030;
+  --pico-h4-color: #1e4e24;
 
   --pico-card-background-color:            var(--c-surface);
   --pico-card-border-color:                var(--c-border);
@@ -229,7 +229,7 @@ h1, h2, h3, h4, h5, h6 {
 
   --pico-table-border-color:    var(--c-border);
   --pico-code-background-color: var(--c-surface);
-  --pico-code-color:            #345e82;
+  --pico-code-color:            #2a6030;
   --pico-mark-background-color: var(--c-bark);
   --pico-mark-color:            var(--c-amber);
   --pico-accordion-border-color: var(--c-border);
