@@ -68,7 +68,7 @@ in
     environmentFile = "/etc/werewolf/secrets";
 
     storytellerProvider = "openai"; # Groq is openai-compatible
-    storytellerModel    = "gpt-oss-20b";
+    storytellerModel    = "openai/gpt-oss-20b";
     storytellerUrl      = "https://api.groq.com/openai/v1";
 
     narratorProvider = "elevenlabs";
@@ -111,13 +111,13 @@ in
   # Pulls the latest commit from this flake's GitHub repo and switches to it.
   # The werewolf version is pinned via flake.lock — run `nix flake update werewolf`
   # in this repo and push to deploy a new game version.
-  system.autoUpgrade = {
-    enable = true;
-    flake = "github:simon-peleska/server";
-    dates = "04:00"; # daily at 4 AM
-    randomizedDelaySec = "1h"; # spread load if you run multiple servers
-    allowReboot = true; # reboot automatically after kernel upgrades
-  };
+  # system.autoUpgrade = {
+  #   enable = true;
+  #   flake = "github:simon-peleska/server";
+  #   dates = "04:00"; # daily at 4 AM
+  #   randomizedDelaySec = "1h"; # spread load if you run multiple servers
+  #   allowReboot = true; # reboot automatically after kernel upgrades
+  # };
 
   # ── Machine basics ─────────────────────────────────────────────────────────
   networking.hostName = "server-1";
@@ -140,6 +140,8 @@ in
       { Gateway = "fe80::1"; }
     ];
   };
+
+  environment.systemPackages = [ pkgs.neovim ];
 
   time.timeZone = "UTC";
 

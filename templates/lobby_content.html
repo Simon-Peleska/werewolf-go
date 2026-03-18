@@ -41,9 +41,9 @@
 
     <hr>
 
-    <section>
+    <section id="game-action-section">
         <form ws-send>
-            <input type="hidden" name="action" value="start_game">
+            <input type="hidden" id="action-start-game" name="action" value="start_game">
             <button type="submit" id="btn-start" {{if not .CanStart}}disabled{{end}}>
                 Start Game
             </button>

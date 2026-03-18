@@ -92,6 +92,13 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    # Create /etc/werewolf/ and an empty secrets file if they don't exist.
+    # `f` = create file only if absent (never overwrites).
+    systemd.tmpfiles.rules = [
+      "d /etc/werewolf 0750 root werewolf - -"
+      "f /etc/werewolf/secrets 0640 root werewolf - -"
+    ];
+
     # Dedicated unprivileged user.
     users.users.werewolf = {
       isSystemUser = true;
@@ -119,6 +126,8 @@ in {
       // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
       // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice
       // optionalEnv "NARRATOR_URL"            cfg.narratorUrl;
+
+      restartIfChanged = true;
 
       serviceConfig = {
         User  = "werewolf";
