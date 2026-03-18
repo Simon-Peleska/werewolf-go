@@ -56,22 +56,23 @@ in
   boot.loader.grub.enable = true; # device is set automatically by disko
 
   # ── Werewolf service ───────────────────────────────────────────────────────
-  # Secrets and config live in /etc/werewolf/config.json on the server.
-  # Create it manually — it is never committed or part of the Nix store.
-  # Example:
-  #   {
-  #     "storyteller_provider": "openai",
-  #     "storyteller_model": "gpt-4o-mini",
-  #     "storyteller_api_key": "sk-...",
-  #     "narrator_api_key": "sk-..."
-  #   }
-  # Permissions:
-  #   chown root:werewolf /etc/werewolf/config.json && chmod 640 /etc/werewolf/config.json
+  # API keys go in /etc/werewolf/secrets on the server (never committed).
+  # Create it manually:
+  #   echo "STORYTELLER_API_KEY=sk-..." > /etc/werewolf/secrets
+  #   echo "NARRATOR_API_KEY=sk-..."   >> /etc/werewolf/secrets
+  #   chown root:werewolf /etc/werewolf/secrets && chmod 640 /etc/werewolf/secrets
   services.werewolf = {
-    enable = true;
+    enable  = true;
     package = inputs.werewolf.packages.x86_64-linux.default;
-    listenAddr = "127.0.0.1:8080";
-    # configFile defaults to /etc/werewolf/config.json — no need to set it here.
+
+    environmentFile = "/etc/werewolf/secrets";
+
+    storytellerProvider = "openai"; # Groq is openai-compatible
+    storytellerModel    = "gpt-oss-20b";
+    storytellerUrl      = "https://api.groq.com/openai/v1";
+
+    narratorProvider = "elevenlabs";
+    narratorVoice    = "hILdTfuUq4LRBMrxHERr";
   };
 
   # ── nginx + HTTPS ──────────────────────────────────────────────────────────

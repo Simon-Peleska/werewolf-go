@@ -1,19 +1,21 @@
 # NixOS module for the werewolf game server.
 # Exposed as werewolf-go.nixosModules.werewolf in flake.nix.
-# The server flake imports this and sets services.werewolf.* options.
 #
-# Secrets (API keys etc.) go in /etc/werewolf/config.json on the server.
-# Create it manually — it is never part of the Nix store.
-# Example /etc/werewolf/config.json:
-#   {
-#     "storyteller_provider": "openai",
-#     "storyteller_api_key": "sk-...",
-#     "narrator_api_key": "sk-..."
-#   }
+# Non-secret settings are declared as module options and passed as environment
+# variables. Secrets (API keys) go in an environmentFile — a plain text file
+# with KEY=value lines, never part of the Nix store.
+#
+# Minimal /etc/werewolf/secrets on the server:
+#   STORYTELLER_API_KEY=sk-...
+#   NARRATOR_API_KEY=sk-...
 { config, lib, pkgs, ... }:
 
 let
   cfg = config.services.werewolf;
+
+  # Build the environment attrset from non-null options.
+  optionalEnv = name: val:
+    lib.optionalAttrs (val != null) { ${name} = val; };
 in {
   options.services.werewolf = {
     enable = lib.mkEnableOption "Werewolf game server";
@@ -24,18 +26,68 @@ in {
     };
 
     listenAddr = lib.mkOption {
-      type = lib.types.str;
+      type    = lib.types.str;
       default = "127.0.0.1:8080";
       description = "Internal address the game server binds to (nginx proxies to this).";
     };
 
-    configFile = lib.mkOption {
-      type = lib.types.str;
-      default = "/etc/werewolf/config.json";
+    environmentFile = lib.mkOption {
+      type    = lib.types.nullOr lib.types.path;
+      default = null;
       description = ''
-        Path to the JSON config file containing settings and secrets.
-        Create this file manually on the server; it is never part of the Nix store.
+        Path to a file containing secret environment variables (KEY=value lines).
+        Create this file manually on the server — it is never part of the Nix store.
+        Typically contains STORYTELLER_API_KEY and NARRATOR_API_KEY.
       '';
+    };
+
+    # ── Storyteller ───────────────────────────────────────────────────────────
+    storytellerProvider = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Storyteller provider: openai or claude.";
+    };
+    storytellerModel = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Storyteller model name.";
+    };
+    storytellerUrl = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Storyteller base URL override (default: provider's public API).";
+    };
+    storytellerTemperature = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Sampling temperature (0-1).";
+    };
+    storytellerThinking = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Thinking mode: none|low|medium|high|auto (claude only).";
+    };
+
+    # ── Narrator (TTS) ────────────────────────────────────────────────────────
+    narratorProvider = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Narrator provider: openai|openai-compatible|elevenlabs.";
+    };
+    narratorModel = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "TTS model name.";
+    };
+    narratorVoice = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Voice name or ElevenLabs voice ID.";
+    };
+    narratorUrl = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Base URL for openai-compatible TTS.";
     };
   };
 
@@ -57,15 +109,26 @@ in {
         ADDR = cfg.listenAddr;
         # WAL mode is important for SQLite under concurrent WebSocket load.
         DB = "file:/var/lib/werewolf/werewolf.db?cache=shared&_journal_mode=WAL";
-      };
+      }
+      // optionalEnv "STORYTELLER_PROVIDER"    cfg.storytellerProvider
+      // optionalEnv "STORYTELLER_MODEL"       cfg.storytellerModel
+      // optionalEnv "STORYTELLER_URL"         cfg.storytellerUrl
+      // optionalEnv "STORYTELLER_TEMPERATURE" cfg.storytellerTemperature
+      // optionalEnv "STORYTELLER_THINKING"    cfg.storytellerThinking
+      // optionalEnv "NARRATOR_PROVIDER"       cfg.narratorProvider
+      // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
+      // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice
+      // optionalEnv "NARRATOR_URL"            cfg.narratorUrl;
 
       serviceConfig = {
         User  = "werewolf";
         Group = "werewolf";
 
-        ExecStart  = "${cfg.package}/bin/werewolf -config ${cfg.configFile}";
+        ExecStart  = "${cfg.package}/bin/werewolf";
         Restart    = "on-failure";
         RestartSec = "5s";
+
+        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
 
         # systemd creates and owns /var/lib/werewolf, no manual mkdir needed.
         StateDirectory     = "werewolf";
@@ -78,10 +141,7 @@ in {
         ProtectSystem   = "strict";
         ProtectHome     = true;
         ReadWritePaths  = [ "/var/lib/werewolf" ];
-        # Allow reading the config file from /etc/werewolf.
-        ReadOnlyPaths  = [ "/etc/werewolf" ];
       };
     };
-
   };
 }
