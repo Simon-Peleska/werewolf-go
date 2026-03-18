@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" id="html-root">
+<html lang="en" data-theme="{{.Theme}}" id="html-root">
 
 <head>
   <meta charset="UTF-8">
@@ -195,6 +195,12 @@
       grid-area: container;
       margin-bottom: 0;
     }
+    /* OOB-swap elements rendered inline on page load before WS connects —
+       hide them so they don't appear as stray content above the game area. */
+    .container > #topbar-phase,
+    .container > #page-theme {
+      display: none;
+    }
 
     /* Top bar (mobile only) */
     .topbar {
@@ -356,6 +362,14 @@
       if (t) document.documentElement.dataset.theme = t;
     }).observe(document.getElementById('page-theme'), { attributes: true, attributeFilter: ['data-theme'] });
 
+    // On initial page load the OOB #page-theme from the game component renders
+    // inline inside .container before WS connects — read it immediately so the
+    // correct theme is applied without waiting for the first WS message.
+    (function () {
+      const oob = document.querySelector('.container [id="page-theme"]');
+      if (oob) document.documentElement.dataset.theme = oob.dataset.theme;
+    })();
+
     // Game-content transition animation.
     //
     // #game-content carries a data-phase attribute set by the server
@@ -464,6 +478,19 @@
     var _audioCtx = null;
     var _nextPlayTime = 0;
     var _narratorSampleRate = 24000; // matches server narrator_sample_rate (default 24000)
+    var _muted = localStorage.getItem('narrator-muted') === 'true';
+
+    function _syncMuteBtn() {
+      var btn = document.getElementById('mute-btn');
+      if (btn) btn.textContent = _muted ? '🔇 Narrator' : '🔊 Narrator';
+    }
+    function toggleMute() {
+      _muted = !_muted;
+      localStorage.setItem('narrator-muted', _muted);
+      _syncMuteBtn();
+    }
+    document.addEventListener('htmx:afterSettle', _syncMuteBtn);
+    document.addEventListener('DOMContentLoaded', _syncMuteBtn);
 
     function ensureAudioCtx() {
       if (!_audioCtx) {
@@ -476,6 +503,7 @@
     }
 
     function playPCMChunk(arrayBuffer) {
+      if (_muted) return;
       var ctx = ensureAudioCtx();
       var pcm16 = new Int16Array(arrayBuffer);
       var float32 = new Float32Array(pcm16.length);

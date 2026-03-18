@@ -1,6 +1,6 @@
 ## Project Overview
 
-A werewolf (social deduction) game implemented in Go.
+A werewolf game implemented in Go.
 
 # Game mechanics
 
@@ -624,6 +624,11 @@ You are a senior developer with many years of hard-won experience. You think lik
 ### Front End
 - Prefer server-rendered HTML with minimal JavaScript. Don't split into a SPA + API unless the application genuinely demands it.
 - Every JavaScript framework you add is a pact with the complexity demon. Choose carefully.
+
+### CSS
+- Always use `rem` for font sizes, never `em`. `em` is relative to the parent element and causes unpredictable scaling when nested; `rem` is always relative to the root.
+- Never use a font size below `1rem` — anything smaller is unreadable on mobile.
+- Do not use `<small>` tags; they render at 0.875em which violates the above rule.
 
 ### Microservices
 - Factoring a system correctly is the hardest problem in software. Adding network boundaries makes it harder, not easier. Start with a monolith. Extract services only when you have a clear, proven reason.

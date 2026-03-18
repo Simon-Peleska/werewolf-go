@@ -354,10 +354,9 @@ button,
 /* ── Sidebar phase label (desktop) ─────────────────────────────────────── */
 .sidebar-phase-label {
   font-family: "Metal Mania", var(--pico-font-family-emoji);
-  font-size: 1.6em;
+  font-size: 1.6rem;
   color: var(--c-amber-bright);
   text-align: left;
-  letter-spacing: 0.02em;
   margin-bottom: calc(var(--pico-spacing) * 0.5);
 }
 .sidebar-phase-day { color: var(--c-flame); }
@@ -365,7 +364,7 @@ button,
 /* ── Topbar phase label (mobile) ────────────────────────────────────────── */
 .topbar-phase-label {
   font-family: "Metal Mania", var(--pico-font-family-emoji);
-  font-size: 1.2em;
+  font-size: 1.2rem;
   color: var(--c-amber-bright);
   white-space: nowrap;
 }
@@ -432,23 +431,42 @@ button,
 }
 
 /* Sleeping state: big centered Night seal */
+/* Propagate full height down to .night-sleeping so it can center vertically */
+.container:has(.night-sleeping),
+.container:has(.night-sleeping) #game-content,
+.container:has(.night-sleeping) #game-content > section {
+  height: 100%;
+}
+
 .night-sleeping {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
   padding: calc(var(--pico-spacing) * 2) var(--pico-spacing);
-  gap: calc(var(--pico-spacing) * 0.75);
+  gap: calc(var(--pico-spacing) * 2);
   text-align: center;
 }
 .night-sleeping p { margin: 0; color: var(--c-muted); }
 
 @keyframes night-pulse {
-  0%, 100% { opacity: 0.75; transform: scale(1); }
-  50%       { opacity: 1;    transform: scale(1.04); }
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.08); }
 }
-.night-seal-pulse {
-  animation: night-pulse 5s ease-in-out infinite;
+/* #game-content * sets gc-enter on everything — override it with higher specificity */
+#game-content .night-seal-pulse {
+  width: min(72vw, 420px);
+  height: min(72vw, 420px);
+  border-radius: 0.75rem;
+  animation: night-pulse 4s ease-in-out infinite;
+}
+@media (min-width: 1024px) {
+  #game-content .night-seal-pulse {
+    width: 500px;
+    height: 500px;
+  }
 }
 
 /* Mobile: phase layout stacks, card collapses via JS on load */
@@ -457,6 +475,16 @@ button,
     grid-template-columns: 1fr;
     gap: calc(var(--pico-spacing) * 0.75);
   }
+}
+
+/* ── Mute button ───────────────────────────────────────────────────────── */
+/* Pico overrides --pico-color on .secondary buttons to --pico-secondary-inverse (#fff).
+   Re-override it here so text is always readable in both themes. */
+#mute-btn,
+#mute-btn:hover,
+#mute-btn:focus {
+  --pico-color: var(--c-amber);
+  --pico-secondary-inverse: var(--c-amber);
 }
 
 /* ── Status bar (lobby) ────────────────────────────────────────────────── */
@@ -470,7 +498,6 @@ button,
   border-radius: 0.5rem;
   border: 1px solid var(--c-border);
   margin-bottom: 1rem;
-  font-size: 0.9em;
 }
 .status-bar .status-msg {
   margin-left: auto;
@@ -493,7 +520,6 @@ button,
   background: var(--c-surface);
   margin-bottom: 0.2rem;
   border-radius: 0.3rem;
-  font-size: 0.9em;
 }
 .dead-player {
   opacity: 0.5;
@@ -549,7 +575,6 @@ button,
   border-radius: 0.4rem;
   color: var(--c-muted);
   font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
-  font-size: 0.9em;
   cursor: pointer;
   transition: border-color 0.1s ease, color 0.1s ease, background-color 0.4s ease, box-shadow 0.4s ease;
   margin: 0;
@@ -567,7 +592,6 @@ button,
   background: var(--c-surface);
   margin-bottom: 0.2rem;
   border-radius: 0.3rem;
-  font-size: 0.9em;
 }
 
 /* ── Death announcement ────────────────────────────────────────────────── */

@@ -7,7 +7,10 @@
         {{if and .ShowSurvey .HasSubmittedSurvey}}
 
         <!-- Submitted survey — waiting message -->
-        <p id="survey-waiting"><em>Waiting for {{subtract .AliveCount .SurveyCount}} more player(s)...</em></p>
+        <div class="night-sleeping">
+            <img class="night-seal-pulse" src="/static/seals/Night.webp" alt="Night">
+            <p><em>Waiting for {{subtract .AliveCount .SurveyCount}} more player(s)...</em></p>
+        </div>
 
         {{else}}
 
@@ -23,7 +26,7 @@
                 {{if .WolfEndVoted}}
                 <p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
                 {{else}}
-                <p><small>Select a player to kill, or pass. When all werewolves have acted, end the vote.</small></p>
+                <p>Select a player to kill, or pass. When all werewolves have acted, end the vote.</p>
                 <card-list>
                 {{range .AliveTargets}}
                 {{$wvCount := index $.WerewolfVoteCounts .PlayerID}}
@@ -76,7 +79,7 @@
                     {{if .WolfEndVoted2}}
                     <p id="wolf-end-voted2-msg"><em>Second vote locked in. Waiting for night to end...</em></p>
                     {{else}}
-                    <p><small>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</small></p>
+                    <p>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</p>
                     <card-list>
                     {{range .AliveTargets}}
                     <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -129,7 +132,7 @@
                     ></player-card>
                 </card-list>
                 {{else}}
-                <p><small>Choose a player to investigate, then confirm your choice.</small></p>
+                <p>Choose a player to investigate, then confirm your choice.</p>
                 <card-list>
                 {{range .AliveTargets}}
                 <form ws-send id="seer-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -176,7 +179,7 @@
                 </card-list>
         
                 {{else}}
-                <p><small>Choose a player to protect, then confirm.</small></p>
+                <p>Choose a player to protect, then confirm.</p>
                 <card-list>
                 {{range .AliveTargets}}
                 <form ws-send id="doctor-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -209,7 +212,7 @@
                 {{if .GuardHasProtected}}
                 <p id="guard-result"><em>You are protecting <strong>{{if .GuardProtectingPlayer}}{{.GuardProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
                 {{else}}
-                <p><small>Choose a player to protect, then confirm. You cannot protect yourself or the same player twice in a row.</small></p>
+                <p>Choose a player to protect, then confirm. You cannot protect yourself or the same player twice in a row.</p>
                 <card-list>
                 {{range .GuardTargets}}
                 <form ws-send id="guard-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -249,7 +252,7 @@
                 {{if not .HealPotionUsed}}
                 <h4>🧪 Heal Potion</h4>
                 {{if .WitchVictimPlayer}}
-                <p><small>The werewolves are targeting (click to save, click again to deselect):</small></p>
+                <p>The werewolves are targeting (click to save, click again to deselect):</p>
                 <card-list id="witch-heal-targets">
                 <form ws-send id="witch-select-heal-form-{{.WitchVictimPlayer.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
                     <input type="hidden" name="action" value="witch_select_heal">
@@ -299,7 +302,7 @@
                 <div id="witch-poison-section">
                 {{if not .PoisonPotionUsed}}
                 <h4>☠️ Poison Potion</h4>
-                <p><small>Choose a player to poison (click to select, click again to deselect):</small></p>
+                <p>Choose a player to poison (click to select, click again to deselect):</p>
                 <card-list id="witch-poison-targets">
                 {{range .AliveTargets}}
                 <form ws-send id="witch-select-poison-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -335,7 +338,7 @@
                 {{else if eq .Player.RoleName "Mason"}}
                 <h3>Mason: Your Fellow Masons</h3>
                 {{if .Masons}}
-                <p><small>You know these confirmed villagers:</small></p>
+                <p>You know these confirmed villagers:</p>
                 <card-list id="mason-card-list">
                     {{range .Masons}}
                     <player-card
@@ -386,11 +389,11 @@
                     ></player-card>
                 </card-list>                {{else}}
                 {{if and .CupidChosen1Player .CupidChosen2Player}}
-                <p><small>Chosen: <strong>{{.CupidChosen1Player.Name}}</strong> and <strong>{{.CupidChosen2Player.Name}}</strong>. Click a card to deselect.</small></p>
+                <p>Chosen: <strong>{{.CupidChosen1Player.Name}}</strong> and <strong>{{.CupidChosen2Player.Name}}</strong>. Click a card to deselect.</p>
                 {{else if or .CupidChosen1Player .CupidChosen2Player}}
-                <p><small>One chosen. Select the second lover.</small></p>
+                <p>One chosen. Select the second lover.</p>
                 {{else}}
-                <p><small>Choose two players to become lovers. They will know each other's identities.</small></p>
+                <p>Choose two players to become lovers. They will know each other's identities.</p>
                 {{end}}
                 <card-list>
                 {{range .AliveTargets}}
@@ -421,8 +424,11 @@
 
                 {{else}}
                 <!-- Sleeping villager (no special role) -->
-                <p>The village sleeps...</p>
-                <p><em>Close your eyes and wait for morning.</em></p>
+                <div class="night-sleeping">
+                    <img class="night-seal-pulse" src="/static/seals/Night.webp" alt="Night">
+                    <p>The village sleeps...</p>
+                    <p><em>Close your eyes and wait for morning.</em></p>
+                </div>
                 {{end}}
 
         </div>
@@ -430,7 +436,7 @@
         {{if .ShowSurvey}}
         <hr>
         <section id="night-survey-section" class="night-survey">
-            <h3>Your Thoughts</h3>
+            <h3>The storyteller is asking you</h3>
             <label>Who do you think is a Werewolf?</label>
             <card-list id="survey-suspects">
             {{range .SurveyTargets}}

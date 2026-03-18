@@ -66,6 +66,26 @@ type GameData struct {
 	GameComponent template.HTML
 	SidebarHTML   template.HTML
 	HistoryHTML   template.HTML
+	Theme         string
+}
+
+// gameTheme returns the correct CSS data-theme for the initial page render.
+// Day phase and villagers-win finished state use "light"; everything else is "dark".
+func gameTheme(db *sqlx.DB, game *Game) string {
+	if game.Status == "day" {
+		return "light"
+	}
+	if game.Status == "finished" {
+		var werewolfCount int
+		db.Get(&werewolfCount, `
+			SELECT COUNT(*) FROM game_player g
+			JOIN role r ON g.role_id = r.rowid
+			WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+		if werewolfCount == 0 {
+			return "light"
+		}
+	}
+	return "dark"
 }
 
 func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +204,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		GameComponent: template.HTML(buf.String()),
 		SidebarHTML:   template.HTML(sidebarBuf.String()),
 		HistoryHTML:   template.HTML(historyBuf.String()),
+		Theme:         gameTheme(app.db, game),
 	}
 
 	app.templates.ExecuteTemplate(w, "game.html", data)

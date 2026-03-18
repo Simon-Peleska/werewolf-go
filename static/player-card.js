@@ -169,7 +169,7 @@
     .pc-count-wrap.pc-zero { opacity: 0.3; }
     .pc-count {
       font-family: "Metal Mania", var(--pico-font-family-emoji);
-      font-size: 1.6em; color: var(--c-amber-bright);
+      font-size: 1.6rem; color: var(--c-amber-bright);
       line-height: 1; text-shadow: 0 0 10px var(--c-count-text-shadow);
       pointer-events: none; z-index: 1; text-align: center; align-content: center;
     }
@@ -192,22 +192,22 @@
     .pc-btn-wrap:has(button:disabled) { opacity: 0.3; pointer-events: none; }
     .pc-btn, .pc-count {
       flex: 1; padding: 0; margin: 0; border: none;
-      background: transparent; color: var(--c-amber); font-size: 1.2em;
+      background: transparent; color: var(--c-amber); font-size: 1.2rem;
       cursor: pointer; border-radius: 50%;
     }
 
     /* ── Text ────────────────────────────────────────────────────────────── */
     .pc-name {
       font-family: "Metal Mania", var(--pico-font-family-emoji);
-      font-size: 1em; color: var(--c-amber-bright);
+      font-size: 1rem; color: var(--c-amber-bright);
       text-align: center; margin: calc(var(--pico-spacing) * 0.3) 0 0; line-height: 1.2;
       width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* Role name hidden in expanded mode (it's visible in the seal image) */
     .pc-exp .pc-role { display: none; }
-    .pc-role { font-size: 0.8em; color: var(--c-amber); text-align: center; margin: 0.1em 0 0; }
+    .pc-role { font-size: 1rem; color: var(--c-amber); text-align: center; margin: 0.1em 0 0; }
     .pc-desc {
-      font-size: 0.72em; color: var(--c-muted); text-align: center;
+      font-size: 1rem; color: var(--c-muted); text-align: center;
       line-height: 1.35;
       margin: calc(var(--pico-spacing) * 0.3) 0 calc(var(--pico-spacing) * 0.4);
       flex: 1;
@@ -220,8 +220,9 @@
       padding-top: calc(var(--pico-spacing) * 0.4); margin-top: auto;
     }
     .pc-team, .pc-alive, .pc-dead {
-      font-size: 0.65em; text-transform: uppercase;
-      letter-spacing: 0.06em; font-style: italic; color: var(--c-muted);
+      font-size: 1rem;
+      text-transform: uppercase;
+      color: var(--c-muted);
     }
     :host([team=villager]) .pc-team { color: var(--c-team-villager-label); }
     :host([team=werewolf]) .pc-team { color: var(--c-team-werewolf-label); }
@@ -233,7 +234,7 @@
     .pc-uncollapse {
       background: var(--c-surface-2); border: 1px solid var(--c-border); color: var(--c-muted);
       cursor: pointer; display: flex; align-items: center; justify-content: center;
-      padding: 0; margin: 0; font-size: 0.85em; line-height: 1; z-index: 2;
+      padding: 0; margin: 0; font-size: 1rem; line-height: 1; z-index: 2;
       transition: background 0.15s, border-color 0.15s, color 0.15s;
       width: 26px; height: 26px; border-radius: 50%;
     }
@@ -258,14 +259,14 @@
       display: flex; align-items: center; justify-content: center;
       background: rgba(0,0,0,0.45);
       opacity: 0; transition: opacity 0.2s;
-      cursor: pointer; font-size: 1.8em; z-index: 3;
+      cursor: pointer; font-size: 1.8rem; z-index: 3;
       pointer-events: none;
     }
     :host([own-card]) .pc-seal-wrap:hover .pc-upload-overlay {
       opacity: 1;
       pointer-events: auto;
     }
-    .pc-col .pc-upload-overlay { font-size: 1.1em; }
+    .pc-col .pc-upload-overlay { font-size: 1.1rem; }
 
     /* ── Lover styling ───────────────────────────────────────────────────── */
     :host([lover]) .pc-card {
@@ -275,7 +276,7 @@
     .pc-heart-wrap { right: 0; }
     .pc-heart {
       flex: 1; text-align: center; align-content: center;
-      font-size: 1.1em; pointer-events: none; color: var(--c-lover-heart);
+      font-size: 1.1rem; pointer-events: none; color: var(--c-lover-heart);
     }
     :host([lover]) .pc-heart-wrap {
       background: var(--c-lover-badge-bg);
@@ -294,11 +295,11 @@
     .pc-col .pc-count-wrap {
       position: static; --bsz: 28px; flex-shrink: 0;
     }
-    .pc-col .pc-count { font-size: 1.1em; text-shadow: none; }
+    .pc-col .pc-count { font-size: 1.1rem; text-shadow: none; }
 
     .pc-col .pc-info {
       flex: 1; min-width: 0;
-      font-size: 0.82em;
+      font-size: 1rem;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       margin: 0;
     }

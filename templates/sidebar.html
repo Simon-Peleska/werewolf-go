@@ -17,9 +17,10 @@
   {{end}}
 
   <section>
-    <p><strong>{{.Player.Name}}</strong> <small>(Code: <code
-          id="secret-code-display">{{.Player.SecretCode}}</code>)</small></p>
+    <p><strong>{{.Player.Name}}</strong> (Code: <code
+          id="secret-code-display">{{.Player.SecretCode}}</code>)</p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
+    <button id="mute-btn" class="secondary" onclick="toggleMute()" style="width:100%;margin-top:0.5rem">🔊 Narrator</button>
   </section>
 
   <hr>
