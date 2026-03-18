@@ -128,7 +128,7 @@ in {
         Restart    = "on-failure";
         RestartSec = "5s";
 
-        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
+        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) "-${cfg.environmentFile}";
 
         # systemd creates and owns /var/lib/werewolf, no manual mkdir needed.
         StateDirectory     = "werewolf";
