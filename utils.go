@@ -651,6 +651,8 @@ func newTestContext(t *testing.T) *TestContext {
 		hub := app.getOrCreateHub(gameName)
 		handleWebSocket(hub, w, r)
 	})
+	wrapHandler("/player/upload-image", app.handleUploadPlayerImage)
+	mux.HandleFunc("/player-image/{playerID}", app.handlePlayerImage)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 
 	server := &http.Server{
@@ -758,6 +760,54 @@ type TestPlayer struct {
 // p returns the page with timeout applied for element operations
 func (tp *TestPlayer) p() *rod.Page {
 	return tp.Page.Timeout(browserTimeout)
+}
+
+// uploadProfileViaUI triggers a profile image upload by setting files on the
+// card's hidden file input via go-rod. The browser's change event fires the
+// fetch POST to the server end-to-end.
+func (tp *TestPlayer) uploadProfileViaUI(pngBytes []byte) {
+	tp.t.Helper()
+
+	tmpFile, err := os.CreateTemp("", "test-profile-*.png")
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: creating temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write(pngBytes); err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: writing temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	// Get the file input rendered inside the own-card's shadow DOM.
+	card, err := tp.p().Element("#sidebar-role-card")
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: finding card element: %v", err)
+	}
+	shadowRoot, err := card.ShadowRoot()
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: getting shadow root: %v", err)
+	}
+	fileInput, err := shadowRoot.Element("#pc-file-input")
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: finding file input in shadow DOM: %v", err)
+	}
+
+	// SetFiles sets the file list on the input via CDP.
+	err = fileInput.SetFiles([]string{tmpFile.Name()})
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: setting files: %v", err)
+	}
+
+	// CDP's setFileInputFiles does not reliably fire 'change' on display:none
+	// inputs in shadow DOM. Dispatch it manually.
+	_, err = tp.p().Eval(`() => {
+		const card = document.querySelector('#sidebar-role-card');
+		const input = card && card.shadowRoot && card.shadowRoot.querySelector('#pc-file-input');
+		if (input) input.dispatchEvent(new Event('change', {bubbles: true}));
+	}`)
+	if err != nil {
+		tp.t.Fatalf("uploadProfileViaUI: dispatching change event: %v", err)
+	}
 }
 
 // logHTML logs the current HTML state if logging is enabled
@@ -1073,7 +1123,7 @@ func (tp *TestPlayer) waitUntilCondition(checkJS string, description string) err
 
 			let timeoutId = setTimeout(() => {
 				document.removeEventListener('htmx:wsAfterMessage', handler);
-				reject(new Error('Timeout waiting for condition: ` + description + `'));
+				reject(new Error("Timeout waiting for condition: ` + description + `"));
 			}, timeoutMs);
 
 			const handler = (event) => {

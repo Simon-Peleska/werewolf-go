@@ -10,12 +10,14 @@
                     {{range .NightVictims}}
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="{{if .IsAlive}}true{{else}}false{{end}}"
                         {{if not (eq .Lover 0)}}lover{{end}}
+                        show-role-seal
                         collapsed
                     ></player-card>
                     {{end}}
@@ -47,11 +49,13 @@
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
                             data-player-id="{{.ID}}"
+                            player-id="{{.PlayerID}}"
                             player-name="{{.Name}}"
                             role-name="{{.RoleName}}"
                             role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
                             alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                            profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                             {{if eq $.Player.ID .Lover}}lover{{end}}
                             selectable
                             {{if and $.HunterSelectedPlayer (eq $.HunterSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
@@ -84,11 +88,13 @@
             <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
             <player-card
                 data-player-id="{{.ID}}"
+                player-id="{{.PlayerID}}"
                 player-name="{{.Name}}"
                 role-name="{{.RoleName}}"
                 role-desc="{{.RoleDescription}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                 {{if eq $.Player.ID .Lover}}lover{{end}}
                 selectable
                 count="{{index $.DayVoteCounts .PlayerID}}"

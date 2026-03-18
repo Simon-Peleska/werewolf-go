@@ -22,11 +22,13 @@
             {{range .Winners}}
             <player-card
                 data-player-id="{{.ID}}"
+                player-id="{{.PlayerID}}"
                 role-name="{{.RoleName}}"
                 role-desc="{{.RoleDescription}}"
                 player-name="{{.Name}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
                 winner></player-card>
             {{end}}
@@ -42,11 +44,13 @@
             {{range .Losers}}
             <player-card
                 data-player-id="{{.ID}}"
+                player-id="{{.PlayerID}}"
                 player-name="{{.Name}}"
                 role-name="{{.RoleName}}"
                 role-desc="{{.RoleDescription}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
                 loser
                 ></player-card>

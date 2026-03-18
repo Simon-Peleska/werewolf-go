@@ -32,11 +32,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         count="{{$wvCount}}"
                         {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
@@ -82,11 +84,13 @@
                         <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                         <player-card
                             data-player-id="{{.ID}}"
+                            player-id="{{.PlayerID}}"
                             player-name="{{.Name}}"
                             role-name="{{.RoleName}}"
                             role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
                             alive="true"
+                            profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                             selectable
                             {{if and $.CurrentVotePlayer2 (eq $.CurrentVotePlayer2.PlayerID .PlayerID)}}selected{{end}}
                             {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -114,11 +118,13 @@
                     <player-card
                         id="seer-result"
                         data-player-id="{{.SeerSelectedPlayer.ID}}"
+                        player-id="{{.SeerSelectedPlayer.PlayerID}}"
                         player-name="{{.SeerSelectedPlayer.Name}}"
                         role-name="{{.SeerSelectedPlayer.RoleName}}"
                         role-desc="{{.SeerSelectedPlayer.RoleDescription}}"
                         team="{{.SeerSelectedPlayer.Team}}"
                         alive="true"
+                        show-role-seal
                         {{if and (ne .SeerSelectedPlayer.Lover 0) (eq .Player.PlayerID .SeerSelectedPlayer.Lover)}}lover{{end}}
                     ></player-card>
                 </card-list>
@@ -131,11 +137,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         {{if and $.SeerSelectedPlayer (eq $.SeerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -156,11 +164,13 @@
                 <card-list>
                  <player-card
                     data-player-id="{{.DoctorProtectingPlayer.ID}}"
+                    player-id="{{.DoctorProtectingPlayer.PlayerID}}"
                     player-name="{{.DoctorProtectingPlayer.Name}}"
                     role-name="{{.DoctorProtectingPlayer.RoleName}}"
                     role-desc="{{.DoctorProtectingPlayer.RoleDescription}}"
                     team="{{.DoctorProtectingPlayer.Team}}"
                     alive="{{if .DoctorProtectingPlayer.IsAlive}}true{{else}}false{{end}}"
+                    profile-image="{{if .DoctorProtectingPlayer.ProfileImageID}}/player-image/{{.DoctorProtectingPlayer.PlayerID}}{{end}}"
                     {{if and (ne .DoctorProtectingPlayer.Lover 0) (eq .Player.PlayerID .DoctorProtectingPlayer.Lover)}}lover{{end}}>
                 </player-card>
                 </card-list>
@@ -174,11 +184,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         {{if and $.DoctorSelectedPlayer (eq $.DoctorSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -205,11 +217,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         {{if and $.GuardSelectedPlayer (eq $.GuardSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -242,11 +256,13 @@
                     <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer.PlayerID}}">
                     <player-card
                         data-player-id="{{.WitchVictimPlayer.ID}}"
+                        player-id="{{.WitchVictimPlayer.PlayerID}}"
                         player-name="{{.WitchVictimPlayer.Name}}"
                         role-name="{{.WitchVictimPlayer.RoleName}}"
                         role-desc="{{.WitchVictimPlayer.RoleDescription}}"
                         team="{{.WitchVictimPlayer.Team}}"
                         alive="true"
+                        profile-image="{{if .WitchVictimPlayer.ProfileImageID}}/player-image/{{.WitchVictimPlayer.PlayerID}}{{end}}"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer.PlayerID)}}selected{{end}}
                         {{if and (ne .WitchVictimPlayer.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer.Lover)}}lover{{end}}
@@ -258,11 +274,13 @@
                     <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer2.PlayerID}}">
                     <player-card
                         data-player-id="{{.WitchVictimPlayer2.ID}}"
+                        player-id="{{.WitchVictimPlayer2.PlayerID}}"
                         player-name="{{.WitchVictimPlayer2.Name}}"
                         role-name="{{.WitchVictimPlayer2.RoleName}}"
                         role-desc="{{.WitchVictimPlayer2.RoleDescription}}"
                         team="{{.WitchVictimPlayer2.Team}}"
                         alive="true"
+                        profile-image="{{if .WitchVictimPlayer2.ProfileImageID}}/player-image/{{.WitchVictimPlayer2.PlayerID}}{{end}}"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer2.PlayerID)}}selected{{end}}
                         {{if and (ne .WitchVictimPlayer2.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer2.Lover)}}lover{{end}}
@@ -289,11 +307,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         {{if and $.WitchSelectedPoisonPlayer (eq $.WitchSelectedPoisonPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -320,11 +340,13 @@
                     {{range .Masons}}
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                     {{end}}
@@ -340,21 +362,25 @@
                 <card-list>
                     <player-card
                         data-player-id="{{.CupidChosen1Player.ID}}"
+                        player-id="{{.CupidChosen1Player.PlayerID}}"
                         player-name="{{.CupidChosen1Player.Name}}"
                         role-name="{{.CupidChosen1Player.RoleName}}"
                         role-desc="{{.CupidChosen1Player.RoleDescription}}"
                         team="{{.CupidChosen1Player.Team}}"
                         alive="true"
+                        profile-image="{{if .CupidChosen1Player.ProfileImageID}}/player-image/{{.CupidChosen1Player.PlayerID}}{{end}}"
                         selectable
                         {{if and (ne .CupidChosen1Player.Lover 0) (eq .Player.PlayerID .CupidChosen1Player.Lover)}}lover{{end}}
                     ></player-card>
                     <player-card
                         data-player-id="{{.CupidChosen2Player.ID}}"
+                        player-id="{{.CupidChosen2Player.PlayerID}}"
                         player-name="{{.CupidChosen2Player.Name}}"
                         role-name="{{.CupidChosen2Player.RoleName}}"
                         role-desc="{{.CupidChosen2Player.RoleDescription}}"
                         team="{{.CupidChosen2Player.Team}}"
                         alive="true"
+                        profile-image="{{if .CupidChosen2Player.ProfileImageID}}/player-image/{{.CupidChosen2Player.PlayerID}}{{end}}"
                         selectable
                         {{if and (ne .CupidChosen2Player.Lover 0) (eq .Player.PlayerID .CupidChosen2Player.Lover)}}lover{{end}}
                     ></player-card>
@@ -373,11 +399,13 @@
                     <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                     <player-card
                         data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
                         player-name="{{.Name}}"
                         role-name="{{.RoleName}}"
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                         selectable
                         {{if or (and $.CupidChosen1Player (eq $.CupidChosen1Player.PlayerID .PlayerID)) (and $.CupidChosen2Player (eq $.CupidChosen2Player.PlayerID .PlayerID))}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -411,11 +439,13 @@
                 <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
                 <player-card
                     data-player-id="{{.ID}}"
+                    player-id="{{.PlayerID}}"
                     player-name="{{.Name}}"
                     role-name="{{.RoleName}}"
                     role-desc="{{.RoleDescription}}"
                     team="{{.Team}}"
                     alive="true"
+                    profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
                     selectable
                     {{if and $.SurveySelectedSuspect (eq $.SurveySelectedSuspect.PlayerID .PlayerID)}}selected{{end}}
                     {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}

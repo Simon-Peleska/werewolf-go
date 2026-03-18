@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
+	"io"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -169,6 +171,87 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("HX-Redirect", "/game/"+gameName)
+}
+
+func (app *App) handlePlayerImage(w http.ResponseWriter, r *http.Request) {
+	imageIDStr := r.PathValue("playerID")
+	imageID, err := strconv.ParseInt(imageIDStr, 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	data, mimeType, err := getPlayerImage(app.db, imageID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(data)
+}
+
+func (app *App) handleUploadPlayerImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	playerID, err := getPlayerIdFromSession(app.db, r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		http.Error(w, "Image too large (max 2MB)", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "No image provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	mimeType := header.Header.Get("Content-Type")
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		// ok
+	default:
+		http.Error(w, "Unsupported image type (jpeg/png/gif/webp only)", http.StatusBadRequest)
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		app.logf("ERROR [handleUploadPlayerImage: ReadAll]: %v", err)
+		http.Error(w, "Failed to read image", http.StatusInternalServerError)
+		return
+	}
+
+	imageID, err := savePlayerImage(app.db, playerID, data, mimeType)
+	if err != nil {
+		app.logf("ERROR [handleUploadPlayerImage: savePlayerImage]: %v", err)
+		http.Error(w, "Failed to save image", http.StatusInternalServerError)
+		return
+	}
+
+	app.logf("Player %d uploaded profile image (%s, %d bytes)", playerID, mimeType, len(data))
+
+	// Broadcast to all hubs so everyone sees the updated profile image
+	app.hubsMu.RLock()
+	for _, hub := range app.hubs {
+		hub.triggerBroadcast()
+	}
+	app.hubsMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		ImageID int64 `json:"image_id"`
+	}{ImageID: imageID})
 }
 
 func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {

@@ -18,6 +18,8 @@ func TestMain(m *testing.M) {
 		u, err := launcher.New().
 			Bin(path).
 			Headless(true).
+			// Wide viewport so the sidebar is always visible (breakpoint is 1280px).
+			Set("window-size", "1920,1080").
 			// Allow AudioContext to start without a user gesture so TTS audio tests work.
 			Set("autoplay-policy", "no-user-gesture-required").
 			// Prevent Chrome from throttling background tabs when many tests run in parallel.

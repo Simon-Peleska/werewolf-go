@@ -144,6 +144,11 @@
       object-fit: contain; border-radius: 50%; display: block;
       transition: box-shadow 0.15s;
     }
+    .pc-seal.pc-seal-profile {
+      object-fit: cover;
+      aspect-ratio: 1 / 1;
+      height: auto;
+    }
     :host([team=villager]) .pc-seal {
       box-shadow: 0 0 0 3px var(--c-seal-ring), 0 4px 18px var(--c-seal-shadow);
     }
@@ -246,6 +251,22 @@
       box-shadow: 0 0 0 1px var(--c-vote-selected-ring), 0 4px 16px var(--c-card-hover-shadow);
     }
 
+    /* ── Profile image upload overlay (own-card) ────────────────────────── */
+    .pc-file-input { display: none; }
+    .pc-upload-overlay {
+      position: absolute; inset: 0; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.45);
+      opacity: 0; transition: opacity 0.2s;
+      cursor: pointer; font-size: 1.8em; z-index: 3;
+      pointer-events: none;
+    }
+    :host([own-card]) .pc-seal-wrap:hover .pc-upload-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .pc-col .pc-upload-overlay { font-size: 1.1em; }
+
     /* ── Lover styling ───────────────────────────────────────────────────── */
     :host([lover]) .pc-card {
       border-color: var(--c-lover-border);
@@ -322,6 +343,7 @@
         'role-name', 'role-desc', 'team', 'player-name',
         'count', 'role-id', 'lobby', 'total-roles', 'player-count', 'active',
         'winner', 'loser', 'alive', 'lover', 'selected', 'selectable',
+        'profile-image', 'own-card', 'show-role-seal', 'player-id',
       ];
     }
 
@@ -365,18 +387,29 @@
       const aliveAttr  = this.getAttribute('alive');
       const isLover    = this.hasAttribute('lover');
 
-      const addDis = (plrCount > 0 && totRoles >= plrCount) ? ' disabled' : '';
-      const remDis = count === '0' ? ' disabled' : '';
-      const seal   = roleSeal(roleName);
-      const toggleCall = `this.getRootNode().host._toggle()`;
-      const heartBadge = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
+      const addDis        = (plrCount > 0 && totRoles >= plrCount) ? ' disabled' : '';
+      const remDis        = count === '0' ? ' disabled' : '';
+      const roleSealUrl   = roleSeal(roleName);
+      const profileImage  = this.getAttribute('profile-image') || '';
+      const showRoleSeal  = this.hasAttribute('show-role-seal');
+      const isOwnCard     = this.hasAttribute('own-card');
+      const seal          = (profileImage && !showRoleSeal) ? profileImage : roleSealUrl;
+      const toggleCall    = `this.getRootNode().host._toggle()`;
+      const uploadCall    = `this.getRootNode().host._triggerImageUpload()`;
+      const heartBadge    = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
+
+      // When using a profile image, fall back to role seal on load error
+      const sealImg = (profileImage && !showRoleSeal)
+        ? `<img class="pc-seal pc-seal-profile" src="${seal}" onerror="this.onerror=null;this.src='${roleSealUrl}';this.classList.remove('pc-seal-profile')" alt="${esc(roleName)}">`
+        : `<img class="pc-seal" src="${seal}" alt="${esc(roleName)}">`;
 
       let h = '';
 
       if (!collapsed) {
         // ── Expanded content ──
         h += `<div class="pc-seal-wrap">`;
-        h += `<img class="pc-seal" src="${seal}" alt="${esc(roleName)}">`;
+        h += sealImg;
+        if (isOwnCard) h += `<div class="pc-upload-overlay" onclick="event.stopPropagation();${uploadCall}">📷</div>`;
         if (isLobby) {
           h += `<div class="pc-btn-wrap pc-btn-minus">`
              +   `<button class="pc-btn"${remDis} onclick="window.wsSend({action:'update_role',role_id:'${esc(roleId)}',delta:'-1'})">−</button>`
@@ -408,7 +441,7 @@
         h += `</div>`;
       } else {
         // ── Collapsed content ──
-        h += `<div class="pc-seal-wrap"><img class="pc-seal" src="${seal}" alt="${esc(roleName)}"></div>`;
+        h += `<div class="pc-seal-wrap">${sealImg}</div>`;
         const sep = `<span class="pc-sep"> | </span>`;
         let infoParts = [];
         if (playerName) infoParts.push(`<span class="pc-name">${esc(playerName)}</span>`);
@@ -437,9 +470,12 @@
       // Only the ▼ button should expand it — so omit the onclick on the row itself.
       const colClick = this.hasAttribute('selectable') ? '' : ` onclick="${toggleCall}"`;
 
+      const isOwnCard = this.hasAttribute('own-card');
+
       let h = `<div class="pc-card${this._collapsed ? ' pc-collapsed' : ''}">`;
       h += `<div class="pc-layer pc-exp ${expActive}">${this._buildLayerContent(false)}</div>`;
       h += `<div class="pc-layer pc-col ${colActive}"${colClick}>${this._buildLayerContent(true)}</div>`;
+      if (isOwnCard) h += `<input id="pc-file-input" class="pc-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp">`;
       h += `</div>`;
 
       const tmp = document.createElement('div');
@@ -495,6 +531,12 @@
       }, FADE_DUR);
     }
 
+    _triggerImageUpload() {
+      const input = this.shadowRoot.querySelector('#pc-file-input');
+      if (!input) return;
+      input.click();
+    }
+
     _render() {
       const shadow = this.shadowRoot;
       if (!shadow) return;
@@ -507,6 +549,26 @@
         shadow.replaceChild(newCard, oldCard);
       } else {
         shadow.appendChild(newCard);
+      }
+
+      // Bind file input handler (input is inside .pc-card, may be recreated by morph)
+      const fileInput = shadow.querySelector('#pc-file-input');
+      if (fileInput && !fileInput._bound) {
+        fileInput._bound = true;
+        const card = this;
+        fileInput.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const fd = new FormData();
+          fd.append('image', file);
+          fetch('/player/upload-image', { method: 'POST', body: fd })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data?.image_id) card.setAttribute('profile-image', `/player-image/${data.image_id}`);
+            })
+            .catch(err => console.error('Profile image upload failed:', err));
+          fileInput.value = '';
+        };
       }
     }
   }

@@ -127,11 +127,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1773692339,
-        "narHash": "sha256-2MGtEnAlbQTU4O9wsAfrxZFkWNJv4d6f+VyN2vn97nU=",
+        "lastModified": 1773693266,
+        "narHash": "sha256-oNzmW7wznAezi0MfvJJLeTt6Z+KpdMXzl/41zF0xH/0=",
         "owner": "Simon-Peleska",
         "repo": "werewolf-go",
-        "rev": "98e3e2965633d3127cf19be598ba4b0a46426f7b",
+        "rev": "0acdd8e7dc5f722ae0f3b35c49361a0292713bab",
         "type": "github"
       },
       "original": {

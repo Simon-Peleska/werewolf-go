@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/jmoiron/sqlx"
 )
 
@@ -31,6 +34,7 @@ type Player struct {
 	IsAlive         bool   `db:"is_alive"`
 	IsObserver      bool   `db:"is_observer"`
 	Lover           int64  `db:"lover"`
+	ProfileImageID  *int64 `db:"profile_image_id"` // nil = no image; rowid of player_image row (changes per upload → cache-buster)
 }
 
 func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
@@ -47,7 +51,8 @@ func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 			r.team as team,
 			gp.is_alive as is_alive,
 			gp.is_observer as is_observer,
-			IFNULL(l.player2_id, 0) as lover
+			IFNULL(l.player2_id, 0) as lover,
+			p.profile_image_id as profile_image_id
 		FROM game_player gp
 			JOIN player p on gp.player_id = p.rowid
 			JOIN game g on gp.game_id = g.rowid
@@ -71,7 +76,8 @@ func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 			r.team as team,
 			gp.is_alive as is_alive,
 			is_observer as is_observer,
-			IFNULL(l.player2_id, 0) as lover
+			IFNULL(l.player2_id, 0) as lover,
+			p.profile_image_id as profile_image_id
 		FROM game_player gp
 			JOIN player p on gp.player_id = p.rowid
 			JOIN game g on gp.game_id = g.rowid
@@ -226,7 +232,9 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_game_name ON game(name) WHERE name != '';
 	CREATE TABLE IF NOT EXISTS player (
 		name TEXT UNIQUE NOT NULL,
-		secret_code TEXT NOT NULL
+		secret_code TEXT NOT NULL,
+		profile_image_id INTEGER REFERENCES player_image,
+		profile_image_uploaded_at INTEGER
 	);
 	CREATE TABLE IF NOT EXISTS game_player (
 		game_id INTEGER NOT NULL,
@@ -288,6 +296,10 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		FOREIGN KEY (second_player_id) REFERENCES player(rowid),
 		UNIQUE(game_id, cupid_player_id)
 	);
+	CREATE TABLE IF NOT EXISTS player_image (
+		image_data BLOB NOT NULL,
+		mime_type TEXT NOT NULL
+	);
 	CREATE INDEX IF NOT EXISTS idx_game_action_lookup ON game_action(game_id, round, phase, visibility);
 
 	INSERT OR IGNORE INTO role (name, description, team)
@@ -308,8 +320,54 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		logfn("initDB error: %v", err)
 		return err
 	}
+
+	// Migration: add profile_image_id to player table (idempotent)
+	if err := addColumnIfNotExists(db, "player", "profile_image_id", "INTEGER REFERENCES player_image(player_id)"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+
 	logfn("Database initialized successfully")
 	return nil
+}
+
+func addColumnIfNotExists(db *sqlx.DB, table, column, definition string) error {
+	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
+	if err != nil && strings.Contains(err.Error(), "duplicate column name") {
+		return nil
+	}
+	return err
+}
+
+func savePlayerImage(db *sqlx.DB, playerID int64, data []byte, mimeType string) (int64, error) {
+	// Get old image ID so we can delete it after inserting the new one.
+	var oldImageID *int64
+	db.Get(&oldImageID, `SELECT profile_image_id FROM player WHERE rowid = ?`, playerID)
+
+	result, err := db.Exec(`INSERT INTO player_image(image_data, mime_type) VALUES (?, ?)`, data, mimeType)
+	if err != nil {
+		return 0, err
+	}
+	imageID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if _, err = db.Exec(`UPDATE player SET profile_image_id = ? WHERE rowid = ?`, imageID, playerID); err != nil {
+		return 0, err
+	}
+	if oldImageID != nil {
+		db.Exec(`DELETE FROM player_image WHERE rowid = ?`, *oldImageID)
+	}
+	return imageID, nil
+}
+
+func getPlayerImage(db *sqlx.DB, imageID int64) ([]byte, string, error) {
+	var row struct {
+		Data     []byte `db:"image_data"`
+		MimeType string `db:"mime_type"`
+	}
+	err := db.Get(&row, `SELECT image_data, mime_type FROM player_image WHERE rowid = ?`, imageID)
+	return row.Data, row.MimeType, err
 }
 
 // getOrCreateGameByName returns the game with the given name, creating it if it doesn't exist.

@@ -31,11 +31,14 @@
       <player-card
         {{if eq .PlayerID $.Player.PlayerID}}id="sidebar-role-card"{{end}}
         data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
         player-name="{{.Name}}"
         role-name="{{.RoleName}}"
         role-desc="{{.RoleDescription}}"
         team="{{.Team}}"
         alive="{{if .IsAlive}}true{{else}}false{{end}}"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        {{if eq .PlayerID $.Player.PlayerID}}own-card{{end}}
         {{if eq .Lover $.Player.ID}}lover{{end}}
         {{if not (eq .PlayerID $.Player.PlayerID)}}collapsed{{end}}></player-card>
       {{end}}
