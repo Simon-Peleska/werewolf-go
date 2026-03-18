@@ -242,6 +242,13 @@ h1, h2, h3, h4, h5, h6 {
     0 0 0 0.0625rem              rgba(44, 28, 8, 0.015);
 }
 
+/* ── OOB-swap elements rendered inline in .container on page load ───────── */
+/* These divs are meant for HTMX OOB swaps; hide them until WS moves them.  */
+.container > #topbar-phase,
+.container > #page-theme {
+  display: none;
+}
+
 /* ── Scrollbar styling ─────────────────────────────────────────────────── */
 /* Firefox only — @-moz-document prevents Chrome from seeing scrollbar-width,
    which would override the webkit rules below and re-enable arrow buttons.  */
@@ -460,7 +467,7 @@ button,
   width: min(72vw, 420px);
   height: min(72vw, 420px);
   border-radius: 0.75rem;
-  animation: night-pulse 4s ease-in-out infinite;
+  animation: night-pulse 5s ease-in-out infinite;
 }
 @media (min-width: 1024px) {
   #game-content .night-seal-pulse {
@@ -611,16 +618,28 @@ button,
 .win-hero {
   display: flex;
   justify-content: center;
-  padding: calc(var(--pico-spacing) * 1.5) 0 calc(var(--pico-spacing) * 0.5);
+  align-items: center;
+  width: 100%;
+  min-height: 40vh;
+  padding: calc(var(--pico-spacing) * 4) 0 calc(var(--pico-spacing) * 4);
 }
 
 @keyframes win-seal-breathe {
-  0%, 100% { opacity: 0.88; transform: scale(1); }
-  50%       { opacity: 1;    transform: scale(1.035); }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.08); }
 }
-.win-seal-glow {
-  animation: win-seal-breathe 5s ease-in-out infinite;
+/* Override gc-enter animation (same specificity trick as night-seal-pulse) */
+#game-content .win-seal-glow {
+  width: min(72vw, 420px);
+  height: min(72vw, 420px);
   border-radius: 50%;
+  animation: win-seal-breathe 5s ease-in-out infinite;
+}
+@media (min-width: 1024px) {
+  #game-content .win-seal-glow {
+    width: 500px;
+    height: 500px;
+  }
 }
 .win-seal-villagers {
   box-shadow:
