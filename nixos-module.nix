@@ -70,6 +70,7 @@ in {
         # systemd creates and owns /var/lib/werewolf, no manual mkdir needed.
         StateDirectory     = "werewolf";
         StateDirectoryMode = "0750";
+        WorkingDirectory   = "/var/lib/werewolf";
 
         # Basic hardening.
         NoNewPrivileges = true;
