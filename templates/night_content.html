@@ -38,7 +38,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         count="{{$wvCount}}"
                         {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
@@ -90,7 +90,7 @@
                             role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
                             alive="true"
-                            profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                            profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                             selectable
                             {{if and $.CurrentVotePlayer2 (eq $.CurrentVotePlayer2.PlayerID .PlayerID)}}selected{{end}}
                             {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -143,7 +143,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         {{if and $.SeerSelectedPlayer (eq $.SeerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -170,7 +170,7 @@
                     role-desc="{{.DoctorProtectingPlayer.RoleDescription}}"
                     team="{{.DoctorProtectingPlayer.Team}}"
                     alive="{{if .DoctorProtectingPlayer.IsAlive}}true{{else}}false{{end}}"
-                    profile-image="{{if .DoctorProtectingPlayer.ProfileImageID}}/player-image/{{.DoctorProtectingPlayer.PlayerID}}{{end}}"
+                    profile-image="{{if .DoctorProtectingPlayer.ProfileImageID}}/player-image/{{.DoctorProtectingPlayer.ProfileImageID}}{{end}}"
                     {{if and (ne .DoctorProtectingPlayer.Lover 0) (eq .Player.PlayerID .DoctorProtectingPlayer.Lover)}}lover{{end}}>
                 </player-card>
                 </card-list>
@@ -190,7 +190,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         {{if and $.DoctorSelectedPlayer (eq $.DoctorSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -223,7 +223,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         {{if and $.GuardSelectedPlayer (eq $.GuardSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -262,7 +262,7 @@
                         role-desc="{{.WitchVictimPlayer.RoleDescription}}"
                         team="{{.WitchVictimPlayer.Team}}"
                         alive="true"
-                        profile-image="{{if .WitchVictimPlayer.ProfileImageID}}/player-image/{{.WitchVictimPlayer.PlayerID}}{{end}}"
+                        profile-image="{{if .WitchVictimPlayer.ProfileImageID}}/player-image/{{.WitchVictimPlayer.ProfileImageID}}{{end}}"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer.PlayerID)}}selected{{end}}
                         {{if and (ne .WitchVictimPlayer.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer.Lover)}}lover{{end}}
@@ -280,7 +280,7 @@
                         role-desc="{{.WitchVictimPlayer2.RoleDescription}}"
                         team="{{.WitchVictimPlayer2.Team}}"
                         alive="true"
-                        profile-image="{{if .WitchVictimPlayer2.ProfileImageID}}/player-image/{{.WitchVictimPlayer2.PlayerID}}{{end}}"
+                        profile-image="{{if .WitchVictimPlayer2.ProfileImageID}}/player-image/{{.WitchVictimPlayer2.ProfileImageID}}{{end}}"
                         selectable
                         {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer2.PlayerID)}}selected{{end}}
                         {{if and (ne .WitchVictimPlayer2.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer2.Lover)}}lover{{end}}
@@ -313,7 +313,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         {{if and $.WitchSelectedPoisonPlayer (eq $.WitchSelectedPoisonPlayer.PlayerID .PlayerID)}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -346,7 +346,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
                     ></player-card>
                     {{end}}
@@ -368,7 +368,7 @@
                         role-desc="{{.CupidChosen1Player.RoleDescription}}"
                         team="{{.CupidChosen1Player.Team}}"
                         alive="true"
-                        profile-image="{{if .CupidChosen1Player.ProfileImageID}}/player-image/{{.CupidChosen1Player.PlayerID}}{{end}}"
+                        profile-image="{{if .CupidChosen1Player.ProfileImageID}}/player-image/{{.CupidChosen1Player.ProfileImageID}}{{end}}"
                         selectable
                         {{if and (ne .CupidChosen1Player.Lover 0) (eq .Player.PlayerID .CupidChosen1Player.Lover)}}lover{{end}}
                     ></player-card>
@@ -380,7 +380,7 @@
                         role-desc="{{.CupidChosen2Player.RoleDescription}}"
                         team="{{.CupidChosen2Player.Team}}"
                         alive="true"
-                        profile-image="{{if .CupidChosen2Player.ProfileImageID}}/player-image/{{.CupidChosen2Player.PlayerID}}{{end}}"
+                        profile-image="{{if .CupidChosen2Player.ProfileImageID}}/player-image/{{.CupidChosen2Player.ProfileImageID}}{{end}}"
                         selectable
                         {{if and (ne .CupidChosen2Player.Lover 0) (eq .Player.PlayerID .CupidChosen2Player.Lover)}}lover{{end}}
                     ></player-card>
@@ -405,7 +405,7 @@
                         role-desc="{{.RoleDescription}}"
                         team="{{.Team}}"
                         alive="true"
-                        profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                         selectable
                         {{if or (and $.CupidChosen1Player (eq $.CupidChosen1Player.PlayerID .PlayerID)) (and $.CupidChosen2Player (eq $.CupidChosen2Player.PlayerID .PlayerID))}}selected{{end}}
                         {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
@@ -445,7 +445,7 @@
                     role-desc="{{.RoleDescription}}"
                     team="{{.Team}}"
                     alive="true"
-                    profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                    profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                     selectable
                     {{if and $.SurveySelectedSuspect (eq $.SurveySelectedSuspect.PlayerID .PlayerID)}}selected{{end}}
                     {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}

@@ -652,7 +652,7 @@ func newTestContext(t *testing.T) *TestContext {
 		handleWebSocket(hub, w, r)
 	})
 	wrapHandler("/player/upload-image", app.handleUploadPlayerImage)
-	mux.HandleFunc("/player-image/{playerID}", app.handlePlayerImage)
+	mux.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 
 	server := &http.Server{

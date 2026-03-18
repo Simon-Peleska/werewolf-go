@@ -1,7 +1,9 @@
 {
   config,
+  lib,
   pkgs,
   inputs,
+  modulesPath,
   ...
 }:
 
@@ -9,6 +11,7 @@ let
   domain = "werewolf.simon-peleska.at";
   sshPubKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwpQ60GkyiUQzKvQXwx+TEVrJ6Gtyr81OXkEshRm/SW"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHFqwByfThvVa8/np6/Ujrz0d6cb3RztwCbY78d25eRA simon@Framework"
   ];
 
   # Set this to the disk device shown in rescue mode (lsblk).
@@ -17,9 +20,16 @@ let
 in
 
 {
+  imports = [
+    (modulesPath + "/profiles/qemu-guest.nix")
+  ];
+
+  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
+
   # ── Disk layout (disko) ────────────────────────────────────────────────────
   # nixos-anywhere uses this to partition and format the disk automatically.
-  # GPT + EFI boot + ext4 root. Simple and works on all Hetzner server types.
+  # GPT + 1 MiB BIOS boot partition (required for GRUB on GPT) + ext4 root.
+  # https://wiki.nixos.org/wiki/Install_NixOS_on_Hetzner_Cloud
   disko.devices.disk.main = {
     type   = "disk";
     device = disk;
@@ -27,13 +37,9 @@ in
       type = "gpt";
       partitions = {
         boot = {
-          size = "512M";
-          type = "EF00";  # EFI System Partition
-          content = {
-            type   = "filesystem";
-            format = "vfat";
-            mountpoint = "/boot";
-          };
+          size = "1M";
+          type = "EF02"; # BIOS boot partition — GRUB writes stage 1.5 here
+          priority = 1;  # must be first on disk
         };
         root = {
           size = "100%";
@@ -47,8 +53,7 @@ in
     };
   };
 
-  boot.loader.systemd-boot.enable      = true;
-  boot.loader.efi.canTouchEfiVariables = true;
+  boot.loader.grub.enable = true; # device is set automatically by disko
 
   # ── Werewolf service ───────────────────────────────────────────────────────
   # Secrets and config live in /etc/werewolf/config.json on the server.
@@ -115,6 +120,25 @@ in
 
   # ── Machine basics ─────────────────────────────────────────────────────────
   networking.hostName = "server-1";
+
+  # ── Static networking (Hetzner Cloud) ─────────────────────────────────────
+  # IPv4 is /32 on Hetzner — the gateway 172.31.1.1 is not in the same subnet,
+  # so GatewayOnLink = true is required.
+  # https://wiki.nixos.org/wiki/Install_NixOS_on_Hetzner_Cloud
+  networking.useNetworkd = true;
+  systemd.network.enable = true;
+  systemd.network.networks."30-wan" = {
+    matchConfig.Name = "ens3"; # ens3 on amd64; enp1s0 on arm64 — verify with `ip addr`
+    networkConfig.DHCP = "no";
+    address = [
+      "178.104.5.193/32"
+      "2a01:4f8:1c19:1d5a::1/64"
+    ];
+    routes = [
+      { Gateway = "172.31.1.1"; GatewayOnLink = true; }
+      { Gateway = "fe80::1"; }
+    ];
+  };
 
   time.timeZone = "UTC";
 

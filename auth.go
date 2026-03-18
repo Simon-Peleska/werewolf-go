@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"image"
+	"image/draw"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"math/big"
 	"net/http"
@@ -174,7 +181,7 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handlePlayerImage(w http.ResponseWriter, r *http.Request) {
-	imageIDStr := r.PathValue("playerID")
+	imageIDStr := r.PathValue("imageID")
 	imageID, err := strconv.ParseInt(imageIDStr, 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
@@ -218,28 +225,35 @@ func (app *App) handleUploadPlayerImage(w http.ResponseWriter, r *http.Request) 
 
 	mimeType := header.Header.Get("Content-Type")
 	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif", "image/webp":
+	case "image/jpeg", "image/png", "image/gif":
 		// ok
 	default:
-		http.Error(w, "Unsupported image type (jpeg/png/gif/webp only)", http.StatusBadRequest)
+		http.Error(w, "Unsupported image type (jpeg/png/gif only)", http.StatusBadRequest)
 		return
 	}
 
-	data, err := io.ReadAll(file)
+	raw, err := io.ReadAll(file)
 	if err != nil {
 		app.logf("ERROR [handleUploadPlayerImage: ReadAll]: %v", err)
 		http.Error(w, "Failed to read image", http.StatusInternalServerError)
 		return
 	}
 
-	imageID, err := savePlayerImage(app.db, playerID, data, mimeType)
+	data, err := processProfileImage(raw)
+	if err != nil {
+		app.logf("ERROR [handleUploadPlayerImage: processProfileImage]: %v", err)
+		http.Error(w, "Failed to process image", http.StatusBadRequest)
+		return
+	}
+
+	imageID, err := savePlayerImage(app.db, playerID, data, "image/jpeg")
 	if err != nil {
 		app.logf("ERROR [handleUploadPlayerImage: savePlayerImage]: %v", err)
 		http.Error(w, "Failed to save image", http.StatusInternalServerError)
 		return
 	}
 
-	app.logf("Player %d uploaded profile image (%s, %d bytes)", playerID, mimeType, len(data))
+	app.logf("Player %d uploaded profile image (%s → image/jpeg 512×512, %d bytes)", playerID, mimeType, len(data))
 
 	// Broadcast to all hubs so everyone sees the updated profile image
 	app.hubsMu.RLock()
@@ -277,4 +291,55 @@ func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// processProfileImage decodes any supported image (jpeg/png/gif), center-crops it to a
+// square, resizes it to 512×512, and returns JPEG-encoded bytes.
+func processProfileImage(data []byte) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	cropped := centerCropSquare(src)
+	resized := resizeNearest(cropped, 512, 512)
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, fmt.Errorf("encode jpeg: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// centerCropSquare crops an image to a square at its center.
+func centerCropSquare(src image.Image) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w == h {
+		return src
+	}
+	size := w
+	if h < w {
+		size = h
+	}
+	x0 := b.Min.X + (w-size)/2
+	y0 := b.Min.Y + (h-size)/2
+	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
+	draw.Draw(dst, dst.Bounds(), src, image.Pt(x0, y0), draw.Src)
+	return dst
+}
+
+// resizeNearest scales src to width×height using nearest-neighbor sampling.
+func resizeNearest(src image.Image, width, height int) image.Image {
+	sb := src.Bounds()
+	sw, sh := sb.Dx(), sb.Dy()
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			sx := sb.Min.X + x*sw/width
+			sy := sb.Min.Y + y*sh/height
+			dst.Set(x, y, src.At(sx, sy))
+		}
+	}
+	return dst
 }

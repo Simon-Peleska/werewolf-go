@@ -28,7 +28,7 @@
                 player-name="{{.Name}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
                 winner></player-card>
             {{end}}
@@ -50,7 +50,7 @@
                 role-desc="{{.RoleDescription}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
                 loser
                 ></player-card>

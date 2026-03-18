@@ -1,6 +1,5 @@
 # Todos
 - deploy on host provider
-- allow setting photo
 - write good prompt
 
 ## Longterm

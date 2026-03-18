@@ -1269,7 +1269,7 @@ func main() {
 	})
 	wrapHandler("/player/upload-image", app.handleUploadPlayerImage)
 	// Image endpoint: register directly (not via wrapHandler) to allow browser caching
-	http.HandleFunc("/player-image/{playerID}", app.handlePlayerImage)
+	http.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 
 	// Serve static files with compression for text-based files (CSS, JS, SVG)
 	// Binary formats like images will be served without compression

@@ -55,7 +55,7 @@
                             role-desc="{{.RoleDescription}}"
                             team="{{.Team}}"
                             alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                            profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                            profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                             {{if eq $.Player.ID .Lover}}lover{{end}}
                             selectable
                             {{if and $.HunterSelectedPlayer (eq $.HunterSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
@@ -94,7 +94,7 @@
                 role-desc="{{.RoleDescription}}"
                 team="{{.Team}}"
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.PlayerID}}{{end}}"
+                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                 {{if eq $.Player.ID .Lover}}lover{{end}}
                 selectable
                 count="{{index $.DayVoteCounts .PlayerID}}"
