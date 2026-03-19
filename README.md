@@ -1,6 +1,6 @@
 # Werewolf Go
 
-A web-based Werewolf (social deduction) game where each player joins from their own device. No app install needed — open the browser, pick a name, and play.
+A web-based Werewolf game where each player joins from their own device. No app install needed — open the browser, pick a name, and play.
 
 ## The Game
 

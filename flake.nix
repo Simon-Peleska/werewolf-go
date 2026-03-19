@@ -1,5 +1,5 @@
 {
-  description = "Werewolf - social deduction game in Go";
+  description = "Werewolf";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
