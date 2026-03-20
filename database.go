@@ -223,6 +223,14 @@ func getLoverPartner(db *sqlx.DB, gameID, playerID int64) int64 {
 func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	schema := `
 	PRAGMA journal_mode=WAL;
+	PRAGMA synchronous=NORMAL;
+	PRAGMA busy_timeout=5000;
+	PRAGMA foreign_keys=ON;
+	PRAGMA cache_size=-64000;
+	PRAGMA mmap_size=268435456;
+	PRAGMA temp_store=MEMORY;
+	PRAGMA auto_vacuum=INCREMENTAL;
+	PRAGMA page_size=4096;
 
 	CREATE TABLE IF NOT EXISTS game (
 		name TEXT NOT NULL DEFAULT '',
