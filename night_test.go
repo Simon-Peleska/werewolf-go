@@ -2385,8 +2385,9 @@ func TestNightSurveyBlocksDayTransition(t *testing.T) {
 
 	ctx.logger.Debug("=== Testing night survey blocks day transition ===")
 
-	// Setup: 1 werewolf + 2 villagers = 3 players
-	players := setupNightPhaseGame(ctx, browser, 2, 1)
+	// Setup: 1 werewolf + 3 villagers = 4 players (need 3 villagers so after night kill
+	// 1 wolf vs 2 villagers → day phase starts, not immediate werewolf win)
+	players := setupNightPhaseGame(ctx, browser, 3, 1)
 	werewolves, villagers := findPlayersByRole(players)
 
 	if len(werewolves) == 0 || len(villagers) < 2 {
@@ -2400,10 +2401,11 @@ func TestNightSurveyBlocksDayTransition(t *testing.T) {
 	// Submit villager1's survey first.
 	villager1.submitNightSurvey()
 
-	// Villager1 should now see the "waiting for N more" message
-	if has, _, _ := villager1.p().Has("#survey-waiting"); !has {
+	// Villager1 should now see the "waiting for N more" message (data-phase starts with "night-wait")
+	phase := villager1.p().MustElement("#game-content").MustAttribute("data-phase")
+	if phase == nil || !strings.HasPrefix(*phase, "night-wait") {
 		ctx.logger.LogDB("FAIL: no survey-waiting message after submit")
-		t.Error("After submitting survey, player should see 'Waiting for N more' message")
+		t.Errorf("After submitting survey, #game-content should have data-phase=night-wait-*, got: %v", phase)
 	}
 
 	// Day should NOT have started yet (wolf hasn't voted, villager2 hasn't submitted)
@@ -2421,8 +2423,11 @@ func TestNightSurveyBlocksDayTransition(t *testing.T) {
 		t.Error("Day should not start until all players submit survey")
 	}
 
-	// Wolf submits survey (2 of 3 submitted — villager2 still outstanding)
+	// Wolf submits survey (2 of 4 submitted — villager2 and villager3 still outstanding)
 	werewolves[0].submitNightSurvey()
+
+	// Villager3 submits survey (3 of 4 — villager2 still outstanding)
+	villagers[2].submitNightSurvey()
 
 	// Day should STILL NOT have started (villager2 hasn't submitted yet)
 	if werewolves[0].isInDayPhase() {
