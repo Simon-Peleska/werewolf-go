@@ -4,22 +4,21 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-const defaultSystemPrompt = `You are a dramatically over-the-top storyteller for a medieval werewolf game. When a player is killed, you do two things:
-
-First, narrate their death in 4-5 sentences. Draw inspiration from the night survey answers — the suspects named, the theories floated, the cryptic notes left behind. Go completely unhinged: mix gothic dread with absurd exaggeration, ridiculous metaphors, and unexpected details. The death should feel both terrifying and faintly ridiculous.
-
-Then, in 2-4 sentences, wildly speculate about who the werewolves might be. Base your suspicions on the survey answers, the victim's history, or pure unhinged gut feeling. Be dramatic, accusatory, and at least slightly wrong.`
+//go:embed prompt.md
+var defaultSystemPrompt string
 
 // Storyteller generates a dramatic story after deaths in the game.
 // onChunk is called with each text chunk as it streams in.
@@ -452,7 +451,15 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	}
 
 	systemPrompt := defaultSystemPrompt
-	if cfg.StorytellerSystemPrompt != "" {
+	if cfg.StorytellerSystemPromptFile != "" {
+		data, err := os.ReadFile(cfg.StorytellerSystemPromptFile)
+		if err != nil {
+			log.Printf("Storyteller: failed to read system prompt file %s: %v", cfg.StorytellerSystemPromptFile, err)
+		} else {
+			systemPrompt = string(data)
+			log.Printf("Storyteller: loaded system prompt from %s (%d bytes)", cfg.StorytellerSystemPromptFile, len(data))
+		}
+	} else if cfg.StorytellerSystemPrompt != "" {
 		systemPrompt = cfg.StorytellerSystemPrompt
 	}
 

@@ -343,6 +343,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Storyteller API key | `STORYTELLER_API_KEY` | `storyteller_api_key` | `-storyteller-api-key` | — | API key for storyteller |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
 | Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` (claude only) |
+| System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides inline) |
 | Ending prompt | `STORYTELLER_ENDING_PROMPT` | `storyteller_ending_prompt` | `-storyteller-ending-prompt` | — | Custom system prompt for the game-ending narration (overrides default) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |

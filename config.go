@@ -25,14 +25,15 @@ type AppConfig struct {
 	LogDebug     bool   `json:"log_debug"`
 
 	// AI Storyteller
-	StorytellerProvider     string `json:"storyteller_provider"`      // openai | claude
-	StorytellerModel        string `json:"storyteller_model"`         // model name
-	StorytellerURL          string `json:"storyteller_url"`           // base URL (default: provider's public API)
-	StorytellerAPIKey       string `json:"storyteller_api_key"`       // API key
-	StorytellerTemperature  string `json:"storyteller_temperature"`   // float 0-2 as string (default 1.2)
-	StorytellerThinking     string `json:"storyteller_thinking"`      // none | low | medium | high | auto (claude only)
-	StorytellerSystemPrompt string `json:"storyteller_system_prompt"` // custom system prompt (overrides default)
-	StorytellerEndingPrompt string `json:"storyteller_ending_prompt"` // custom ending prompt (overrides default)
+	StorytellerProvider         string `json:"storyteller_provider"`           // openai | claude
+	StorytellerModel            string `json:"storyteller_model"`              // model name
+	StorytellerURL              string `json:"storyteller_url"`                // base URL (default: provider's public API)
+	StorytellerAPIKey           string `json:"storyteller_api_key"`            // API key
+	StorytellerTemperature      string `json:"storyteller_temperature"`        // float 0-2 as string (default 1.2)
+	StorytellerThinking         string `json:"storyteller_thinking"`           // none | low | medium | high | auto (claude only)
+	StorytellerSystemPrompt     string `json:"storyteller_system_prompt"`      // custom system prompt (overrides default)
+	StorytellerSystemPromptFile string `json:"storyteller_system_prompt_file"` // path to file with system prompt (overrides inline)
+	StorytellerEndingPrompt     string `json:"storyteller_ending_prompt"`      // custom ending prompt (overrides default)
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -124,6 +125,9 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("STORYTELLER_SYSTEM_PROMPT"); v != "" {
 		cfg.StorytellerSystemPrompt = v
 	}
+	if v := envStr("STORYTELLER_SYSTEM_PROMPT_FILE"); v != "" {
+		cfg.StorytellerSystemPromptFile = v
+	}
 	if v := envStr("STORYTELLER_ENDING_PROMPT"); v != "" {
 		cfg.StorytellerEndingPrompt = v
 	}
@@ -194,6 +198,7 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
 	str("storyteller_thinking", &cfg.StorytellerThinking)
 	str("storyteller_system_prompt", &cfg.StorytellerSystemPrompt)
+	str("storyteller_system_prompt_file", &cfg.StorytellerSystemPromptFile)
 	str("storyteller_ending_prompt", &cfg.StorytellerEndingPrompt)
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
@@ -207,60 +212,62 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 
 // flagValues holds pointers to all registered CLI flags.
 type flagValues struct {
-	configPath              *string
-	db                      *string
-	dev                     *bool
-	addr                    *string
-	logOutputDir            *string
-	logRequests             *bool
-	logHTML                 *bool
-	logDB                   *bool
-	logWS                   *bool
-	logDebug                *bool
-	storytellerProvider     *string
-	storytellerModel        *string
-	storytellerURL          *string
-	storytellerAPIKey       *string
-	storytellerTemperature  *string
-	storytellerThinking     *string
-	storytellerSystemPrompt *string
-	storytellerEndingPrompt *string
-	narratorProvider        *string
-	narratorModel           *string
-	narratorVoice           *string
-	narratorAPIKey          *string
-	narratorURL             *string
-	narratorSampleRate      *int
+	configPath                  *string
+	db                          *string
+	dev                         *bool
+	addr                        *string
+	logOutputDir                *string
+	logRequests                 *bool
+	logHTML                     *bool
+	logDB                       *bool
+	logWS                       *bool
+	logDebug                    *bool
+	storytellerProvider         *string
+	storytellerModel            *string
+	storytellerURL              *string
+	storytellerAPIKey           *string
+	storytellerTemperature      *string
+	storytellerThinking         *string
+	storytellerSystemPrompt     *string
+	storytellerSystemPromptFile *string
+	storytellerEndingPrompt     *string
+	narratorProvider            *string
+	narratorModel               *string
+	narratorVoice               *string
+	narratorAPIKey              *string
+	narratorURL                 *string
+	narratorSampleRate          *int
 }
 
 // registerFlags registers all CLI flags and returns pointers to their values.
 // Call flag.Parse() after this, then applyTo to layer them over the loaded config.
 func registerFlags() flagValues {
 	return flagValues{
-		configPath:              flag.String("config", "/etc/werewolf/config.json", "path to JSON config file"),
-		db:                      flag.String("db", "", "database connection string"),
-		dev:                     flag.Bool("dev", false, "enable development mode (verbose logging, db dumps on error)"),
-		addr:                    flag.String("addr", "", "HTTP listen address (e.g. :8080)"),
-		logOutputDir:            flag.String("log-output-dir", "", "directory for extended log files"),
-		logRequests:             flag.Bool("log-requests", false, "log HTTP requests and responses"),
-		logHTML:                 flag.Bool("log-html", false, "log HTML states"),
-		logDB:                   flag.Bool("log-db", false, "log database dumps"),
-		logWS:                   flag.Bool("log-ws", false, "log WebSocket messages"),
-		logDebug:                flag.Bool("log-debug", false, "enable debug logging"),
-		storytellerProvider:     flag.String("storyteller-provider", "", "AI storyteller provider (openai|claude)"),
-		storytellerModel:        flag.String("storyteller-model", "", "AI storyteller model name"),
-		storytellerURL:          flag.String("storyteller-url", "", "base URL override for storyteller provider"),
-		storytellerAPIKey:       flag.String("storyteller-api-key", "", "API key for storyteller provider"),
-		storytellerTemperature:  flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
-		storytellerThinking:     flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto (claude only)"),
-		storytellerSystemPrompt: flag.String("storyteller-system-prompt", "", "custom system prompt (overrides default)"),
-		storytellerEndingPrompt: flag.String("storyteller-ending-prompt", "", "custom ending prompt (overrides default)"),
-		narratorProvider:        flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
-		narratorModel:           flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
-		narratorVoice:           flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
-		narratorAPIKey:          flag.String("narrator-api-key", "", "API key for TTS provider"),
-		narratorURL:             flag.String("narrator-url", "", "base URL for openai-compatible TTS provider"),
-		narratorSampleRate:      flag.Int("narrator-sample-rate", 0, "PCM sample rate in Hz (default 24000)"),
+		configPath:                  flag.String("config", "/etc/werewolf/config.json", "path to JSON config file"),
+		db:                          flag.String("db", "", "database connection string"),
+		dev:                         flag.Bool("dev", false, "enable development mode (verbose logging, db dumps on error)"),
+		addr:                        flag.String("addr", "", "HTTP listen address (e.g. :8080)"),
+		logOutputDir:                flag.String("log-output-dir", "", "directory for extended log files"),
+		logRequests:                 flag.Bool("log-requests", false, "log HTTP requests and responses"),
+		logHTML:                     flag.Bool("log-html", false, "log HTML states"),
+		logDB:                       flag.Bool("log-db", false, "log database dumps"),
+		logWS:                       flag.Bool("log-ws", false, "log WebSocket messages"),
+		logDebug:                    flag.Bool("log-debug", false, "enable debug logging"),
+		storytellerProvider:         flag.String("storyteller-provider", "", "AI storyteller provider (openai|claude)"),
+		storytellerModel:            flag.String("storyteller-model", "", "AI storyteller model name"),
+		storytellerURL:              flag.String("storyteller-url", "", "base URL override for storyteller provider"),
+		storytellerAPIKey:           flag.String("storyteller-api-key", "", "API key for storyteller provider"),
+		storytellerTemperature:      flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
+		storytellerThinking:         flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto (claude only)"),
+		storytellerSystemPrompt:     flag.String("storyteller-system-prompt", "", "custom system prompt (overrides default)"),
+		storytellerSystemPromptFile: flag.String("storyteller-system-prompt-file", "", "path to file with system prompt (overrides inline)"),
+		storytellerEndingPrompt:     flag.String("storyteller-ending-prompt", "", "custom ending prompt (overrides default)"),
+		narratorProvider:            flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
+		narratorModel:               flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
+		narratorVoice:               flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
+		narratorAPIKey:              flag.String("narrator-api-key", "", "API key for TTS provider"),
+		narratorURL:                 flag.String("narrator-url", "", "base URL for openai-compatible TTS provider"),
+		narratorSampleRate:          flag.Int("narrator-sample-rate", 0, "PCM sample rate in Hz (default 24000)"),
 	}
 }
 
@@ -301,6 +308,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerThinking = *fv.storytellerThinking
 		case "storyteller-system-prompt":
 			cfg.StorytellerSystemPrompt = *fv.storytellerSystemPrompt
+		case "storyteller-system-prompt-file":
+			cfg.StorytellerSystemPromptFile = *fv.storytellerSystemPromptFile
 		case "storyteller-ending-prompt":
 			cfg.StorytellerEndingPrompt = *fv.storytellerEndingPrompt
 		case "narrator-provider":

@@ -272,6 +272,23 @@
       #history-bar-nav-toggle:checked~.layout .history-bar {
         transform: translateX(0);
       }
+
+      /* Backdrop overlay — closes panels on tap outside */
+      .nav-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+        background: rgba(0, 0, 0, 0.3);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease-in-out;
+      }
+
+      #sidebar-nav-toggle:checked~.layout .nav-backdrop,
+      #history-bar-nav-toggle:checked~.layout .nav-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
   </style>
 </head>
@@ -294,6 +311,7 @@
         H
       </label>
     </header>
+    <div class="nav-backdrop" id="nav-backdrop"></div>
     {{.SidebarHTML}}
     <section class="container">
       {{.GameComponent}}
@@ -320,6 +338,16 @@
     }
     initScrollCollapse(sidebar, 60);
 
+    // Close sidebar/history when clicking the backdrop
+    document.getElementById('nav-backdrop').addEventListener('click', function () {
+      document.getElementById('sidebar-nav-toggle').checked = false;
+      document.getElementById('history-bar-nav-toggle').checked = false;
+      if (sidebar) {
+        sidebar.classList.remove('scrolled');
+        sidebar.scrollTop = 0;
+      }
+    });
+
     // Reset sidebar scroll state when the sidebar is closed
     document.getElementById('sidebar-nav-toggle').addEventListener('change', function () {
       if (!this.checked && sidebar) {
@@ -327,6 +355,180 @@
         sidebar.scrollTop = 0;
       }
     });
+
+    // ── Swipe gestures for sidebar / history bar ─────────────────────────
+    (function() {
+      var PANEL_WIDTH = 256; // 16rem ≈ 256px
+      var EDGE_ZONE = 30;   // px from screen edge to start an open-swipe
+      var VELOCITY_THRESHOLD = 0.3; // px/ms — fast swipe snaps regardless of distance
+      var DISTANCE_THRESHOLD = 0.4; // fraction of panel width to snap open/closed
+
+      var sidebarToggle = document.getElementById('sidebar-nav-toggle');
+      var historyToggle = document.getElementById('history-bar-nav-toggle');
+      var historyBar = document.querySelector('.history-bar');
+      var backdrop = document.getElementById('nav-backdrop');
+
+      var startX = 0, startY = 0, startTime = 0;
+      var currentX = 0;
+      var dragging = false;   // actively tracking a swipe
+      var activePanel = null; // 'sidebar' or 'history'
+      var panelOpen = false;  // was the panel already open when swipe started?
+
+      function isMobile() {
+        return window.matchMedia('(max-width: 1280px)').matches;
+      }
+
+      function sidebarIsOpen() { return sidebarToggle.checked; }
+      function historyIsOpen() { return historyToggle.checked; }
+
+      function disableTransitions() {
+        sidebar.style.transition = 'none';
+        historyBar.style.transition = 'none';
+        backdrop.style.transition = 'none';
+      }
+
+      function enableTransitions() {
+        sidebar.style.transition = '';
+        historyBar.style.transition = '';
+        backdrop.style.transition = '';
+      }
+
+      function clearTransforms() {
+        sidebar.style.transform = '';
+        historyBar.style.transform = '';
+        backdrop.style.opacity = '';
+        backdrop.style.pointerEvents = '';
+      }
+
+      // Apply live drag position. progress: 0 = closed, 1 = fully open
+      function applyDrag(progress) {
+        progress = Math.max(0, Math.min(1, progress));
+        if (activePanel === 'sidebar') {
+          sidebar.style.transform = 'translateX(' + (-100 + progress * 100) + '%)';
+        } else {
+          historyBar.style.transform = 'translateX(' + (100 - progress * 100) + '%)';
+        }
+        backdrop.style.opacity = progress * 0.3 / 0.3; // 0→1 mapping
+        backdrop.style.pointerEvents = progress > 0 ? 'auto' : 'none';
+      }
+
+      document.addEventListener('touchstart', function(e) {
+        if (!isMobile() || !sidebar || !historyBar) return;
+        var touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        startTime = Date.now();
+        currentX = startX;
+        dragging = false;
+        activePanel = null;
+
+        // Determine if this touch could start a swipe
+        if (sidebarIsOpen() && sidebar.contains(e.target)) {
+          activePanel = 'sidebar';
+          panelOpen = true;
+        } else if (historyIsOpen() && historyBar.contains(e.target)) {
+          activePanel = 'history';
+          panelOpen = true;
+        } else if (!sidebarIsOpen() && !historyIsOpen()) {
+          if (startX < EDGE_ZONE) {
+            activePanel = 'sidebar';
+            panelOpen = false;
+          } else if (startX > window.innerWidth - EDGE_ZONE) {
+            activePanel = 'history';
+            panelOpen = false;
+          }
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', function(e) {
+        if (!activePanel) return;
+        var touch = e.touches[0];
+        var dx = touch.clientX - startX;
+        var dy = touch.clientY - startY;
+
+        // First significant move: decide if it's horizontal enough to be a swipe
+        if (!dragging) {
+          if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // too small
+          if (Math.abs(dy) > Math.abs(dx)) {
+            // Vertical scroll — abort swipe tracking
+            activePanel = null;
+            return;
+          }
+          dragging = true;
+          disableTransitions();
+        }
+
+        currentX = touch.clientX;
+        var progress;
+        if (activePanel === 'sidebar') {
+          if (panelOpen) {
+            // Dragging left to close: dx negative → progress shrinks from 1
+            progress = 1 + dx / PANEL_WIDTH;
+          } else {
+            // Dragging right to open: dx positive → progress grows from 0
+            progress = dx / PANEL_WIDTH;
+          }
+        } else {
+          if (panelOpen) {
+            // Dragging right to close: dx positive → progress shrinks from 1
+            progress = 1 - dx / PANEL_WIDTH;
+          } else {
+            // Dragging left to open: dx negative → progress grows from 0
+            progress = -dx / PANEL_WIDTH;
+          }
+        }
+        applyDrag(progress);
+      }, { passive: true });
+
+      document.addEventListener('touchend', function() {
+        if (!dragging || !activePanel) {
+          activePanel = null;
+          return;
+        }
+
+        var dx = currentX - startX;
+        var dt = Date.now() - startTime;
+        var velocity = Math.abs(dx) / (dt || 1); // px/ms
+
+        var progress;
+        if (activePanel === 'sidebar') {
+          progress = panelOpen ? 1 + dx / PANEL_WIDTH : dx / PANEL_WIDTH;
+        } else {
+          progress = panelOpen ? 1 - dx / PANEL_WIDTH : -dx / PANEL_WIDTH;
+        }
+        progress = Math.max(0, Math.min(1, progress));
+
+        // Decide snap direction: fast swipe wins, otherwise use distance threshold
+        var shouldOpen;
+        if (velocity > VELOCITY_THRESHOLD) {
+          // Fast swipe — direction determines outcome
+          if (activePanel === 'sidebar') {
+            shouldOpen = dx > 0;
+          } else {
+            shouldOpen = dx < 0;
+          }
+        } else {
+          shouldOpen = progress >= DISTANCE_THRESHOLD;
+        }
+
+        // Animate to final state
+        enableTransitions();
+        clearTransforms();
+
+        if (activePanel === 'sidebar') {
+          sidebarToggle.checked = shouldOpen;
+          if (!shouldOpen && sidebar) {
+            sidebar.classList.remove('scrolled');
+            sidebar.scrollTop = 0;
+          }
+        } else {
+          historyToggle.checked = shouldOpen;
+        }
+
+        activePanel = null;
+        dragging = false;
+      }, { passive: true });
+    })();
 
     // Global helper: send a WS message from inside shadow DOM where htmx
     // ws-send can't reach the [ws-connect] ancestor across the shadow boundary.
