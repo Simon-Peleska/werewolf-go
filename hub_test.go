@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 			Set("disable-background-timer-throttling", "").
 			Set("disable-backgrounding-occluded-windows", "").
 			Set("disable-renderer-backgrounding", "").
+			Set("mute-audio", "").
 			Launch()
 		if err == nil {
 			b := rod.New().ControlURL(u)

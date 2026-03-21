@@ -55,10 +55,10 @@ func TestNarratorPCMStreamingToFrontend(t *testing.T) {
 
 	// ── 2. Build Storyteller pointing at the fake server ────────────────────────────
 	storyteller := initStoryteller(AppConfig{
-		StorytellerProvider: "openai",
-		StorytellerModel:    "llm-1",
-		StorytellerURL:      fakeOpenAi.URL + "/v1",
-		StorytellerAPIKey:   "test-key",
+		Storyteller:   true,
+		OpenAIModel:   "llm-1",
+		OpenAIAPIBase: fakeOpenAi.URL + "/v1",
+		OpenAIAPIKey:  "test-key",
 	})
 
 	ctx.app.hubs["test-game"].storyteller = storyteller

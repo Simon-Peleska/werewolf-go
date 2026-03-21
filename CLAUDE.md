@@ -337,14 +337,13 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Log DB | `LOG_DB` | `log_db` | `-log-db` | `false` | Log database dumps |
 | Log WS | `LOG_WS` | `log_ws` | `-log-ws` | `false` | Log WebSocket messages |
 | Log debug | `LOG_DEBUG` | `log_debug` | `-log-debug` | `false` | Enable debug logging |
-| Storyteller provider | `STORYTELLER_PROVIDER` | `storyteller_provider` | `-storyteller-provider` | — | `openai\|claude` |
-| Storyteller model | `STORYTELLER_MODEL` | `storyteller_model` | `-storyteller-model` | — | Model name |
-| Storyteller URL | `STORYTELLER_URL` | `storyteller_url` | `-storyteller-url` | — | Base URL override (default: provider's public API) |
-| Storyteller API key | `STORYTELLER_API_KEY` | `storyteller_api_key` | `-storyteller-api-key` | — | API key for storyteller |
+| Storyteller | `STORYTELLER` | `storyteller` | `-storyteller` | `false` | Enable AI storyteller |
+| OpenAI model | `OPENAI_MODEL` | `openai_model` | `-openai-model` | — | Model name |
+| OpenAI API base | `OPENAI_API_BASE` | `openai_api_base` | `-openai-api-base` | — | Base URL (default: `https://api.openai.com/v1`) |
+| OpenAI API key | `OPENAI_API_KEY` | `openai_api_key` | `-openai-api-key` | — | API key |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
-| Thinking mode | `STORYTELLER_THINKING` | `storyteller_thinking` | `-storyteller-thinking` | — | `none\|low\|medium\|high\|auto` (claude only) |
-| System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides inline) |
-| Ending prompt | `STORYTELLER_ENDING_PROMPT` | `storyteller_ending_prompt` | `-storyteller-ending-prompt` | — | Custom system prompt for the game-ending narration (overrides default) |
+| System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides default) |
+| Ending prompt file | `STORYTELLER_ENDING_PROMPT_FILE` | `storyteller_ending_prompt_file` | `-storyteller-ending-prompt-file` | — | Path to file with ending prompt (overrides default `ending_prompt.md`) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
@@ -464,9 +463,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 
 ### Storyteller (`storyteller.go`)
 - `Storyteller` interface: `Tell(ctx, history []string, onChunk func(string)) (string, error)`
-- Two providers (direct HTTP, no library):
-  - `openai` — POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
-  - `claude` — POST `/v1/messages` SSE (Anthropic Messages API). Set `STORYTELLER_URL` to override (default: `https://api.anthropic.com`). Supports extended thinking via `STORYTELLER_THINKING` (maps to budget_tokens: low=2000, medium=8000, high=32000, auto=16000).
+- OpenAI-compatible provider (direct HTTP, no library): POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
 - `maybeGenerateStory(gameID, round, phase, actorPlayerID)` — called after night kills, day eliminations, hunter revenge
 - Tokens streamed into `game_action.description` via 300ms DB flush ticker, so history updates progressively in the UI
 - **Sentence-pipelined TTS**: as LLM tokens arrive, `nextSentence()` detects sentence boundaries (`.` `!` `?` + whitespace/end). Each complete sentence is sent to a `sentenceCh` channel; a single TTS goroutine drains it sequentially so audio starts before the LLM finishes and sentences never overlap.

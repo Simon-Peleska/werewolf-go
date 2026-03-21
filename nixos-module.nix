@@ -6,7 +6,7 @@
 # with KEY=value lines, never part of the Nix store.
 #
 # Minimal /etc/werewolf/secrets on the server:
-#   STORYTELLER_API_KEY=sk-...
+#   OPENAI_API_KEY=sk-...
 #   NARRATOR_API_KEY=sk-...
 { config, lib, pkgs, ... }:
 
@@ -37,35 +37,30 @@ in {
       description = ''
         Path to a file containing secret environment variables (KEY=value lines).
         Create this file manually on the server — it is never part of the Nix store.
-        Typically contains STORYTELLER_API_KEY and NARRATOR_API_KEY.
+        Typically contains OPENAI_API_KEY and NARRATOR_API_KEY.
       '';
     };
 
     # ── Storyteller ───────────────────────────────────────────────────────────
-    storytellerProvider = lib.mkOption {
-      type    = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Storyteller provider: openai or claude.";
+    storyteller = lib.mkOption {
+      type    = lib.types.bool;
+      default = false;
+      description = "Enable AI storyteller.";
     };
-    storytellerModel = lib.mkOption {
+    openaiModel = lib.mkOption {
       type    = lib.types.nullOr lib.types.str;
       default = null;
-      description = "Storyteller model name.";
+      description = "OpenAI model name.";
     };
-    storytellerUrl = lib.mkOption {
+    openaiApiBase = lib.mkOption {
       type    = lib.types.nullOr lib.types.str;
       default = null;
-      description = "Storyteller base URL override (default: provider's public API).";
+      description = "OpenAI API base URL (default: https://api.openai.com/v1).";
     };
     storytellerTemperature = lib.mkOption {
       type    = lib.types.nullOr lib.types.str;
       default = null;
-      description = "Sampling temperature (0-1).";
-    };
-    storytellerThinking = lib.mkOption {
-      type    = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Thinking mode: none|low|medium|high|auto (claude only).";
+      description = "Sampling temperature (0-2, default 1.2).";
     };
 
     # ── Narrator (TTS) ────────────────────────────────────────────────────────
@@ -117,11 +112,10 @@ in {
         # WAL mode is important for SQLite under concurrent WebSocket load.
         DB = "file:/var/lib/werewolf/werewolf.db?cache=shared&_journal_mode=WAL";
       }
-      // optionalEnv "STORYTELLER_PROVIDER"    cfg.storytellerProvider
-      // optionalEnv "STORYTELLER_MODEL"       cfg.storytellerModel
-      // optionalEnv "STORYTELLER_URL"         cfg.storytellerUrl
+      // (if cfg.storyteller then { STORYTELLER = "true"; } else {})
+      // optionalEnv "OPENAI_MODEL"            cfg.openaiModel
+      // optionalEnv "OPENAI_API_BASE"         cfg.openaiApiBase
       // optionalEnv "STORYTELLER_TEMPERATURE" cfg.storytellerTemperature
-      // optionalEnv "STORYTELLER_THINKING"    cfg.storytellerThinking
       // optionalEnv "NARRATOR_PROVIDER"       cfg.narratorProvider
       // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
       // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice

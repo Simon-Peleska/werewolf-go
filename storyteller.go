@@ -20,6 +20,9 @@ import (
 //go:embed prompt.md
 var defaultSystemPrompt string
 
+//go:embed ending_prompt.md
+var defaultEndingPrompt string
+
 // Storyteller generates a dramatic story after deaths in the game.
 // onChunk is called with each text chunk as it streams in.
 type Storyteller interface {
@@ -108,92 +111,6 @@ func (s *openaiStoryteller) Tell(ctx context.Context, userPrompt string, onChunk
 	return strings.TrimSpace(full.String()), scanner.Err()
 }
 
-// ── Claude-compatible ────────────────────────────────────────────────────────
-// Talks to the Anthropic Messages API (POST /v1/messages) with SSE streaming.
-// Also supports extended thinking via budget_tokens.
-
-type claudeStoryteller struct {
-	baseURL        string
-	apiKey         string
-	model          string
-	systemPrompt   string
-	temperature    float64
-	hasTemp        bool
-	thinkingBudget int // 0 = disabled; >0 enables extended thinking
-}
-
-func (s *claudeStoryteller) Tell(ctx context.Context, userPrompt string, onChunk func(string)) (string, error) {
-	type message struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	body := map[string]any{
-		"model":      s.model,
-		"max_tokens": 2048,
-		"stream":     true,
-		"system":     s.systemPrompt,
-		"messages":   []message{{Role: "user", Content: userPrompt}},
-	}
-	if s.thinkingBudget > 0 {
-		// Extended thinking requires temperature=1
-		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": s.thinkingBudget}
-		body["temperature"] = 1
-	} else if s.hasTemp {
-		body["temperature"] = s.temperature
-	}
-
-	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/v1/messages", bytes.NewReader(data))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", s.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("claude API %s: %s", resp.Status, b)
-	}
-
-	var full strings.Builder
-	var lastEvent string
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "event: ") {
-			lastEvent = strings.TrimPrefix(line, "event: ")
-			continue
-		}
-		if lastEvent != "content_block_delta" || !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		payload := strings.TrimPrefix(line, "data: ")
-		var chunk struct {
-			Delta struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"delta"`
-		}
-		if json.Unmarshal([]byte(payload), &chunk) != nil {
-			continue
-		}
-		// Skip thinking blocks; only emit text_delta
-		if chunk.Delta.Type == "text_delta" && chunk.Delta.Text != "" {
-			full.WriteString(chunk.Delta.Text)
-			if onChunk != nil {
-				onChunk(chunk.Delta.Text)
-			}
-		}
-	}
-	return strings.TrimSpace(full.String()), scanner.Err()
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // nextSentence pulls the first complete sentence from text.
@@ -214,11 +131,6 @@ func nextSentence(text string) (sentence, rest string) {
 	}
 	return "", text
 }
-
-const defaultEndingPrompt = `You are a dramatically over-the-top storyteller delivering the closing narration for a medieval werewolf game.
-The game is over and all roles are now revealed. Announce the winners with theatrical flair, then give a vivid recap of the key moments that decided the game.
-Call out standout plays, fatal mistakes, surprising twists, and any moments of betrayal or heroism.
-Keep it to 6-8 sentences total. Be dramatic, be specific, and make it feel like an epic conclusion.`
 
 func buildUserPrompt(history []string, alivePlayers []string) string {
 	prompt := "Game history so far:\n" + strings.Join(history, "\n")
@@ -351,16 +263,11 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 			endingPrompt = defaultEndingPrompt
 		}
 
-		// Use a copy of the storyteller with the ending system prompt
+		// Use a copy of the storyteller with the ending prompt appended to the system prompt
 		storyteller := h.storyteller
-		switch s := storyteller.(type) {
-		case *openaiStoryteller:
+		if s, ok := storyteller.(*openaiStoryteller); ok {
 			copy := *s
-			copy.systemPrompt = endingPrompt
-			storyteller = &copy
-		case *claudeStoryteller:
-			copy := *s
-			copy.systemPrompt = endingPrompt
+			copy.systemPrompt = s.systemPrompt + "\n\n" + strings.TrimSpace(endingPrompt)
 			storyteller = &copy
 		}
 
@@ -419,25 +326,9 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 	}()
 }
 
-// thinkingBudget maps a thinking-mode string to a token budget for Claude.
-func thinkingBudget(mode string) int {
-	switch mode {
-	case "low":
-		return 2000
-	case "medium":
-		return 8000
-	case "high":
-		return 32000
-	case "auto":
-		return 16000
-	default:
-		return 0
-	}
-}
-
 // initStoryteller creates a Storyteller from config, or returns nil if disabled.
 func initStoryteller(cfg AppConfig) Storyteller {
-	model := cfg.StorytellerModel
+	model := cfg.OpenAIModel
 
 	// Default temperature: 1.2 (above average for more varied storytelling)
 	temperature := 1.2
@@ -459,32 +350,34 @@ func initStoryteller(cfg AppConfig) Storyteller {
 			systemPrompt = string(data)
 			log.Printf("Storyteller: loaded system prompt from %s (%d bytes)", cfg.StorytellerSystemPromptFile, len(data))
 		}
-	} else if cfg.StorytellerSystemPrompt != "" {
-		systemPrompt = cfg.StorytellerSystemPrompt
 	}
 
-	switch cfg.StorytellerProvider {
-	case "openai":
-		baseURL := strings.TrimRight(cfg.StorytellerURL, "/")
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
-		log.Printf("Storyteller: openai model=%s url=%s temperature=%.2f", model, baseURL, temperature)
-		return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp}
-
-	case "claude":
-		baseURL := strings.TrimRight(cfg.StorytellerURL, "/")
-		if baseURL == "" {
-			baseURL = "https://api.anthropic.com"
-		}
-		budget := thinkingBudget(cfg.StorytellerThinking)
-		log.Printf("Storyteller: claude model=%s url=%s temperature=%.2f thinking=%s", model, baseURL, temperature, cfg.StorytellerThinking)
-		return &claudeStoryteller{baseURL: baseURL, apiKey: cfg.StorytellerAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp, thinkingBudget: budget}
-
-	default:
-		log.Printf("Storyteller: disabled (set storyteller_provider to openai or claude)")
+	if !cfg.Storyteller {
+		log.Printf("Storyteller: disabled")
 		return nil
 	}
+
+	baseURL := strings.TrimRight(cfg.OpenAIAPIBase, "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	log.Printf("Storyteller: model=%s url=%s temperature=%.2f", model, baseURL, temperature)
+	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp}
+}
+
+// loadEndingPrompt reads the ending prompt from a file if configured, otherwise returns "".
+// An empty return means the default embedded ending_prompt.md will be used at runtime.
+func loadEndingPrompt(cfg AppConfig) string {
+	if cfg.StorytellerEndingPromptFile == "" {
+		return ""
+	}
+	data, err := os.ReadFile(cfg.StorytellerEndingPromptFile)
+	if err != nil {
+		log.Printf("Storyteller: failed to read ending prompt file %s: %v", cfg.StorytellerEndingPromptFile, err)
+		return ""
+	}
+	log.Printf("Storyteller: loaded ending prompt from %s (%d bytes)", cfg.StorytellerEndingPromptFile, len(data))
+	return string(data)
 }
 
 // ── Story generation ─────────────────────────────────────────────────────────

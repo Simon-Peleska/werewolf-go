@@ -1262,7 +1262,7 @@ func main() {
 		hubs:         make(map[string]*Hub),
 		storyteller:  storyteller,
 		narrator:     narrator,
-		endingPrompt: cfg.StorytellerEndingPrompt,
+		endingPrompt: loadEndingPrompt(cfg),
 		logf:         log.Printf,
 	}
 

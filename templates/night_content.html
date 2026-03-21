@@ -7,7 +7,7 @@
         {{if and .ShowSurvey .HasSubmittedSurvey}}
 
         <!-- Submitted survey — waiting message -->
-        <div class="night-sleeping">
+        <div id="survey-waiting" class="night-sleeping">
             <img class="night-seal-pulse" src="/static/seals/Night.webp" alt="Night">
             <p><em>Waiting for {{subtract .AliveCount .SurveyCount}} more player(s)...</em></p>
         </div>

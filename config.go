@@ -25,15 +25,13 @@ type AppConfig struct {
 	LogDebug     bool   `json:"log_debug"`
 
 	// AI Storyteller
-	StorytellerProvider         string `json:"storyteller_provider"`           // openai | claude
-	StorytellerModel            string `json:"storyteller_model"`              // model name
-	StorytellerURL              string `json:"storyteller_url"`                // base URL (default: provider's public API)
-	StorytellerAPIKey           string `json:"storyteller_api_key"`            // API key
+	Storyteller                 bool   `json:"storyteller"`                    // enable AI storyteller
+	OpenAIModel                 string `json:"openai_model"`                   // model name
+	OpenAIAPIBase               string `json:"openai_api_base"`                // base URL (default: https://api.openai.com/v1)
+	OpenAIAPIKey                string `json:"openai_api_key"`                 // API key
 	StorytellerTemperature      string `json:"storyteller_temperature"`        // float 0-2 as string (default 1.2)
-	StorytellerThinking         string `json:"storyteller_thinking"`           // none | low | medium | high | auto (claude only)
-	StorytellerSystemPrompt     string `json:"storyteller_system_prompt"`      // custom system prompt (overrides default)
-	StorytellerSystemPromptFile string `json:"storyteller_system_prompt_file"` // path to file with system prompt (overrides inline)
-	StorytellerEndingPrompt     string `json:"storyteller_ending_prompt"`      // custom ending prompt (overrides default)
+	StorytellerSystemPromptFile string `json:"storyteller_system_prompt_file"` // path to file with system prompt (overrides default)
+	StorytellerEndingPromptFile string `json:"storyteller_ending_prompt_file"` // path to file with ending prompt (overrides default)
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -104,32 +102,26 @@ func loadConfig(configPath string) AppConfig {
 	if v, ok := envBool("LOG_DEBUG"); ok {
 		cfg.LogDebug = v
 	}
-	if v := envStr("STORYTELLER_PROVIDER"); v != "" {
-		cfg.StorytellerProvider = v
+	if v, ok := envBool("STORYTELLER"); ok {
+		cfg.Storyteller = v
 	}
-	if v := envStr("STORYTELLER_MODEL"); v != "" {
-		cfg.StorytellerModel = v
+	if v := envStr("OPENAI_MODEL"); v != "" {
+		cfg.OpenAIModel = v
 	}
-	if v := envStr("STORYTELLER_URL"); v != "" {
-		cfg.StorytellerURL = v
+	if v := envStr("OPENAI_API_BASE"); v != "" {
+		cfg.OpenAIAPIBase = v
 	}
-	if v := envStr("STORYTELLER_API_KEY"); v != "" {
-		cfg.StorytellerAPIKey = v
+	if v := envStr("OPENAI_API_KEY"); v != "" {
+		cfg.OpenAIAPIKey = v
 	}
 	if v := envStr("STORYTELLER_TEMPERATURE"); v != "" {
 		cfg.StorytellerTemperature = v
 	}
-	if v := envStr("STORYTELLER_THINKING"); v != "" {
-		cfg.StorytellerThinking = v
-	}
-	if v := envStr("STORYTELLER_SYSTEM_PROMPT"); v != "" {
-		cfg.StorytellerSystemPrompt = v
-	}
 	if v := envStr("STORYTELLER_SYSTEM_PROMPT_FILE"); v != "" {
 		cfg.StorytellerSystemPromptFile = v
 	}
-	if v := envStr("STORYTELLER_ENDING_PROMPT"); v != "" {
-		cfg.StorytellerEndingPrompt = v
+	if v := envStr("STORYTELLER_ENDING_PROMPT_FILE"); v != "" {
+		cfg.StorytellerEndingPromptFile = v
 	}
 	if v := envStr("NARRATOR_PROVIDER"); v != "" {
 		cfg.NarratorProvider = v
@@ -191,15 +183,13 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	boolean("log_db", &cfg.LogDB)
 	boolean("log_ws", &cfg.LogWS)
 	boolean("log_debug", &cfg.LogDebug)
-	str("storyteller_provider", &cfg.StorytellerProvider)
-	str("storyteller_model", &cfg.StorytellerModel)
-	str("storyteller_url", &cfg.StorytellerURL)
-	str("storyteller_api_key", &cfg.StorytellerAPIKey)
+	boolean("storyteller", &cfg.Storyteller)
+	str("openai_model", &cfg.OpenAIModel)
+	str("openai_api_base", &cfg.OpenAIAPIBase)
+	str("openai_api_key", &cfg.OpenAIAPIKey)
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
-	str("storyteller_thinking", &cfg.StorytellerThinking)
-	str("storyteller_system_prompt", &cfg.StorytellerSystemPrompt)
 	str("storyteller_system_prompt_file", &cfg.StorytellerSystemPromptFile)
-	str("storyteller_ending_prompt", &cfg.StorytellerEndingPrompt)
+	str("storyteller_ending_prompt_file", &cfg.StorytellerEndingPromptFile)
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
 	str("narrator_voice", &cfg.NarratorVoice)
@@ -222,15 +212,13 @@ type flagValues struct {
 	logDB                       *bool
 	logWS                       *bool
 	logDebug                    *bool
-	storytellerProvider         *string
-	storytellerModel            *string
-	storytellerURL              *string
-	storytellerAPIKey           *string
+	storyteller                 *bool
+	openaiModel                 *string
+	openaiAPIBase               *string
+	openaiAPIKey                *string
 	storytellerTemperature      *string
-	storytellerThinking         *string
-	storytellerSystemPrompt     *string
 	storytellerSystemPromptFile *string
-	storytellerEndingPrompt     *string
+	storytellerEndingPromptFile *string
 	narratorProvider            *string
 	narratorModel               *string
 	narratorVoice               *string
@@ -253,15 +241,13 @@ func registerFlags() flagValues {
 		logDB:                       flag.Bool("log-db", false, "log database dumps"),
 		logWS:                       flag.Bool("log-ws", false, "log WebSocket messages"),
 		logDebug:                    flag.Bool("log-debug", false, "enable debug logging"),
-		storytellerProvider:         flag.String("storyteller-provider", "", "AI storyteller provider (openai|claude)"),
-		storytellerModel:            flag.String("storyteller-model", "", "AI storyteller model name"),
-		storytellerURL:              flag.String("storyteller-url", "", "base URL override for storyteller provider"),
-		storytellerAPIKey:           flag.String("storyteller-api-key", "", "API key for storyteller provider"),
+		storyteller:                 flag.Bool("storyteller", false, "enable AI storyteller"),
+		openaiModel:                 flag.String("openai-model", "", "OpenAI model name"),
+		openaiAPIBase:               flag.String("openai-api-base", "", "OpenAI API base URL (default: https://api.openai.com/v1)"),
+		openaiAPIKey:                flag.String("openai-api-key", "", "OpenAI API key"),
 		storytellerTemperature:      flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
-		storytellerThinking:         flag.String("storyteller-thinking", "", "thinking mode: none|low|medium|high|auto (claude only)"),
-		storytellerSystemPrompt:     flag.String("storyteller-system-prompt", "", "custom system prompt (overrides default)"),
-		storytellerSystemPromptFile: flag.String("storyteller-system-prompt-file", "", "path to file with system prompt (overrides inline)"),
-		storytellerEndingPrompt:     flag.String("storyteller-ending-prompt", "", "custom ending prompt (overrides default)"),
+		storytellerSystemPromptFile: flag.String("storyteller-system-prompt-file", "", "path to file with system prompt (overrides default)"),
+		storytellerEndingPromptFile: flag.String("storyteller-ending-prompt-file", "", "path to file with ending prompt (overrides default)"),
 		narratorProvider:            flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
 		narratorModel:               flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
 		narratorVoice:               flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
@@ -294,24 +280,20 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.LogWS = *fv.logWS
 		case "log-debug":
 			cfg.LogDebug = *fv.logDebug
-		case "storyteller-provider":
-			cfg.StorytellerProvider = *fv.storytellerProvider
-		case "storyteller-model":
-			cfg.StorytellerModel = *fv.storytellerModel
-		case "storyteller-url":
-			cfg.StorytellerURL = *fv.storytellerURL
-		case "storyteller-api-key":
-			cfg.StorytellerAPIKey = *fv.storytellerAPIKey
+		case "storyteller":
+			cfg.Storyteller = *fv.storyteller
+		case "openai-model":
+			cfg.OpenAIModel = *fv.openaiModel
+		case "openai-api-base":
+			cfg.OpenAIAPIBase = *fv.openaiAPIBase
+		case "openai-api-key":
+			cfg.OpenAIAPIKey = *fv.openaiAPIKey
 		case "storyteller-temperature":
 			cfg.StorytellerTemperature = *fv.storytellerTemperature
-		case "storyteller-thinking":
-			cfg.StorytellerThinking = *fv.storytellerThinking
-		case "storyteller-system-prompt":
-			cfg.StorytellerSystemPrompt = *fv.storytellerSystemPrompt
 		case "storyteller-system-prompt-file":
 			cfg.StorytellerSystemPromptFile = *fv.storytellerSystemPromptFile
-		case "storyteller-ending-prompt":
-			cfg.StorytellerEndingPrompt = *fv.storytellerEndingPrompt
+		case "storyteller-ending-prompt-file":
+			cfg.StorytellerEndingPromptFile = *fv.storytellerEndingPromptFile
 		case "narrator-provider":
 			cfg.NarratorProvider = *fv.narratorProvider
 		case "narrator-model":
