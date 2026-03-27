@@ -162,6 +162,42 @@ func loadConfig(configPath string) AppConfig {
 	return cfg
 }
 
+// censor returns "****" if a secret is set, or "" if empty.
+func censor(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "****"
+}
+
+// logConfig prints all configuration settings, censoring secrets.
+func (cfg AppConfig) logConfig() {
+	log.Println("=== Configuration ===")
+	log.Printf("  db:                            %s", cfg.DB)
+	log.Printf("  dev:                           %v", cfg.Dev)
+	log.Printf("  addr:                          %s", cfg.Addr)
+	log.Printf("  log_output_dir:                %s", cfg.LogOutputDir)
+	log.Printf("  log_requests:                  %v", cfg.LogRequests)
+	log.Printf("  log_html:                      %v", cfg.LogHTML)
+	log.Printf("  log_db:                        %v", cfg.LogDB)
+	log.Printf("  log_ws:                        %v", cfg.LogWS)
+	log.Printf("  log_debug:                     %v", cfg.LogDebug)
+	log.Printf("  storyteller:                   %v", cfg.Storyteller)
+	log.Printf("  openai_model:                  %s", cfg.OpenAIModel)
+	log.Printf("  openai_api_base:               %s", cfg.OpenAIAPIBase)
+	log.Printf("  openai_api_key:                %s", censor(cfg.OpenAIAPIKey))
+	log.Printf("  storyteller_temperature:       %s", cfg.StorytellerTemperature)
+	log.Printf("  storyteller_system_prompt_file: %s", cfg.StorytellerSystemPromptFile)
+	log.Printf("  storyteller_ending_prompt_file: %s", cfg.StorytellerEndingPromptFile)
+	log.Printf("  narrator_provider:             %s", cfg.NarratorProvider)
+	log.Printf("  narrator_model:                %s", cfg.NarratorModel)
+	log.Printf("  narrator_voice:                %s", cfg.NarratorVoice)
+	log.Printf("  narrator_api_key:              %s", censor(cfg.NarratorAPIKey))
+	log.Printf("  narrator_url:                  %s", cfg.NarratorURL)
+	log.Printf("  narrator_sample_rate:          %d", cfg.NarratorSampleRate)
+	log.Println("=====================")
+}
+
 // applyJSONOverlay only sets fields that are explicitly present in the JSON map.
 func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str := func(key string, dst *string) {

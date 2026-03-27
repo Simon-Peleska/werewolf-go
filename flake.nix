@@ -34,10 +34,6 @@
           pname = "mcp-dap-server";
           version = "unstable";
           src = mcp-dap-server-src;
-          # Relax go.mod version constraint so nixpkgs Go 1.25 can build it
-          postPatch = ''
-            substituteInPlace go.mod --replace-fail 'go 1.26.1' 'go 1.25'
-          '';
           vendorHash = "sha256-RpofdCGXwakl+ouhPEjrPjB+4uLhNrPNFpztEOxaJf0=";
           # Tests require dlv in PATH which isn't available in the Nix sandbox
           doCheck = false;

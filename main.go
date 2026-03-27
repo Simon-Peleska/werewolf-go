@@ -1208,6 +1208,7 @@ func main() {
 	fv.applyTo(&cfg)
 
 	devMode = cfg.Dev
+	cfg.logConfig()
 
 	// Set up logging to both stdout and file
 	logFile, err := os.OpenFile("werewolf.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
