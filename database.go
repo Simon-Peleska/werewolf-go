@@ -320,7 +320,8 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	  ('Cupid', 'On night 1, chooses two players to become lovers.', 'villager'),
 	  ('Guard', 'Protects one player per night, but not the same player twice in a row.', 'villager'),
 	  ('Mason', 'Knows other masons, providing confirmed villagers.', 'villager'),
-	  ('Wolf Cub', 'If eliminated, werewolves kill two victims the next night.', 'werewolf')
+	  ('Wolf Cub', 'If eliminated, werewolves kill two victims the next night.', 'werewolf'),
+  ('Joker', 'Gets assigned a random other role at the start of the game.', 'villager')
 	`
 	_, err := db.Exec(schema)
 	if err != nil {

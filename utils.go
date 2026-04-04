@@ -552,6 +552,7 @@ const (
 	RoleGuard    = "8"
 	RoleMason    = "9"
 	RoleWolfCub  = "10"
+	RoleJoker    = "11"
 )
 
 func getFreePort() (int, error) {
@@ -1318,22 +1319,18 @@ func (tp *TestPlayer) startGame() {
 	}
 }
 
-// getRole returns the player's assigned role from character-info
+// getRole returns the player's assigned role from the role-name attribute on the card host element.
+// Reading the attribute avoids CSS text-transform (e.g. uppercase footer labels) affecting the value.
 func (tp *TestPlayer) getRole() string {
 	host, err := tp.p().Element("#sidebar-role-card")
 	if err != nil {
 		tp.t.Fatalf("[%s] getRole: #sidebar-role-card not found: %v", tp.Name, err)
 	}
-	shadow, err := host.ShadowRoot()
-	if err != nil {
-		tp.t.Fatalf("[%s] getRole: shadow root not found: %v", tp.Name, err)
+	val, err := host.Attribute("role-name")
+	if err != nil || val == nil {
+		tp.t.Fatalf("[%s] getRole: role-name attribute not found: %v", tp.Name, err)
 	}
-	el, err := shadow.Element(".pc-role")
-	if err != nil {
-		tp.t.Fatalf("[%s] getRole: .pc-role not found: %v", tp.Name, err)
-	}
-	text, _ := el.Text()
-	return text
+	return *val
 }
 
 // disconnect closes the player's page/connection

@@ -137,6 +137,23 @@ func handleWSStartGame(client *Client) {
 	shuffleRoles(rolePool)
 	h.logf("Roles shuffled, assigning to players...")
 
+	// Replace any Joker slots with a random role drawn from all non-Joker roles
+	var jokerRoleID int64
+	h.db.Get(&jokerRoleID, "SELECT rowid FROM role WHERE name = 'Joker'")
+	var allRoleIDs []int64
+	h.db.Select(&allRoleIDs, "SELECT rowid FROM role WHERE name != 'Joker'")
+	for i, roleID := range rolePool {
+		if roleID == jokerRoleID {
+			jBig, err := rand.Int(rand.Reader, big.NewInt(int64(len(allRoleIDs))))
+			if err != nil {
+				h.sendErrorToast(client.playerID, "Failed to assign Joker role")
+				return
+			}
+			rolePool[i] = allRoleIDs[jBig.Int64()]
+			h.logf("Joker at slot %d replaced with role ID %d", i, rolePool[i])
+		}
+	}
+
 	// Assign roles to players
 	for i, gp := range players {
 		h.logf("Assigning role %d to player %d (game_player id=%d)", rolePool[i], gp.PlayerID, gp.ID)

@@ -365,6 +365,95 @@ func TestGameStartWithMixedRoles(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Joker Role Tests
+// ============================================================================
+
+// TestJokerOnePlayerGetsRandomRole verifies that a single Joker in the pool is
+// replaced with a real role before the game starts — no player ends up with "Joker".
+func TestJokerOnePlayerGetsRandomRole(t *testing.T) {
+	t.Parallel()
+
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// 3 players: 1 Joker + 1 Villager + 1 Werewolf
+	players := make([]*TestPlayer, 3)
+	for i := range players {
+		players[i] = browser.signupPlayer(ctx.baseURL, fmt.Sprintf("J%d", i+1))
+	}
+
+	players[0].addRoleByID(RoleJoker)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	roleCounts := make(map[string]int)
+	for _, p := range players {
+		role := p.getRole()
+		ctx.logger.Debug("Player %s got role: %s", p.Name, role)
+		roleCounts[role]++
+	}
+
+	ctx.logger.Debug("Role counts: %v", roleCounts)
+
+	if roleCounts["Joker"] > 0 {
+		ctx.logger.LogDB("FAIL: a player still has Joker role")
+		t.Errorf("Expected no player to have role 'Joker', but got counts: %v", roleCounts)
+	}
+	if len(roleCounts) == 0 {
+		t.Error("No roles assigned — game may not have started")
+	}
+}
+
+// TestJokerTwoPlayersGetRandomRoles verifies that two Jokers in the pool are both
+// replaced — no player ends up with "Joker", and all four players have valid roles.
+func TestJokerTwoPlayersGetRandomRoles(t *testing.T) {
+	t.Parallel()
+
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// 4 players: 2 Jokers + 1 Villager + 1 Werewolf
+	players := make([]*TestPlayer, 4)
+	for i := range players {
+		players[i] = browser.signupPlayer(ctx.baseURL, fmt.Sprintf("K%d", i+1))
+	}
+
+	players[0].addRoleByID(RoleJoker)
+	players[0].addRoleByID(RoleJoker)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].startGame()
+
+	roleCounts := make(map[string]int)
+	for _, p := range players {
+		role := p.getRole()
+		ctx.logger.Debug("Player %s got role: %s", p.Name, role)
+		roleCounts[role]++
+	}
+
+	ctx.logger.Debug("Role counts: %v", roleCounts)
+
+	if roleCounts["Joker"] > 0 {
+		ctx.logger.LogDB("FAIL: a player still has Joker role")
+		t.Errorf("Expected no player to have role 'Joker', but got counts: %v", roleCounts)
+	}
+	total := 0
+	for _, c := range roleCounts {
+		total += c
+	}
+	if total != len(players) {
+		t.Errorf("Expected %d total role assignments, got %d", len(players), total)
+	}
+}
+
 // TestMultiGameIsolation verifies that multiple simultaneous games are fully isolated:
 // - Players in different games see only their own game's lobby
 // - A player can be in two games at the same time
