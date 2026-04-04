@@ -246,10 +246,10 @@ if [[ -n "$WATCH" ]]; then
         echo "Error: inotifywait not found. Install inotify-tools."
         exit 1
     fi
-    echo "Watch mode: restarting on changes to .go/.html/.js/.css files"
+    echo "Watch mode: restarting on changes to .go/.html/.js/.css/.webp/.png files"
     while true; do
         inotifywait -q -r -e modify,create,delete,move \
-            --include='\.(go|html|js|css)$' \
+            --include='\.(go|html|js|css|webp|png)$' \
             . || true
         echo ""
         echo "File changed — restarting server..."

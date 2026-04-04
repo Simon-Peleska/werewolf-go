@@ -141,8 +141,8 @@
     }
     .pc-seal {
       width: 100%; height: 100%;
-      object-fit: contain; border-radius: 50%; display: block;
-      transition: box-shadow 0.15s;
+      transition: filter 0.15s;
+      object-fit: contain; display: block;
     }
     .pc-seal.pc-seal-profile {
       object-fit: cover;
@@ -150,16 +150,16 @@
       height: auto;
     }
     :host([team=villager]) .pc-seal {
-      box-shadow: 0 0 0 3px var(--c-seal-ring), 0 4px 18px var(--c-seal-shadow);
+      filter: drop-shadow(0 0 4px var(--c-seal-ring)) drop-shadow(0 0 8px var(--c-seal-ring)) drop-shadow(0 5px 12px var(--c-seal-shadow));
     }
     :host([team=villager]) .pc-card:hover .pc-seal {
-      box-shadow: 0 0 0 3px var(--c-seal-ring-hover), 0 6px 22px var(--c-seal-shadow-hover);
+      filter: drop-shadow(0 0 5px var(--c-seal-ring-hover)) drop-shadow(0 0 10px var(--c-seal-ring-hover)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
     }
     :host([team=werewolf]) .pc-seal {
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-danger) 55%, transparent), 0 4px 18px var(--c-seal-shadow);
+      filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-danger)) drop-shadow(0 5px 12px var(--c-seal-shadow));
     }
     :host([team=werewolf]) .pc-card:hover .pc-seal {
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-danger) 80%, transparent), 0 6px 22px var(--c-seal-shadow-hover);
+      filter: drop-shadow(0 0 6px var(--c-danger)) drop-shadow(0 0 12px var(--c-danger)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
     }
 
     /* ── Count badge — top-left of seal wrap, expanded only ────────────── */
@@ -203,16 +203,20 @@
       text-align: center; margin: calc(var(--pico-spacing) * 0.3) 0 0; line-height: 1.2;
       width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    /* Role name hidden in expanded mode (it's visible in the seal image) */
-    .pc-exp .pc-role { display: none; }
+
     .pc-role { font-size: 1rem; color: var(--c-amber); text-align: center; margin: 0.1em 0 0; }
     .pc-desc {
       font-size: 1rem; color: var(--c-muted); text-align: center;
       line-height: 1.35;
       margin: calc(var(--pico-spacing) * 0.3) 0 calc(var(--pico-spacing) * 0.4);
       flex: 1;
+      min-height: calc(1rem * 1.35 * 3);
       display: -webkit-box; -webkit-line-clamp: 3;
       -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .pc-desc-unknown {
+      font-size: 3.5rem; line-height: 1; display: flex;
+      align-items: center; justify-content: center;
     }
     .pc-footer {
       display: flex; justify-content: center; align-items: center;
@@ -224,8 +228,15 @@
       text-transform: uppercase;
       color: var(--c-muted);
     }
-    :host([team=villager]) .pc-team { color: var(--c-team-villager-label); }
-    :host([team=werewolf]) .pc-team { color: var(--c-team-werewolf-label); }
+    .pc-footer .pc-role {
+      font-size: 1rem;
+      text-transform: uppercase;
+      color: var(--c-muted);
+    }
+    :host([team=villager]) .pc-team,
+    :host([team=villager]) .pc-footer .pc-role { color: var(--c-team-villager-label); }
+    :host([team=werewolf]) .pc-team,
+    :host([team=werewolf]) .pc-footer .pc-role { color: var(--c-team-werewolf-label); }
     :host([team=villager]) .pc-col .pc-role { color: var(--c-team-villager-label); }
     :host([team=werewolf]) .pc-col .pc-role { color: var(--c-team-werewolf-label); }
 
@@ -432,9 +443,11 @@
            + `</div>`;
         h += `</div>`;
         if (playerName) h += `<span class="pc-name">${esc(playerName)}</span>`;
-        if (roleName)   h += `<span class="pc-role">${esc(roleName)}</span>`;
-        if (roleDesc)   h += `<p class="pc-desc">${esc(roleDesc)}</p>`;
-        h += `<div class="pc-footer"><span class="pc-team">${esc(team)}</span>`;
+        h += team === 'unknown'
+          ? `<p class="pc-desc pc-desc-unknown">???</p>`
+          : `<p class="pc-desc">${esc(roleDesc)}</p>`;
+        const footerLabel = (roleName && team !== 'unknown') ? `<span class="pc-role">${esc(roleName)}</span>` : `<span class="pc-team">${esc(team)}</span>`;
+        h += `<div class="pc-footer">${footerLabel}`;
         if (aliveAttr !== null) {
           const alive = aliveAttr === 'true';
           h += `<span class="${alive ? 'pc-alive' : 'pc-dead'}">&nbsp;| ${alive ? 'Alive' : 'Dead'}</span>`;

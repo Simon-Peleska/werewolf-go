@@ -47,9 +47,9 @@ h1, h2, h3, h4, h5, h6 {
   --c-card-inner-glow:       rgba(157, 181, 204, 0.05);
   --c-card-team-villager:    rgba(100, 148, 196, 0.22);
   --c-card-team-werewolf:    rgba(160,  40,  24, 0.28);
-  --c-seal-ring:             rgba(157, 181, 204, 0.14);
+  --c-seal-ring:             rgba(157, 181, 204, 0.7);
   --c-seal-shadow:           rgba(0,   0,   0,  0.65);
-  --c-seal-ring-hover:       rgba(200, 104,  32, 0.35);
+  --c-seal-ring-hover:       rgba(200, 104,  32, 0.9);
   --c-seal-shadow-hover:     rgba(0,   0,   0,  0.75);
   --c-card-hover-shadow:     rgba(0,   0,   0,  0.65);
   --c-card-hover-ring:       rgba(157, 181, 204, 0.18);
@@ -155,9 +155,9 @@ h1, h2, h3, h4, h5, h6 {
   --c-card-inner-glow:       rgba(58, 122,  58, 0.06);
   --c-card-team-villager:    rgba(58, 122,  58, 0.18);
   --c-card-team-werewolf:    rgba(150,  48,  24, 0.22);
-  --c-seal-ring:             rgba(58, 122,  58, 0.2);
+  --c-seal-ring:             rgba(58, 122,  58, 0.8);
   --c-seal-shadow:           rgba(0,   0,   0,  0.18);
-  --c-seal-ring-hover:       rgba(58, 122,  58, 0.4);
+  --c-seal-ring-hover:       rgba(58, 122,  58, 0.95);
   --c-seal-shadow-hover:     rgba(0,   0,   0,  0.26);
   --c-card-hover-shadow:     rgba(0,   0,   0,  0.1);
   --c-card-hover-ring:       rgba(58, 122,  58, 0.28);
@@ -278,7 +278,7 @@ html::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: linear-gradient(rgba(7, 8, 13, 0.82), rgba(7, 8, 13, 0.82)),
+  background-image: linear-gradient(rgba(7, 8, 13, 0.7), rgba(7, 8, 13, 0.7)),
                     url('/static/backgrounds/background_night.webp');
   background-size: cover;
   background-position: center;
@@ -292,7 +292,7 @@ html::after {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: linear-gradient(rgba(242, 234, 214, 0.80), rgba(242, 234, 214, 0.80)),
+  background-image: linear-gradient(rgba(242, 234, 214, 0.7), rgba(242, 234, 214, 0.7)),
                     url('/static/backgrounds/background_day.webp');
   background-size: cover;
   background-position: center;
