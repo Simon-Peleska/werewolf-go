@@ -1345,9 +1345,17 @@ func main() {
 	// Image endpoint: register directly (not via wrapHandler) to allow browser caching
 	http.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 
-	// Serve static files with compression for text-based files (CSS, JS, SVG)
-	// Binary formats like images will be served without compression
-	staticHandler := http.FileServer(http.FS(staticFS))
+	// Serve static files. Files are embedded in the binary and never change at
+	// runtime, so in production we set immutable cache headers (1 year). In dev
+	// mode we skip the cache header so the browser always re-validates.
+	staticHandler := http.Handler(http.FileServer(http.FS(staticFS)))
+	if !cfg.Dev {
+		base := staticHandler
+		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			base.ServeHTTP(w, r)
+		})
+	}
 	http.Handle("/static/", staticHandler)
 
 	log.Printf("Server starting on %s", cfg.Addr)

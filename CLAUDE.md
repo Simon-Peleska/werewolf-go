@@ -151,6 +151,16 @@ Night actions occur in the following order:
   - If a Seer investigated the Doppelganger *before* they copied a werewolf role, the Seer receives a warning notification
   - At game end, a 🎭 mark appears on their card to reveal their Doppelganger origin
 
+#### **Joker**
+- **Alignment**: Randomly determined at game start
+- **Night Ability**: Depends on the randomly assigned role
+- **Day Ability**: Vote during elimination
+- **Win Condition**: Follows the win condition of the randomly assigned role
+- **Notes**:
+  - At game start, each Joker slot is replaced with a random role drawn from all non-Joker roles in the pool
+  - The player never knows they were assigned via Joker — they simply receive a normal role
+  - Joker is a lobby-only concept; no player ever sees "Joker" as their in-game role
+
 ### WEREWOLF TEAM
 
 #### **Werewolf** (Basic Wolf)
