@@ -34,9 +34,9 @@
         data-player-id="{{.ID}}"
         player-id="{{.PlayerID}}"
         player-name="{{.Name}}"
-        role-name="{{.RoleName}}"
-        role-desc="{{.RoleDescription}}"
-        team="{{.Team}}"
+        role-name="{{if $.IsLobby}}Unknown{{else}}{{.RoleName}}{{end}}"
+        role-desc="{{if not $.IsLobby}}{{.RoleDescription}}{{end}}"
+        team="{{if not $.IsLobby}}{{.Team}}{{end}}"
         alive="{{if .IsAlive}}true{{else}}false{{end}}"
         profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
         {{if eq .PlayerID $.Player.PlayerID}}own-card{{end}}

@@ -1,4 +1,4 @@
-<aside class="history-bar" id="history-bar" hx-swap-oob="morph">
+<aside class="history-bar" id="history-bar" hx-swap-oob="morph" {{if not .}}hidden{{end}}>
   <div class="rightbound">
     <div>
       <h1>History</h1>
@@ -15,3 +15,4 @@
   </section>
   {{end}}
 </aside>
+<div id="topbar-history-btn" hx-swap-oob="morph">{{if .}}<label class="nav-toggle-button" for="history-bar-nav-toggle" role="button" aria-label="History Toggle navigation">H</label>{{end}}</div>

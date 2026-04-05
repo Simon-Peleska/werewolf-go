@@ -189,6 +189,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		Players:        visiblePlayers,
 		Game:           game,
 		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
+		IsLobby:        game.Status == "lobby",
 	}
 	var sidebarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
@@ -215,6 +216,7 @@ type SidebarData struct {
 	Players        []Player
 	Game           *Game
 	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
+	IsLobby        bool  // true during lobby: hide history, show players as unknown role/team
 }
 
 // selfFirstPlayers returns players sorted so the player with selfPlayerID is first.

@@ -306,6 +306,7 @@ func (h *Hub) broadcastGameUpdate() {
 			Players:        visiblePlayers,
 			Game:           game,
 			LoverPartnerID: getLoverPartner(h.db, game.ID, p.PlayerID),
+			IsLobby:        game.Status == "lobby",
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 
