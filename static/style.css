@@ -70,6 +70,11 @@ h1, h2, h3, h4, h5, h6 {
   --c-lover-shadow:          rgba(220,  90, 150, 0.20);
   --c-lover-badge-bg:        rgba( 60,  10,  28, 0.90);
   --c-lover-heart:           #e878b4;
+  --c-doppelganger-border:   rgba(160,  90, 230, 0.65);
+  --c-doppelganger-ring:     rgba(160,  90, 230, 0.18);
+  --c-doppelganger-shadow:   rgba(160,  90, 230, 0.20);
+  --c-doppelganger-badge-bg: rgba( 30,   8,  55, 0.90);
+  --c-doppelganger-icon:     #b87eee;
 
   /* ─ Pico overrides ─ */
   --pico-background-color:      var(--c-bg);
@@ -178,6 +183,11 @@ h1, h2, h3, h4, h5, h6 {
   --c-lover-shadow:          rgba(200,  80, 130, 0.14);
   --c-lover-badge-bg:        rgba(255, 230, 240, 0.92);
   --c-lover-heart:           #c0306a;
+  --c-doppelganger-border:   rgba(130,  70, 200, 0.50);
+  --c-doppelganger-ring:     rgba(130,  70, 200, 0.14);
+  --c-doppelganger-shadow:   rgba(130,  70, 200, 0.14);
+  --c-doppelganger-badge-bg: rgba(240, 230, 255, 0.92);
+  --c-doppelganger-icon:     #7030c0;
 
   /* ─ Pico overrides ─ */
   --pico-background-color:      var(--c-bg);

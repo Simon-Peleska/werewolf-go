@@ -542,17 +542,18 @@ var sharedBrowser *rod.Browser
 
 // Role IDs in the database (based on insert order in initDB)
 const (
-	RoleVillager = "1"
-	RoleWerewolf = "2"
-	RoleSeer     = "3"
-	RoleDoctor   = "4"
-	RoleWitch    = "5"
-	RoleHunter   = "6"
-	RoleCupid    = "7"
-	RoleGuard    = "8"
-	RoleMason    = "9"
-	RoleWolfCub  = "10"
-	RoleJoker    = "11"
+	RoleVillager     = "1"
+	RoleWerewolf     = "2"
+	RoleSeer         = "3"
+	RoleDoctor       = "4"
+	RoleWitch        = "5"
+	RoleHunter       = "6"
+	RoleCupid        = "7"
+	RoleGuard        = "8"
+	RoleMason        = "9"
+	RoleWolfCub      = "10"
+	RoleDoppelganger = "11"
+	RoleJoker        = "12"
 )
 
 func getFreePort() (int, error) {

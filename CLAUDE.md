@@ -133,10 +133,23 @@ Night actions occur in the following order:
 - **Night Ability**: None (but knows other Masons)
 - **Day Ability**: Vote during elimination
 - **Win Condition**: Eliminate all werewolves
-- **Notes**: 
+- **Notes**:
   - Usually 2-3 Masons in a game
   - All Masons know each other's identities from the start
   - Provides confirmed villagers for strategic coordination
+
+#### **Doppelganger**
+- **Alignment**: Good (initially), then mirrors the copied player's alignment
+- **Night Ability (Night 1 only)**: Secretly chooses another player and immediately becomes their role
+- **Day Ability**: Vote during elimination
+- **Win Condition**: Follows the win condition of the copied role
+- **Notes**:
+  - On Night 1, must choose exactly one player to copy before the night resolves
+  - Role change is immediate; the Doppelganger sees their new role at once
+  - If they copy a Werewolf, they join the werewolf team and must also vote with the wolves on Night 1
+  - If they copy a role with Night 1 actions (Seer, Doctor, Witch, Cupid, Guard), they perform that action the same night
+  - If a Seer investigated the Doppelganger *before* they copied a werewolf role, the Seer receives a warning notification
+  - At game end, a 🎭 mark appears on their card to reveal their Doppelganger origin
 
 ### WEREWOLF TEAM
 

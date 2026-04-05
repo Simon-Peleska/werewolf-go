@@ -4,7 +4,7 @@
 <div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="finished">
 
     <!-- Hero: big centered win seal -->
-    <section class="win-hero">
+    <section id="phase-main-section" class="win-hero">
         {{if eq .Winner "villagers"}}
         <img class="win-seal-glow win-seal-villagers" src="/static/seals/Villagers_win.webp" alt="Villagers win">
         {{else if eq .Winner "lovers"}}
@@ -16,7 +16,7 @@
 
     <!-- Victors -->
     {{if .Winners}}
-    <section>
+    <section id="victors-section">
         <h3 class="win-section-title">Victors</h3>
         <card-list class="win-list">
             {{range .Winners}}
@@ -30,6 +30,7 @@
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
                 profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
+                {{if .IsDoppelganger}}doppelganger{{end}}
                 winner></player-card>
             {{end}}
         </card-list>
@@ -38,7 +39,7 @@
 
     <!-- The Fallen -->
     {{if .Losers}}
-    <section>
+    <section id="losers-section">
         <h3 class="win-section-title win-section-title-fallen">The Fallen</h3>
         <card-list class="win-list">
             {{range .Losers}}
@@ -52,6 +53,7 @@
                 alive="{{if .IsAlive}}true{{else}}false{{end}}"
                 profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
                 {{if ne .Lover 0}}lover{{end}}
+                {{if .IsDoppelganger}}doppelganger{{end}}
                 loser
                 ></player-card>
             {{end}}

@@ -2,7 +2,7 @@
 <div id="page-theme" data-theme="dark" hx-swap-oob="morph" hidden></div>
 
 <div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="{{if and .ShowSurvey .HasSubmittedSurvey}}night-wait{{else if .ShowSurvey}}night-survey{{else}}night-action{{end}}-{{.NightNumber}}">
-    <section>
+    <section id="phase-main-section">
 
         {{if and .ShowSurvey .HasSubmittedSurvey}}
 
@@ -15,7 +15,7 @@
         {{else}}
 
         <!-- Action panel (all roles, alive and dead) -->
-        <div class="phase-action-panel">
+        <div class="phase-action-panel" id="phase-action-panel">
 
                 {{if not .Player.IsAlive}}
                 <p><em>You are dead. The village sleeps around you.</em></p>
@@ -419,6 +419,58 @@
                 <form ws-send id="cupid-link-form" class="vote-form">
                     <input type="hidden" name="action" value="cupid_link">
                     <button type="submit" id="cupid-link-button" {{if not (and .CupidChosen1Player .CupidChosen2Player)}}disabled{{end}}>💞 Link lovers</button>
+                </form>
+                {{end}}
+
+                {{else if and (eq .Player.RoleName "Doppelganger") (eq .NightNumber 1)}}
+                <h3>Doppelganger: Choose Your Identity</h3>
+                {{if .DoppelgangerHasCopied}}
+                <p id="doppelganger-result"><em>You have become <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.RoleName}}{{end}}</strong> (copied from <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.Name}}{{end}}</strong>).</em></p>
+                {{if .DoppelgangerCopiedPlayer}}
+                <card-list>
+                    <player-card
+                        data-player-id="{{.DoppelgangerCopiedPlayer.ID}}"
+                        player-id="{{.DoppelgangerCopiedPlayer.PlayerID}}"
+                        player-name="{{.DoppelgangerCopiedPlayer.Name}}"
+                        role-name="{{.DoppelgangerCopiedPlayer.RoleName}}"
+                        role-desc="{{.DoppelgangerCopiedPlayer.RoleDescription}}"
+                        team="{{.DoppelgangerCopiedPlayer.Team}}"
+                        alive="true"
+                        show-role-seal
+                        profile-image="{{if .DoppelgangerCopiedPlayer.ProfileImageID}}/player-image/{{.DoppelgangerCopiedPlayer.ProfileImageID}}{{end}}"
+                    ></player-card>
+                </card-list>
+                {{end}}
+                {{else}}
+                {{if .DoppelgangerSelectedPlayer}}
+                <p>Selected: <strong>{{.DoppelgangerSelectedPlayer.Name}}</strong>. Click to deselect or confirm below.</p>
+                {{else}}
+                <p>Choose a player. You will secretly become their role for the rest of the game.</p>
+                {{end}}
+                <card-list>
+                {{range .DoppelgangerTargets}}
+                <form ws-send id="doppelganger-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                    <input type="hidden" name="action" value="doppelganger_select">
+                    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+                    <player-card
+                        data-player-id="{{.ID}}"
+                        player-id="{{.PlayerID}}"
+                        player-name="{{.Name}}"
+                        role-name="{{.RoleName}}"
+                        role-desc="{{.RoleDescription}}"
+                        team="{{.Team}}"
+                        alive="true"
+                        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+                        selectable
+                        {{if and $.DoppelgangerSelectedPlayer (eq $.DoppelgangerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+                        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+                    ></player-card>
+                </form>
+                {{end}}
+                </card-list>
+                <form ws-send id="doppelganger-copy-form" class="vote-form">
+                    <input type="hidden" name="action" value="doppelganger_copy">
+                    <button type="submit" id="doppelganger-copy-button" {{if not .DoppelgangerSelectedPlayer}}disabled{{end}}>🎭 Become</button>
                 </form>
                 {{end}}
 

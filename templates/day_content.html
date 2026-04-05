@@ -2,8 +2,8 @@
 <div id="page-theme" data-theme="light" hx-swap-oob="morph" hidden></div>
 
 <div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="{{if .HunterRevengeNeeded}}day-hunter{{else}}day-vote{{end}}-{{.NightNumber}}">
-    <section>
-        <div class="phase-action-panel">
+    <section id="phase-main-section">
+        <div class="phase-action-panel" id="phase-action-panel">
                 {{if .NightVictims}}
                 <div class="death-announcement" id="death-announcement">
                     <card-list>
@@ -76,7 +76,7 @@
     </section>
 
     {{if not .HunterRevengeNeeded | or .HunterRevengeDone}}
-    <section>
+    <section id="day-vote-section">
         <h3>Vote to Eliminate</h3>
         {{if .Player.IsAlive}}
         <p>Choose a player to eliminate, or pass. Majority vote required.</p>

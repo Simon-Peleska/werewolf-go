@@ -307,6 +307,11 @@ func applyCardVisibility(viewer Player, targets []Player, seerInvestigated map[i
 	return out
 }
 
+type HistoryEntry struct {
+	ID          int64
+	Description string
+}
+
 func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game) (*bytes.Buffer, error) {
 	viewer, err := getPlayerInGame(db, game.ID, playerID)
 	if err != nil {
@@ -314,7 +319,7 @@ func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *
 			// Player not yet added to the game (race between HTTP request and WS connect).
 			// Return empty history rather than an error.
 			var buf bytes.Buffer
-			if err := tmpl.ExecuteTemplate(&buf, "history.html", []string(nil)); err != nil {
+			if err := tmpl.ExecuteTemplate(&buf, "history.html", []HistoryEntry(nil)); err != nil {
 				return nil, err
 			}
 			return &buf, nil
@@ -323,6 +328,7 @@ func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *
 	}
 
 	type historyRow struct {
+		ID            int64  `db:"id"`
 		Description   string `db:"description"`
 		Visibility    string `db:"visibility"`
 		ActorPlayerID int64  `db:"actor_player_id"`
@@ -332,12 +338,12 @@ func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *
 
 	var rows []historyRow
 	db.Select(&rows, `
-		SELECT description, visibility, actor_player_id, round, phase
+		SELECT rowid as id, description, visibility, actor_player_id, round, phase
 		FROM game_action
 		WHERE game_id = ? AND description != ''
 		ORDER BY rowid ASC`, game.ID)
 
-	var descriptions []string
+	var entries []HistoryEntry
 	for _, row := range rows {
 		action := GameAction{
 			ActorPlayerID: row.ActorPlayerID,
@@ -346,12 +352,12 @@ func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *
 			Phase:         row.Phase,
 		}
 		if canSeeAction(action, viewer, game.Round, game.Status) {
-			descriptions = append(descriptions, row.Description)
+			entries = append(entries, HistoryEntry{ID: row.ID, Description: row.Description})
 		}
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "history.html", descriptions); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "history.html", entries); err != nil {
 		return nil, err
 	}
 
@@ -437,6 +443,10 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSCupidChoose(client, msg)
 	case "cupid_link":
 		handleWSCupidLink(client)
+	case "doppelganger_select":
+		handleWSDoppelgangerSelect(client, msg)
+	case "doppelganger_copy":
+		handleWSDoppelgangerCopy(client, msg)
 	case "night_survey_suspect":
 		handleWSNightSurveySuspect(client, msg)
 	case "night_survey":
@@ -828,6 +838,44 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 			}
 		}
 
+		// Populate Doppelganger-specific data (Night 1 only, before copying)
+		isDoppelganger := player.RoleName == "Doppelganger" && game.Round == 1
+		var doppelgangerHasCopied bool
+		var doppelgangerSelectedPlayer, doppelgangerCopiedPlayer *Player
+		var doppelgangerTargets []Player
+
+		if isDoppelganger {
+			var copyAction GameAction
+			if err := db.Get(&copyAction, `
+				SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+				FROM game_action
+				WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+				game.ID, playerID, ActionDoppelgangerCopy); err == nil && copyAction.TargetPlayerID != nil {
+				doppelgangerHasCopied = true
+				// Show full role of the copied player (Doppelganger gets to see their new identity)
+				target, err := getPlayerInGame(db, game.ID, *copyAction.TargetPlayerID)
+				if err == nil {
+					doppelgangerCopiedPlayer = &target
+				}
+			} else {
+				// Check for pending selection
+				var selectAction GameAction
+				if db.Get(&selectAction, `
+					SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+					FROM game_action
+					WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+					game.ID, playerID, ActionDoppelgangerSelect) == nil && selectAction.TargetPlayerID != nil {
+					doppelgangerSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, player, seerInvestigated)
+				}
+			}
+			// Targets: all alive players except self
+			for _, t := range aliveTargets {
+				if t.PlayerID != playerID {
+					doppelgangerTargets = append(doppelgangerTargets, t)
+				}
+			}
+		}
+
 		// Populate Cupid-specific data
 		isCupid := player.RoleName == "Cupid" && game.Round == 1
 		cupidLinked := false
@@ -907,42 +955,46 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 		}
 
 		data := NightData{
-			Player:                    &player,
-			AliveTargets:              aliveTargets,
-			Votes:                     votes,
-			WerewolfVoteCounts:        werewolfVoteCounts,
-			CurrentVotePlayer:         currentVotePlayer,
-			WolfCubDoubleKill:         wolfCubDoubleKill,
-			CurrentVotePlayer2:        currentVotePlayer2,
-			NightNumber:               game.Round,
-			HasInvestigated:           hasInvestigated,
-			SeerSelectedPlayer:        seerSelectedPlayer,
-			HasProtected:              hasProtected,
-			DoctorSelectedPlayer:      doctorSelectedPlayer,
-			DoctorProtectingPlayer:    doctorProtectingPlayer,
-			GuardHasProtected:         guardHasProtected,
-			GuardSelectedPlayer:       guardSelectedPlayer,
-			GuardProtectingPlayer:     guardProtectingPlayer,
-			GuardTargets:              guardTargets,
-			WitchVictimPlayer:         witchVictimPlayer,
-			WitchVictimPlayer2:        witchVictimPlayer2,
-			HealPotionUsed:            healPotionUsed,
-			PoisonPotionUsed:          poisonPotionUsed,
-			WitchSelectedHealPlayer:   witchSelectedHealPlayer,
-			WitchSelectedPoisonPlayer: witchSelectedPoisonPlayer,
-			WitchHealedThisNight:      witchHealedThisNight,
-			WitchHealedPlayer:         witchHealedPlayer,
-			WitchKilledThisNight:      witchKilledThisNight,
-			WitchKilledPlayer:         witchKilledPlayer,
-			WitchDoneThisNight:        witchDoneThisNight,
-			Masons:                    masons,
-			CupidLinked:               cupidLinked,
-			CupidChosen1Player:        cupidChosen1Player,
-			CupidChosen2Player:        cupidChosen2Player,
-			AllWolvesActed:            allWolvesActed,
-			AllWolvesActed2:           allWolvesActed2,
-			WolfEndVoted:              wolfEndVoted,
-			WolfEndVoted2:             wolfEndVoted2,
+			Player:                     &player,
+			AliveTargets:               aliveTargets,
+			Votes:                      votes,
+			WerewolfVoteCounts:         werewolfVoteCounts,
+			CurrentVotePlayer:          currentVotePlayer,
+			WolfCubDoubleKill:          wolfCubDoubleKill,
+			CurrentVotePlayer2:         currentVotePlayer2,
+			NightNumber:                game.Round,
+			HasInvestigated:            hasInvestigated,
+			SeerSelectedPlayer:         seerSelectedPlayer,
+			HasProtected:               hasProtected,
+			DoctorSelectedPlayer:       doctorSelectedPlayer,
+			DoctorProtectingPlayer:     doctorProtectingPlayer,
+			GuardHasProtected:          guardHasProtected,
+			GuardSelectedPlayer:        guardSelectedPlayer,
+			GuardProtectingPlayer:      guardProtectingPlayer,
+			GuardTargets:               guardTargets,
+			WitchVictimPlayer:          witchVictimPlayer,
+			WitchVictimPlayer2:         witchVictimPlayer2,
+			HealPotionUsed:             healPotionUsed,
+			PoisonPotionUsed:           poisonPotionUsed,
+			WitchSelectedHealPlayer:    witchSelectedHealPlayer,
+			WitchSelectedPoisonPlayer:  witchSelectedPoisonPlayer,
+			WitchHealedThisNight:       witchHealedThisNight,
+			WitchHealedPlayer:          witchHealedPlayer,
+			WitchKilledThisNight:       witchKilledThisNight,
+			WitchKilledPlayer:          witchKilledPlayer,
+			WitchDoneThisNight:         witchDoneThisNight,
+			Masons:                     masons,
+			CupidLinked:                cupidLinked,
+			CupidChosen1Player:         cupidChosen1Player,
+			CupidChosen2Player:         cupidChosen2Player,
+			DoppelgangerHasCopied:      doppelgangerHasCopied,
+			DoppelgangerSelectedPlayer: doppelgangerSelectedPlayer,
+			DoppelgangerCopiedPlayer:   doppelgangerCopiedPlayer,
+			DoppelgangerTargets:        doppelgangerTargets,
+			AllWolvesActed:             allWolvesActed,
+			AllWolvesActed2:            allWolvesActed2,
+			WolfEndVoted:               wolfEndVoted,
+			WolfEndVoted2:              wolfEndVoted2,
 		}
 
 		// Survey: show once player has completed their night role action

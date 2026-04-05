@@ -11,21 +11,21 @@
   </div>
 
   {{if eq .Game.Status "night"}}
-  <h2 class="sidebar-phase-label">Night {{.Game.Round}}</h2>
+  <h2 id="sidebar-phase-label" class="sidebar-phase-label">Night {{.Game.Round}}</h2>
   {{else if eq .Game.Status "day"}}
-  <h2 class="sidebar-phase-label sidebar-phase-day">Day {{.Game.Round}}</h2>
+  <h2 id="sidebar-phase-label" class="sidebar-phase-label sidebar-phase-day">Day {{.Game.Round}}</h2>
   {{end}}
 
-  <section>
+  <section id="sidebar-info-section">
     <p><strong>{{.Player.Name}}</strong> (Code: <code
           id="secret-code-display">{{.Player.SecretCode}}</code>)</p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
     <button id="mute-btn" class="secondary" onclick="toggleMute()" style="width:100%;margin-top:0.5rem">🔊 Narrator</button>
   </section>
 
-  <hr>
+  <hr id="sidebar-divider">
 
-  <section>
+  <section id="sidebar-players-section">
     <h3>Players</h3>
     <card-list id="player-list">
       {{range .Players}}

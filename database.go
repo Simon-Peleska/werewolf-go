@@ -34,6 +34,7 @@ type Player struct {
 	IsAlive         bool   `db:"is_alive"`
 	IsObserver      bool   `db:"is_observer"`
 	Lover           int64  `db:"lover"`
+	IsDoppelganger  bool   `db:"is_doppelganger"`  // true if player was originally a Doppelganger who has copied a role
 	ProfileImageID  *int64 `db:"profile_image_id"` // nil = no image; rowid of player_image row (changes per upload → cache-buster)
 }
 
@@ -52,6 +53,7 @@ func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 			gp.is_alive as is_alive,
 			gp.is_observer as is_observer,
 			IFNULL(l.player2_id, 0) as lover,
+			CASE WHEN gp.original_role_id IS NOT NULL THEN 1 ELSE 0 END as is_doppelganger,
 			p.profile_image_id as profile_image_id
 		FROM game_player gp
 			JOIN player p on gp.player_id = p.rowid
@@ -77,6 +79,7 @@ func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 			gp.is_alive as is_alive,
 			is_observer as is_observer,
 			IFNULL(l.player2_id, 0) as lover,
+			CASE WHEN gp.original_role_id IS NOT NULL THEN 1 ELSE 0 END as is_doppelganger,
 			p.profile_image_id as profile_image_id
 		FROM game_player gp
 			JOIN player p on gp.player_id = p.rowid
@@ -147,6 +150,8 @@ const (
 	ActionWerewolfKill2      = "werewolf_kill_2"      // second kill on Wolf Cub death night
 	ActionCupidLink          = "cupid_link"           // tracks Cupid's step-1 lover choice (Night 1 only)
 	ActionCupidLink2         = "cupid_link_2"         // tracks Cupid's step-2 lover choice (Night 1 only)
+	ActionDoppelgangerSelect = "doppelganger_select"  // pending copy target (Night 1 only)
+	ActionDoppelgangerCopy   = "doppelganger_copy"    // committed copy: Doppelganger becomes target's role (Night 1 only)
 	ActionLoverHeartbreak    = "lover_heartbreak"     // partner dies of heartbreak when their lover is killed
 	ActionWerewolfEndVote    = "werewolf_end_vote"    // one wolf presses End Vote to lock in first kill
 	ActionWerewolfEndVote2   = "werewolf_end_vote_2"  // one wolf presses End Vote to lock in second kill (Wolf Cub)
@@ -321,7 +326,8 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	  ('Guard', 'Protects one player per night, but not the same player twice in a row.', 'villager'),
 	  ('Mason', 'Knows other masons, providing confirmed villagers.', 'villager'),
 	  ('Wolf Cub', 'If eliminated, werewolves kill two victims the next night.', 'werewolf'),
-  ('Joker', 'Gets assigned a random other role at the start of the game.', 'villager')
+	  ('Doppelganger', 'On night 1, secretly copies another player''s role and becomes that role for the rest of the game.', 'villager'),
+	  ('Joker', 'Gets assigned a random other role at the start of the game.', 'villager')
 	`
 	_, err := db.Exec(schema)
 	if err != nil {
@@ -331,6 +337,12 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 
 	// Migration: add profile_image_id to player table (idempotent)
 	if err := addColumnIfNotExists(db, "player", "profile_image_id", "INTEGER REFERENCES player_image(player_id)"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+
+	// Migration: add original_role_id to game_player for Doppelganger tracking (idempotent)
+	if err := addColumnIfNotExists(db, "game_player", "original_role_id", "INTEGER REFERENCES role(rowid)"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}

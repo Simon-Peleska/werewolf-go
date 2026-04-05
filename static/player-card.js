@@ -295,6 +295,22 @@
     }
     .pc-col .pc-heart-wrap { position: static; --bsz: 28px; flex-shrink: 0; }
 
+    /* ── Doppelganger styling ─────────────────────────────────────────────── */
+    :host([doppelganger]) .pc-card {
+      border-color: var(--c-doppelganger-border);
+      box-shadow: 0 0 0 1px var(--c-doppelganger-ring), 0 4px 16px var(--c-doppelganger-shadow);
+    }
+    .pc-doppelganger-wrap { right: 0; }
+    .pc-doppelganger-icon {
+      flex: 1; text-align: center; align-content: center;
+      font-size: 1.1rem; pointer-events: none; color: var(--c-doppelganger-icon);
+    }
+    :host([doppelganger]) .pc-doppelganger-wrap {
+      background: var(--c-doppelganger-badge-bg);
+      border-color: var(--c-doppelganger-border);
+    }
+    .pc-col .pc-doppelganger-wrap { position: static; --bsz: 28px; flex-shrink: 0; }
+
     /* ── Collapsed layer descendant overrides ──────────────────────────── */
     .pc-col .pc-seal-wrap {
       height: 44px !important; width: 44px !important;
@@ -354,7 +370,7 @@
       return [
         'role-name', 'role-desc', 'team', 'player-name',
         'count', 'role-id', 'lobby', 'total-roles', 'player-count', 'active',
-        'winner', 'loser', 'alive', 'lover', 'selected', 'selectable',
+        'winner', 'loser', 'alive', 'lover', 'doppelganger', 'selected', 'selectable',
         'profile-image', 'own-card', 'show-role-seal', 'player-id',
       ];
     }
@@ -397,7 +413,8 @@
       const totRoles   = parseInt(this.getAttribute('total-roles')  || '0');
       const plrCount   = parseInt(this.getAttribute('player-count') || '0');
       const aliveAttr  = this.getAttribute('alive');
-      const isLover    = this.hasAttribute('lover');
+      const isLover        = this.hasAttribute('lover');
+      const isDoppelganger = this.hasAttribute('doppelganger');
 
       const addDis        = (plrCount > 0 && totRoles >= plrCount) ? ' disabled' : '';
       const remDis        = count === '0' ? ' disabled' : '';
@@ -408,7 +425,8 @@
       const seal          = (profileImage && !showRoleSeal) ? profileImage : roleSealUrl;
       const toggleCall    = `this.getRootNode().host._toggle()`;
       const uploadCall    = `this.getRootNode().host._triggerImageUpload()`;
-      const heartBadge    = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
+      const heartBadge         = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
+      const doppelgangerBadge  = `<div class="pc-doppelganger-wrap"><span class="pc-doppelganger-icon">🎭</span></div>`;
 
       // When using a profile image, fall back to role seal on load error
       const sealImg = (profileImage && !showRoleSeal)
@@ -438,6 +456,7 @@
              + `</div>`;
         }
         if (isLover) h += heartBadge;
+        if (isDoppelganger) h += doppelgangerBadge;
         h += `<div class="pc-btn-wrap pc-btn-collapse">`
            +   `<button class="pc-collapse pc-btn" onclick="event.stopPropagation();${toggleCall}" aria-label="Collapse">&#9650;</button>`
            + `</div>`;
@@ -468,6 +487,7 @@
              + `</div>`;
         }
         if (isLover) h += heartBadge;
+        if (isDoppelganger) h += doppelgangerBadge;
         h += `<button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();${toggleCall}" aria-label="Expand">&#9660;</button>`;
       }
 

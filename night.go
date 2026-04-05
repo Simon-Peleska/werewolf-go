@@ -24,48 +24,52 @@ type SeerResult struct {
 
 // NightData holds all data needed to render the night phase
 type NightData struct {
-	Player                    *Player
-	AliveTargets              []Player // alive players; visibility pre-applied
-	Votes                     []WerewolfVote
-	WerewolfVoteCounts        map[int64]int // vote count per target player ID
-	CurrentVotePlayer         *Player       // werewolf's current vote (nil = no vote)
-	WolfCubDoubleKill         bool          // werewolves must kill two this night
-	CurrentVotePlayer2        *Player       // werewolf's current second vote (nil = none)
-	NightNumber               int
-	HasInvestigated           bool
-	SeerSelectedPlayer        *Player // pending investigation target (nil = not yet selected)
-	HasProtected              bool
-	DoctorSelectedPlayer      *Player // pending protection target (nil = not yet selected)
-	DoctorProtectingPlayer    *Player // confirmed protection target this night
-	GuardHasProtected         bool
-	GuardSelectedPlayer       *Player  // pending protection target (nil = not yet selected)
-	GuardProtectingPlayer     *Player  // confirmed protection target this night
-	GuardTargets              []Player // alive targets excluding self and last night's; visibility pre-applied
-	WitchVictimPlayer         *Player  // werewolf majority target (nil = no majority); visibility pre-applied
-	WitchVictimPlayer2        *Player  // Wolf Cub second kill target (nil = not set); visibility pre-applied
-	HealPotionUsed            bool     // committed heal used in any prior round
-	PoisonPotionUsed          bool     // committed poison used in any prior round
-	WitchSelectedHealPlayer   *Player  // pending heal target (nil = none selected)
-	WitchSelectedPoisonPlayer *Player  // pending poison target (nil = none selected)
-	WitchHealedThisNight      bool     // committed heal applied this night
-	WitchHealedPlayer         *Player  // who the witch healed this night
-	WitchKilledThisNight      bool     // committed poison applied this night
-	WitchKilledPlayer         *Player  // poison target this night
-	WitchDoneThisNight        bool     // true after witch_apply submitted
-	Masons                    []Player // other alive Masons (excluding self); full role visible
-	CupidLinked               bool
-	CupidChosen1Player        *Player  // first lover choice (nil = not yet chosen)
-	CupidChosen2Player        *Player  // second lover choice (nil = not yet chosen)
-	AllWolvesActed            bool     // all werewolves have voted or passed (first kill)
-	AllWolvesActed2           bool     // all werewolves have voted or passed (Wolf Cub second kill)
-	WolfEndVoted              bool     // End Vote pressed for first kill this round
-	WolfEndVoted2             bool     // End Vote pressed for Wolf Cub second kill
-	ShowSurvey                bool     // player has finished their role action, show survey
-	HasSubmittedSurvey        bool     // this player already pressed Continue
-	SurveyCount               int      // how many alive players have submitted the survey
-	AliveCount                int      // total alive players
-	SurveyTargets             []Player // alive players for the suspect selection
-	SurveySelectedSuspect     *Player  // pending suspect selection (nil = none selected)
+	Player                     *Player
+	AliveTargets               []Player // alive players; visibility pre-applied
+	Votes                      []WerewolfVote
+	WerewolfVoteCounts         map[int64]int // vote count per target player ID
+	CurrentVotePlayer          *Player       // werewolf's current vote (nil = no vote)
+	WolfCubDoubleKill          bool          // werewolves must kill two this night
+	CurrentVotePlayer2         *Player       // werewolf's current second vote (nil = none)
+	NightNumber                int
+	HasInvestigated            bool
+	SeerSelectedPlayer         *Player // pending investigation target (nil = not yet selected)
+	HasProtected               bool
+	DoctorSelectedPlayer       *Player // pending protection target (nil = not yet selected)
+	DoctorProtectingPlayer     *Player // confirmed protection target this night
+	GuardHasProtected          bool
+	GuardSelectedPlayer        *Player  // pending protection target (nil = not yet selected)
+	GuardProtectingPlayer      *Player  // confirmed protection target this night
+	GuardTargets               []Player // alive targets excluding self and last night's; visibility pre-applied
+	WitchVictimPlayer          *Player  // werewolf majority target (nil = no majority); visibility pre-applied
+	WitchVictimPlayer2         *Player  // Wolf Cub second kill target (nil = not set); visibility pre-applied
+	HealPotionUsed             bool     // committed heal used in any prior round
+	PoisonPotionUsed           bool     // committed poison used in any prior round
+	WitchSelectedHealPlayer    *Player  // pending heal target (nil = none selected)
+	WitchSelectedPoisonPlayer  *Player  // pending poison target (nil = none selected)
+	WitchHealedThisNight       bool     // committed heal applied this night
+	WitchHealedPlayer          *Player  // who the witch healed this night
+	WitchKilledThisNight       bool     // committed poison applied this night
+	WitchKilledPlayer          *Player  // poison target this night
+	WitchDoneThisNight         bool     // true after witch_apply submitted
+	Masons                     []Player // other alive Masons (excluding self); full role visible
+	CupidLinked                bool
+	CupidChosen1Player         *Player  // first lover choice (nil = not yet chosen)
+	CupidChosen2Player         *Player  // second lover choice (nil = not yet chosen)
+	DoppelgangerHasCopied      bool     // true after doppelganger_copy submitted (Night 1 only)
+	DoppelgangerSelectedPlayer *Player  // pending copy target (nil = not yet selected)
+	DoppelgangerCopiedPlayer   *Player  // player whose role was copied (non-nil after copying)
+	DoppelgangerTargets        []Player // alive players excluding self for Doppelganger selection
+	AllWolvesActed             bool     // all werewolves have voted or passed (first kill)
+	AllWolvesActed2            bool     // all werewolves have voted or passed (Wolf Cub second kill)
+	WolfEndVoted               bool     // End Vote pressed for first kill this round
+	WolfEndVoted2              bool     // End Vote pressed for Wolf Cub second kill
+	ShowSurvey                 bool     // player has finished their role action, show survey
+	HasSubmittedSurvey         bool     // this player already pressed Continue
+	SurveyCount                int      // how many alive players have submitted the survey
+	AliveCount                 int      // total alive players
+	SurveyTargets              []Player // alive players for the suspect selection
+	SurveySelectedSuspect      *Player  // pending suspect selection (nil = none selected)
 }
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
@@ -1190,6 +1194,172 @@ func handleWSCupidLink(client *Client) {
 	h.resolveWerewolfVotes(game)
 }
 
+// handleWSDoppelgangerSelect toggles the Doppelganger's pending copy target on Night 1.
+func handleWSDoppelgangerSelect(client *Client, msg WSMessage) {
+	h := client.hub
+	game, err := h.getGame()
+	if err != nil {
+		h.logError("handleWSDoppelgangerSelect: getOrCreateCurrentGame", err)
+		h.sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" || game.Round != 1 {
+		h.sendErrorToast(client.playerID, "Doppelganger can only act on Night 1")
+		return
+	}
+	doppelganger, err := getPlayerInGame(h.db, game.ID, client.playerID)
+	if err != nil {
+		h.logError("handleWSDoppelgangerSelect: getPlayerInGame", err)
+		h.sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if doppelganger.RoleName != "Doppelganger" || !doppelganger.IsAlive {
+		h.sendErrorToast(client.playerID, "Only the living Doppelganger can copy a role")
+		return
+	}
+	var copiedCount int
+	h.db.Get(&copiedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, client.playerID, ActionDoppelgangerCopy)
+	if copiedCount > 0 {
+		h.sendErrorToast(client.playerID, "You have already chosen a role to copy")
+		return
+	}
+
+	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
+	if err != nil {
+		h.sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+	if targetID == client.playerID {
+		h.sendErrorToast(client.playerID, "You cannot copy yourself")
+		return
+	}
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		h.sendErrorToast(client.playerID, "Invalid target")
+		return
+	}
+
+	var existing GameAction
+	selectErr := h.db.Get(&existing, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, client.playerID, ActionDoppelgangerSelect)
+	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+			game.ID, client.playerID, ActionDoppelgangerSelect)
+		h.logf("Doppelganger '%s' deselected copy target", doppelganger.Name)
+	} else {
+		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, '')`,
+			game.ID, client.playerID, ActionDoppelgangerSelect, targetID, VisibilityActor)
+		h.logf("Doppelganger '%s' selected copy target %d", doppelganger.Name, targetID)
+	}
+
+	h.triggerBroadcast()
+}
+
+// handleWSDoppelgangerCopy finalizes the Doppelganger's choice on Night 1.
+// The role change is applied immediately so the player sees their new role right away.
+// A newly-transformed Doppelganger is excluded from Night 1 blocking role checks
+// (they act as their new role starting from Night 2).
+func handleWSDoppelgangerCopy(client *Client, msg WSMessage) {
+	h := client.hub
+	game, err := h.getGame()
+	if err != nil {
+		h.logError("handleWSDoppelgangerCopy: getOrCreateCurrentGame", err)
+		h.sendErrorToast(client.playerID, "Failed to get game")
+		return
+	}
+	if game.Status != "night" || game.Round != 1 {
+		h.sendErrorToast(client.playerID, "Doppelganger can only act on Night 1")
+		return
+	}
+	doppelganger, err := getPlayerInGame(h.db, game.ID, client.playerID)
+	if err != nil {
+		h.logError("handleWSDoppelgangerCopy: getPlayerInGame", err)
+		h.sendErrorToast(client.playerID, "You are not in this game")
+		return
+	}
+	if doppelganger.RoleName != "Doppelganger" || !doppelganger.IsAlive {
+		h.sendErrorToast(client.playerID, "Only the living Doppelganger can copy a role")
+		return
+	}
+	var copiedCount int
+	h.db.Get(&copiedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, client.playerID, ActionDoppelgangerCopy)
+	if copiedCount > 0 {
+		h.sendErrorToast(client.playerID, "You have already chosen a role to copy")
+		return
+	}
+
+	var selectAction GameAction
+	if err := h.db.Get(&selectAction, `
+		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
+		FROM game_action
+		WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, client.playerID, ActionDoppelgangerSelect); err != nil || selectAction.TargetPlayerID == nil {
+		h.sendErrorToast(client.playerID, "Select a player to copy first")
+		return
+	}
+	targetID := *selectAction.TargetPlayerID
+
+	target, err := getPlayerInGame(h.db, game.ID, targetID)
+	if err != nil || !target.IsAlive {
+		h.sendErrorToast(client.playerID, "Target not found")
+		return
+	}
+
+	// Get role IDs for the swap
+	var targetRoleID, originalRoleID int64
+	h.db.Get(&targetRoleID, `SELECT role_id FROM game_player WHERE game_id = ? AND player_id = ?`, game.ID, targetID)
+	h.db.Get(&originalRoleID, `SELECT role_id FROM game_player WHERE game_id = ? AND player_id = ?`, game.ID, client.playerID)
+
+	// Apply role change immediately; original_role_id marks this player as a former Doppelganger
+	if _, err := h.db.Exec(`UPDATE game_player SET role_id = ?, original_role_id = ? WHERE game_id = ? AND player_id = ?`,
+		targetRoleID, originalRoleID, game.ID, client.playerID); err != nil {
+		h.logError("handleWSDoppelgangerCopy: update role", err)
+		h.sendErrorToast(client.playerID, "Failed to apply role change")
+		return
+	}
+
+	// Remove pending selection and record the copy for history
+	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
+		game.ID, client.playerID, ActionDoppelgangerSelect)
+	copyDesc := fmt.Sprintf("Night 1: You secretly became a %s (copied from %s)", target.RoleName, target.Name)
+	_, err = h.db.Exec(`
+		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
+		VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
+		game.ID, client.playerID, ActionDoppelgangerCopy, targetID, VisibilityActor, copyDesc)
+	if err != nil {
+		h.logError("handleWSDoppelgangerCopy: insert copy action", err)
+		h.sendErrorToast(client.playerID, "Failed to record copy")
+		return
+	}
+
+	toastMsg := fmt.Sprintf("🎭 You are now a %s!", target.RoleName)
+	h.sendToPlayer(client.playerID, []byte(renderToast(h.templates, h.logf, "info", toastMsg)))
+
+	// Notify any Seers who previously investigated the Doppelganger if the copied role is werewolf team
+	if target.Team == "werewolf" {
+		var seerInvestigations []struct {
+			ActorPlayerID int64 `db:"actor_player_id"`
+		}
+		h.db.Select(&seerInvestigations, `
+			SELECT actor_player_id FROM game_action
+			WHERE game_id = ? AND action_type = ? AND target_player_id = ?`,
+			game.ID, ActionSeerInvestigate, doppelganger.PlayerID)
+		for _, inv := range seerInvestigations {
+			notif := fmt.Sprintf("⚠️ %s (whom you investigated) has become a werewolf — your earlier reading is outdated!", doppelganger.Name)
+			h.sendToPlayer(inv.ActorPlayerID, []byte(renderToast(h.templates, h.logf, "warning", notif)))
+		}
+	}
+
+	h.logf("Doppelganger '%s' immediately became a %s (copied from '%s')", doppelganger.Name, target.RoleName, target.Name)
+	LogDBState(h.db, "after doppelganger copy")
+	h.resolveWerewolfVotes(game)
+}
+
 // handleWSWitchSelectHeal toggles the witch's pending heal selection.
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
@@ -1483,6 +1653,12 @@ func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Play
 	switch player.RoleName {
 	case "Villager", "Mason", "Hunter":
 		return true // no night action
+	case "Doppelganger":
+		// Night 1 only (role changes after copying, so this case is hit before copying)
+		var c int
+		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
+			gameID, round, player.PlayerID, ActionDoppelgangerCopy)
+		return c > 0
 	case "Seer":
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
@@ -1903,6 +2079,21 @@ func (h *Hub) resolveWerewolfVotes(game *Game) {
 				h.triggerBroadcast()
 				return
 			}
+		}
+	}
+
+	// Night 1: check all alive Doppelgangers have copied before resolving
+	// (after copying, role_id changes so this count drops to 0)
+	if game.Round == 1 {
+		var aliveDoppelgangerCount int
+		h.db.Get(&aliveDoppelgangerCount, `
+			SELECT COUNT(*) FROM game_player g
+			JOIN role r ON g.role_id = r.rowid
+			WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Doppelganger'`, game.ID)
+		if aliveDoppelgangerCount > 0 {
+			h.logf("Waiting for Doppelganger(s) to copy (%d remaining)", aliveDoppelgangerCount)
+			h.triggerBroadcast()
+			return
 		}
 	}
 
