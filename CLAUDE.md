@@ -436,6 +436,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 |------|---------|
 | `./README.md` | Project overview, game description, roles, build/run instructions, dev tools — **update if build steps, dependencies, or core game rules change** |
 | `./flake.nix` | Nix flake: binary build (`packages.default`), Docker image (`packages.docker`), dev shell — **update `vendorHash` after changing Go deps** |
+| `./originals/seals/` | High-resolution original seal images (*.orig.webp) — kept outside `static/` so they are NOT embedded in the binary |
 
 ### Code Files (Backend Implementation)
 
