@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Werewolf - Sign In</title>
-    <link rel="stylesheet" href="/static/style.css">
+    {{.StyleTag}}
     <link rel="prefetch" href="/static/seals/Villager.webp" as="image">
     <link rel="prefetch" href="/static/seals/Werewolf.webp" as="image">
     <link rel="prefetch" href="/static/seals/Seer.webp" as="image">
@@ -23,8 +23,7 @@
     <link rel="prefetch" href="/static/seals/Villagers_win.webp" as="image">
     <link rel="prefetch" href="/static/seals/Werewolves_win.webp" as="image">
     <link rel="prefetch" href="/static/seals/lovers_win.webp" as="image">
-    <script src="/static/htmx.js"></script>
-    <script src="/static/idiomorph-ext.js"></script>
+    {{.ScriptTag}}
     <style>
         #toast-container {
             position: fixed;
@@ -79,7 +78,7 @@
             </header>
 
             <div id="auth-container">
-                {{if .}}
+                {{if .LoggedIn}}
                 <section>
                     <h2>Join Game</h2>
                     <form id="join-game-form" onsubmit="return joinGame(event)">

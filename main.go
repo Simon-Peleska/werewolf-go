@@ -29,16 +29,17 @@ var devMode bool
 
 // App holds per-server resources to enable full isolation between tests.
 type App struct {
-	db            *sqlx.DB
-	templates     *template.Template
-	hubs          map[string]*Hub
-	hubsMu        sync.RWMutex
-	storyteller   Storyteller
-	narrator      Narrator
-	endingPrompt  string
-	logf          func(format string, args ...any) // log.Printf in prod, t.Logf in tests
-	pageStyleTag  template.HTML
-	pageScriptTag template.HTML
+	db                 *sqlx.DB
+	templates          *template.Template
+	hubs               map[string]*Hub
+	hubsMu             sync.RWMutex
+	storyteller        Storyteller
+	narrator           Narrator
+	endingPrompt       string
+	logf               func(format string, args ...any) // log.Printf in prod, t.Logf in tests
+	pageStyleTag       template.HTML
+	pageGameScriptTag  template.HTML
+	pageIndexScriptTag template.HTML
 }
 
 func (app *App) getOrCreateHub(gameName string) *Hub {
@@ -74,35 +75,46 @@ type GameData struct {
 	ScriptTag     template.HTML // inline <script>...</script> with all JS libs
 }
 
-// loadPageAssets reads CSS and JS files from the embedded static FS and combines
-// them into single inlinable <style> and <script> blocks. Called once at startup.
-func loadPageAssets() (styleTag template.HTML, scriptTag template.HTML, err error) {
+// loadPageAssets reads CSS and JS files from the embedded static FS and builds
+// inlinable <style> and <script> blocks. Called once at startup.
+// Returns: styleTag (shared), gameScriptTag (all libs), indexScriptTag (htmx+idiomorph only).
+func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, err error) {
 	picoCSS, err := staticFS.ReadFile("static/pico.css")
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	styleCSS, err := staticFS.ReadFile("static/style.css")
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	// Drop the @import so we can prepend pico.css content directly.
 	styleCSSStr := strings.Replace(string(styleCSS), `@import url("../static/pico.css");`, "", 1)
 	css := string(picoCSS) + "\n" + styleCSSStr
 
-	var scriptBuf strings.Builder
-	for _, name := range []string{"static/htmx.js", "static/htmx-ws.js", "static/idiomorph-ext.js", "static/player-card.js"} {
-		b, err := staticFS.ReadFile(name)
-		if err != nil {
-			return "", "", err
+	inlineScripts := func(names []string) (template.HTML, error) {
+		var buf strings.Builder
+		for _, name := range names {
+			b, err := staticFS.ReadFile(name)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString("<script>")
+			buf.Write(b)
+			buf.WriteString("</script>\n")
 		}
-		scriptBuf.WriteString("<script>")
-		scriptBuf.Write(b)
-		scriptBuf.WriteString("</script>\n")
+		return template.HTML(buf.String()), nil
 	}
 
-	return template.HTML("<style>" + css + "</style>"),
-		template.HTML(scriptBuf.String()),
-		nil
+	gameScriptTag, err = inlineScripts([]string{"static/htmx.js", "static/htmx-ws.js", "static/idiomorph-ext.js", "static/player-card.js"})
+	if err != nil {
+		return "", "", "", err
+	}
+	indexScriptTag, err = inlineScripts([]string{"static/htmx.js", "static/idiomorph-ext.js"})
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return template.HTML("<style>" + css + "</style>"), gameScriptTag, indexScriptTag, nil
 }
 
 // gameTheme returns the correct CSS data-theme for the initial page render.
@@ -141,7 +153,11 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		DebugLog("handleIndex", "Page accessed by anonymous visitor")
 	}
 
-	app.templates.ExecuteTemplate(w, "index.html", loggedIn)
+	app.templates.ExecuteTemplate(w, "index.html", struct {
+		LoggedIn  bool
+		StyleTag  template.HTML
+		ScriptTag template.HTML
+	}{loggedIn, app.pageStyleTag, app.pageIndexScriptTag})
 }
 
 func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +259,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		HistoryHTML:   template.HTML(historyBuf.String()),
 		Theme:         gameTheme(app.db, game),
 		StyleTag:      app.pageStyleTag,
-		ScriptTag:     app.pageScriptTag,
+		ScriptTag:     app.pageGameScriptTag,
 	}
 
 	app.templates.ExecuteTemplate(w, "game.html", data)
@@ -1379,21 +1395,22 @@ func main() {
 		log.Fatal("Failed to parse templates:", err)
 	}
 
-	pageStyleTag, pageScriptTag, err := loadPageAssets()
+	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets()
 	if err != nil {
 		log.Fatal("Failed to load page assets:", err)
 	}
 
 	app := &App{
-		db:            db,
-		templates:     tmpl,
-		hubs:          make(map[string]*Hub),
-		storyteller:   storyteller,
-		narrator:      narrator,
-		endingPrompt:  loadEndingPrompt(cfg),
-		logf:          log.Printf,
-		pageStyleTag:  pageStyleTag,
-		pageScriptTag: pageScriptTag,
+		db:                 db,
+		templates:          tmpl,
+		hubs:               make(map[string]*Hub),
+		storyteller:        storyteller,
+		narrator:           narrator,
+		endingPrompt:       loadEndingPrompt(cfg),
+		logf:               log.Printf,
+		pageStyleTag:       pageStyleTag,
+		pageGameScriptTag:  pageGameScriptTag,
+		pageIndexScriptTag: pageIndexScriptTag,
 	}
 
 	// Wrap handlers with compression, caching control, and optional logging

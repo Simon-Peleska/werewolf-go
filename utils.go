@@ -626,18 +626,19 @@ func newTestContext(t *testing.T) *TestContext {
 	testHub.logf = t.Logf
 	go testHub.run()
 
-	pageStyleTag, pageScriptTag, err := loadPageAssets()
+	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets()
 	if err != nil {
 		t.Fatalf("Failed to load page assets: %v", err)
 	}
 
 	app := &App{
-		db:            testDB,
-		templates:     testTemplates,
-		hubs:          map[string]*Hub{"test-game": testHub},
-		logf:          t.Logf,
-		pageStyleTag:  pageStyleTag,
-		pageScriptTag: pageScriptTag,
+		db:                 testDB,
+		templates:          testTemplates,
+		hubs:               map[string]*Hub{"test-game": testHub},
+		logf:               t.Logf,
+		pageStyleTag:       pageStyleTag,
+		pageGameScriptTag:  pageGameScriptTag,
+		pageIndexScriptTag: pageIndexScriptTag,
 	}
 
 	// Create handlers
