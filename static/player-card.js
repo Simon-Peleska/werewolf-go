@@ -148,6 +148,7 @@
       object-fit: cover;
       aspect-ratio: 1 / 1;
       height: auto;
+      border-radius: 50%;
     }
     :host([team=villager]) .pc-seal {
       filter: drop-shadow(0 0 4px var(--c-seal-ring)) drop-shadow(0 0 8px var(--c-seal-ring)) drop-shadow(0 5px 12px var(--c-seal-shadow));
