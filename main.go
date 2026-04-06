@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -1253,6 +1254,36 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 	return &buf, nil
 }
 
+// gzipResponseWriter wraps http.ResponseWriter to write gzip-compressed output.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
+func (g *gzipResponseWriter) WriteHeader(code int) {
+	g.Header().Del("Content-Length")
+	g.ResponseWriter.WriteHeader(code)
+}
+
+// withGzip wraps a handler with gzip compression for clients that support it.
+// Skips already-compressed image formats (.webp) and WebSocket upgrades.
+func withGzip(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".webp") ||
+			r.Header.Get("Upgrade") == "websocket" ||
+			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+	})
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	fv := registerFlags()
@@ -1324,7 +1355,7 @@ func main() {
 	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
 		var hh http.Handler = handler
-		// hh = compress(hh)
+		hh = withGzip(hh)
 		hh = disableCaching(hh)
 		if appLogger != nil && appLogger.logRequests {
 			http.Handle(pattern, &LoggingHandler{Handler: hh, Logger: appLogger})
@@ -1350,7 +1381,7 @@ func main() {
 	// Serve static files. Files are embedded in the binary and never change at
 	// runtime, so in production we set immutable cache headers (1 year). In dev
 	// mode we skip the cache header so the browser always re-validates.
-	staticHandler := http.Handler(http.FileServer(http.FS(staticFS)))
+	staticHandler := http.Handler(withGzip(http.FileServer(http.FS(staticFS))))
 	if !cfg.Dev {
 		base := staticHandler
 		staticHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

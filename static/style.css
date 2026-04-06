@@ -4,16 +4,19 @@
 @font-face {
   font-family: "Metal Mania";
   src: url("/static/fonts/MetalMania-Regular.ttf") format("truetype");
+  font-display: swap;
 }
 @font-face {
   font-family: "IM Fell Great Primer";
   src: url("/static/fonts/IMFellGreatPrimer-Regular.ttf") format("truetype");
   font-style: normal;
+  font-display: swap;
 }
 @font-face {
   font-family: "IM Fell Great Primer";
   src: url("/static/fonts/IMFellGreatPrimer-Italic.ttf") format("truetype");
   font-style: italic;
+  font-display: swap;
 }
 
 /* ── Global (theme-independent) ────────────────────────────────────────── */

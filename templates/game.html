@@ -24,20 +24,24 @@
   <link rel="prefetch" href="/static/seals/Villagers_win.webp" as="image">
   <link rel="prefetch" href="/static/seals/Werewolves_win.webp" as="image">
   <link rel="prefetch" href="/static/seals/lovers_win.webp" as="image">
-  <script src="/static/htmx.js"></script>
-  <script src="/static/htmx-ws.js"></script>
-  <script src="/static/idiomorph-ext.js"></script>
-  <script src="/static/player-card.js"></script>
+  <script src="/static/htmx.js" defer></script>
+  <script src="/static/htmx-ws.js" defer></script>
+  <script src="/static/idiomorph-ext.js" defer></script>
+  <script src="/static/player-card.js" defer></script>
   <script>
-    // Must be set before HTMX creates the WebSocket so binary frames
-    // arrive as ArrayBuffer instead of Blob.
-    htmx.config.wsBinaryType = 'arraybuffer';
-    // Prevent idiomorph from resetting values that the user has typed into
-    // form fields. Without this, any broadcast re-render wipes input values.
-    Idiomorph.defaults.callbacks.beforeAttributeUpdated = function(attr, node) {
-      if (attr === 'value'    && (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) return false;
-      if (attr === 'selected' && node instanceof HTMLOptionElement) return false;
-    };
+    // Deferred scripts run before DOMContentLoaded, so this fires after all
+    // four scripts above have executed.
+    document.addEventListener('DOMContentLoaded', function() {
+      // Must be set before HTMX creates the WebSocket so binary frames
+      // arrive as ArrayBuffer instead of Blob.
+      htmx.config.wsBinaryType = 'arraybuffer';
+      // Prevent idiomorph from resetting values that the user has typed into
+      // form fields. Without this, any broadcast re-render wipes input values.
+      Idiomorph.defaults.callbacks.beforeAttributeUpdated = function(attr, node) {
+        if (attr === 'value'    && (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) return false;
+        if (attr === 'selected' && node instanceof HTMLOptionElement) return false;
+      };
+    });
   </script>
   <style>
     body {
