@@ -21,11 +21,11 @@
 
 /* ── Global (theme-independent) ────────────────────────────────────────── */
 :root {
-  --pico-font-family: "IM Fell Great Primer", var(--pico-font-family-emoji);
+  --pico-font-family: "IM Fell Great Primer", "Noto Serif", var(--pico-font-family-emoji);
 }
 
 h1, h2, h3, h4, h5, h6 {
-  --pico-font-family: "Metal Mania", var(--pico-font-family-emoji);
+  --pico-font-family: "Metal Mania", "Noto Serif", var(--pico-font-family-emoji);
   font-weight: 200;
 }
 
@@ -316,6 +316,14 @@ html::after {
 
 :root[data-theme=light]::before { opacity: 0; }
 :root[data-theme=light]::after  { opacity: 1; }
+
+/* Lovers win — replace the after layer with the lovers background */
+:root[data-winner=lovers]::after {
+  background-image: linear-gradient(rgba(20, 8, 16, 0.5), rgba(20, 8, 16, 0.5)),
+                    url('/static/backgrounds/background_lovers.webp');
+  opacity: 1;
+}
+:root[data-winner=lovers]::before { opacity: 0; }
 
 /* Body must sit above the background layers (z-index: 0). Pico sets         */
 /* body{background-color} which we clear so the background layers show.      */

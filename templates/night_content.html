@@ -1,5 +1,5 @@
 <div id="topbar-phase" hx-swap-oob="morph"><span class="topbar-phase-label" id="topbar-phase-label">Night {{.NightNumber}}</span></div>
-<div id="page-theme" data-theme="dark" hx-swap-oob="morph" hidden></div>
+<div id="page-theme" data-theme="dark" data-winner="" hx-swap-oob="morph" hidden></div>
 
 <div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="{{if and .ShowSurvey .HasSubmittedSurvey}}night-wait{{else if .ShowSurvey}}night-survey{{else}}night-action{{end}}-{{.NightNumber}}">
     <section id="phase-main-section">

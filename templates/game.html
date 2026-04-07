@@ -563,18 +563,23 @@
       if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);
     };
 
-    // Apply theme from #page-theme to <html> on every WS message
+    // Apply theme and winner from #page-theme to <html> on every WS message
     new MutationObserver(() => {
-      const t = document.getElementById('page-theme')?.dataset.theme;
-      if (t) document.documentElement.dataset.theme = t;
-    }).observe(document.getElementById('page-theme'), { attributes: true, attributeFilter: ['data-theme'] });
+      const el = document.getElementById('page-theme');
+      if (!el) return;
+      if (el.dataset.theme) document.documentElement.dataset.theme = el.dataset.theme;
+      document.documentElement.dataset.winner = el.dataset.winner || '';
+    }).observe(document.getElementById('page-theme'), { attributes: true, attributeFilter: ['data-theme', 'data-winner'] });
 
     // On initial page load the OOB #page-theme from the game component renders
     // inline inside .container before WS connects — read it immediately so the
     // correct theme is applied without waiting for the first WS message.
     (function () {
       const oob = document.querySelector('.container [id="page-theme"]');
-      if (oob) document.documentElement.dataset.theme = oob.dataset.theme;
+      if (oob) {
+        document.documentElement.dataset.theme = oob.dataset.theme;
+        document.documentElement.dataset.winner = oob.dataset.winner || '';
+      }
     })();
 
     // Game-content transition animation.
