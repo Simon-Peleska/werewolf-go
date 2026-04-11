@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/go-rod/rod/lib/proto"
 )
 
 func makePNG(r, g, b uint8) []byte {
@@ -83,6 +85,318 @@ func TestSignupDuplicateNameFails(t *testing.T) {
 }
 
 // ============================================================================
+// Unknown / bare-game path redirect tests
+// ============================================================================
+
+// TestUnknownPathsRedirectToIndex verifies that bare /game paths and other
+// unknown URLs redirect to the login page rather than returning 404.
+func TestUnknownPathsRedirectToIndex(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	cases := []struct {
+		path        string
+		wantURLPath string // expected path after redirect (no query string)
+		wantName    string // expected ?name= value, empty if none
+	}{
+		{"/game", "/", ""},
+		{"/game/", "/", ""},
+		{"/game?name=Alice", "/", "Alice"},
+		{"/game/?name=Alice", "/", "Alice"},
+		{"/some/unknown/path", "/", ""},
+		{"/doesnotexist", "/", ""},
+		{"/test?name=Bob", "/", "Bob"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.path, func(t *testing.T) {
+			page := browser.newIncognitoPage(ctx.baseURL + tc.path)
+			info, err := page.Info()
+			if err != nil {
+				t.Fatalf("Could not get page info for path %q: %v", tc.path, err)
+			}
+
+			// Check the path portion ends at "/".
+			gotPath := strings.Split(strings.TrimPrefix(info.URL, ctx.baseURL), "?")[0]
+			if gotPath != tc.wantURLPath {
+				t.Errorf("path %q: want URL path %q, got %q (full URL: %s)", tc.path, tc.wantURLPath, gotPath, info.URL)
+			}
+
+			// Check ?name= is forwarded when expected.
+			if tc.wantName != "" {
+				if !strings.Contains(info.URL, "name="+tc.wantName) {
+					t.Errorf("path %q: expected ?name=%s in URL, got: %s", tc.path, tc.wantName, info.URL)
+				}
+				// Also verify the login name input is pre-filled.
+				p := page.Timeout(browserTimeout)
+				el, err := p.Element("#login-name")
+				if err != nil {
+					t.Fatalf("path %q: could not find #login-name: %v", tc.path, err)
+				}
+				val, _ := el.Attribute("value")
+				if val == nil || *val != tc.wantName {
+					got := ""
+					if val != nil {
+						got = *val
+					}
+					t.Errorf("path %q: expected #login-name value=%q, got=%q", tc.path, tc.wantName, got)
+				}
+			}
+		})
+	}
+}
+
+// TestUnknownPathWithNameLogsOutDifferentUser verifies that a logged-in user
+// visiting an unknown path with ?name=<other> is logged out before the redirect.
+func TestUnknownPathWithNameLogsOutDifferentUser(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// Sign up a player first.
+	player := browser.signupPlayer(ctx.baseURL, "LoggedInUser")
+
+	// Visit an unknown path with a different ?name= while logged in.
+	wait := player.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	player.Page.Navigate(ctx.baseURL + "/test?name=OtherUser")
+	wait()
+
+	// Should land on the index page.
+	if !player.isOnIndexPage() {
+		info, _ := player.Page.Info()
+		t.Fatalf("Expected redirect to index, got: %s", info.URL)
+	}
+
+	// Session must be cleared — navigating to the game page should redirect back to login.
+	wait = player.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	player.Page.Navigate(ctx.baseURL + "/game/test-game")
+	wait()
+
+	if !player.isOnIndexPage() {
+		t.Fatal("Expected session to be cleared: game page should redirect to login")
+	}
+}
+
+// TestUnknownPathWithSameNameKeepsSession verifies that a logged-in user
+// visiting an unknown path with their own ?name= does NOT get logged out.
+func TestUnknownPathWithSameNameKeepsSession(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	playerName := "SameNameUser"
+	player := browser.signupPlayer(ctx.baseURL, playerName)
+	secretCode := player.getSecretCode()
+
+	// Visit an unknown path with the same name as the logged-in user.
+	wait := player.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	player.Page.Navigate(ctx.baseURL + "/test?name=" + playerName)
+	wait()
+
+	// Should land on the index page.
+	if !player.isOnIndexPage() {
+		info, _ := player.Page.Info()
+		t.Fatalf("Expected redirect to index, got: %s", info.URL)
+	}
+
+	// Session must still be valid — navigating to the game page should succeed.
+	wait = player.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	player.Page.Navigate(ctx.baseURL + "/game/test-game")
+	wait()
+
+	if !player.isOnGamePage() {
+		t.Fatal("Expected session to be intact: game page should load without redirect")
+	}
+
+	// Secret code still visible confirms it's the same session.
+	if code := player.getSecretCode(); code != secretCode {
+		t.Fatalf("Secret code changed — session was incorrectly replaced: before=%q after=%q", secretCode, code)
+	}
+}
+
+// ============================================================================
+// Game redirect tests
+// ============================================================================
+
+// TestUnauthenticatedGameRedirectsToLogin verifies that visiting /game/<name>
+// without a session redirects to /?game=<name>.
+func TestUnauthenticatedGameRedirectsToLogin(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "redirect-test-game"
+	ctx.logger.Debug("=== Testing unauthenticated redirect for game: %s ===", gameName)
+
+	// Navigate directly to the game page without being logged in.
+	page := browser.newIncognitoPage(ctx.baseURL + "/game/" + gameName)
+	player := &TestPlayer{Name: "anon", Page: page, logger: ctx.logger, t: t}
+
+	// Should have landed on the index page (redirected away from /game).
+	if !player.isOnIndexPage() {
+		t.Fatalf("Expected redirect to index page, but URL is: %v", func() string {
+			info, _ := page.Info()
+			return info.URL
+		}())
+	}
+
+	// The URL should contain the game parameter.
+	info, err := page.Info()
+	if err != nil {
+		t.Fatalf("Could not get page info: %v", err)
+	}
+	if !strings.Contains(info.URL, "game="+gameName) {
+		t.Fatalf("Expected URL to contain game=%s, got: %s", gameName, info.URL)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestGameParamPrefillsSignupForm verifies that the game name from the URL
+// parameter is pre-filled in the signup form on the index page.
+func TestGameParamPrefillsSignupForm(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "my-prefill-game"
+	ctx.logger.Debug("=== Testing signup form prefill for game: %s ===", gameName)
+
+	page := browser.newIncognitoPage(ctx.baseURL + "/?game=" + gameName)
+	p := page.Timeout(browserTimeout)
+
+	el, err := p.Element("#signup-game-name")
+	if err != nil {
+		t.Fatalf("Could not find signup game name input: %v", err)
+	}
+	val, err := el.Attribute("value")
+	if err != nil || val == nil || *val != gameName {
+		got := ""
+		if val != nil {
+			got = *val
+		}
+		t.Fatalf("Expected signup game name input value=%q, got=%q", gameName, got)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestGameParamPrefillsLoginForm verifies that the game name from the URL
+// parameter is pre-filled in the login (returning player) form on the index page.
+func TestGameParamPrefillsLoginForm(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "login-prefill-game"
+	ctx.logger.Debug("=== Testing login form prefill for game: %s ===", gameName)
+
+	page := browser.newIncognitoPage(ctx.baseURL + "/?game=" + gameName)
+	p := page.Timeout(browserTimeout)
+
+	el, err := p.Element("#login-game-name")
+	if err != nil {
+		t.Fatalf("Could not find login game name input: %v", err)
+	}
+	val, err := el.Attribute("value")
+	if err != nil || val == nil || *val != gameName {
+		got := ""
+		if val != nil {
+			got = *val
+		}
+		t.Fatalf("Expected login game name input value=%q, got=%q", gameName, got)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestUnauthenticatedGameRedirectAndSignup is an end-to-end test: a user visits
+// a game URL without being logged in, gets redirected with the game name
+// pre-filled, fills their name, and successfully joins the game.
+func TestUnauthenticatedGameRedirectAndSignup(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "redirect-signup-game"
+	playerName := "RedirectUser"
+	ctx.logger.Debug("=== Testing redirect-then-signup flow for game: %s ===", gameName)
+
+	// Navigate directly to a game page without a session.
+	page := browser.newIncognitoPage(ctx.baseURL + "/game/" + gameName)
+	player := &TestPlayer{Name: playerName, Page: page, logger: ctx.logger, t: t}
+
+	// Confirm we're on the login page.
+	if !player.isOnIndexPage() {
+		t.Fatal("Expected redirect to index page")
+	}
+
+	// The game name input should already be filled from the ?game= parameter.
+	p := page.Timeout(browserTimeout)
+	gameNameEl, err := p.Element("#signup-game-name")
+	if err != nil {
+		t.Fatalf("Could not find signup game name input: %v", err)
+	}
+	val, _ := gameNameEl.Attribute("value")
+	if val == nil || *val != gameName {
+		got := ""
+		if val != nil {
+			got = *val
+		}
+		t.Fatalf("Expected signup game name pre-filled with %q, got %q", gameName, got)
+	}
+
+	// Fill in the player name and submit.
+	nameEl, err := p.Element("#signup-name")
+	if err != nil {
+		t.Fatalf("Could not find signup name input: %v", err)
+	}
+	nameEl.Input(playerName)
+
+	wait := page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	p.MustElement("#btn-signup").Click(proto.InputMouseButtonLeft, 1)
+	wait()
+
+	// Should now be on the game page.
+	if !player.isOnGamePage() {
+		t.Fatal("Expected to be on game page after signup")
+	}
+
+	// Player should appear in the lobby list.
+	if err := player.waitUntilCondition(`() => {
+		const cards = document.querySelectorAll('#player-list player-card');
+		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+playerName+`');
+	}`, "player appears in lobby list"); err != nil {
+		t.Fatalf("Player not found in lobby list: %v", err)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// ============================================================================
 // Login Tests
 // ============================================================================
 
@@ -142,6 +456,191 @@ func TestLoginWithWrongSecret(t *testing.T) {
 	if !player2.hasErrorToast() {
 		ctx.logger.LogDB("FAIL: no error toast for wrong secret")
 		t.Fatalf("Expected error toast for wrong secret")
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// ============================================================================
+// Auto-join link tests (?name= parameter)
+// ============================================================================
+
+// TestAutoJoinNewPlayerCreatesAccountAndJoins verifies that visiting
+// /game/<name>?name=<player> when the player doesn't exist auto-creates them
+// and lands directly on the game page.
+func TestAutoJoinNewPlayerCreatesAccountAndJoins(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "autojoin-new-game"
+	playerName := "AutoNewPlayer"
+	ctx.logger.Debug("=== Testing auto-join for new player: %s ===", playerName)
+
+	page := browser.newIncognitoPage(ctx.baseURL + "/game/" + gameName + "?name=" + playerName)
+	player := &TestPlayer{Name: playerName, Page: page, logger: ctx.logger, t: t}
+
+	// Should be on the game page, not the index.
+	if !player.isOnGamePage() {
+		info, _ := page.Info()
+		t.Fatalf("Expected auto-join to land on game page, got URL: %s", info.URL)
+	}
+
+	// The player should exist in the database.
+	var count int
+	if err := ctx.app.db.Get(&count, "SELECT COUNT(*) FROM player WHERE name = ?", playerName); err != nil || count == 0 {
+		t.Fatalf("Expected player '%s' to be created in DB", playerName)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestAutoJoinExistingPlayerRedirectsToLoginWithNameFilled verifies that
+// visiting /game/<name>?name=<player> when the player already exists redirects
+// to the login page with both game and name pre-filled.
+func TestAutoJoinExistingPlayerRedirectsToLoginWithNameFilled(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "autojoin-existing-game"
+	playerName := "ExistingPlayer"
+	ctx.logger.Debug("=== Testing auto-join for existing player: %s ===", playerName)
+
+	// Create the player first via normal signup.
+	_ = browser.signupPlayerInGame(ctx.baseURL, playerName, gameName)
+
+	// Now visit the auto-join link in a fresh incognito window.
+	page := browser.newIncognitoPage(ctx.baseURL + "/game/" + gameName + "?name=" + playerName)
+	player := &TestPlayer{Name: playerName, Page: page, logger: ctx.logger, t: t}
+
+	// Should be on the index page (login required — player exists).
+	if !player.isOnIndexPage() {
+		info, _ := page.Info()
+		t.Fatalf("Expected redirect to login page, got URL: %s", info.URL)
+	}
+
+	p := page.Timeout(browserTimeout)
+
+	// Login game name field should be pre-filled.
+	gameNameEl, err := p.Element("#login-game-name")
+	if err != nil {
+		t.Fatalf("Could not find login game name input: %v", err)
+	}
+	gameVal, _ := gameNameEl.Attribute("value")
+	if gameVal == nil || *gameVal != gameName {
+		got := ""
+		if gameVal != nil {
+			got = *gameVal
+		}
+		t.Fatalf("Expected login game name pre-filled with %q, got %q", gameName, got)
+	}
+
+	// Login name field should be pre-filled.
+	nameEl, err := p.Element("#login-name")
+	if err != nil {
+		t.Fatalf("Could not find login name input: %v", err)
+	}
+	nameVal, _ := nameEl.Attribute("value")
+	if nameVal == nil || *nameVal != playerName {
+		got := ""
+		if nameVal != nil {
+			got = *nameVal
+		}
+		t.Fatalf("Expected login name pre-filled with %q, got %q", playerName, got)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestAutoJoinLogsOutExistingSession verifies that a currently-logged-in user
+// is logged out when they visit a /game/<name>?name= link for a new player,
+// and the new player gets created and logged in instead.
+func TestAutoJoinLogsOutExistingSession(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "autojoin-logout-game"
+	originalName := "OriginalPlayer"
+	newName := "SwitchPlayer"
+	ctx.logger.Debug("=== Testing auto-join clears existing session: %s -> %s ===", originalName, newName)
+
+	// Sign up the original player.
+	original := browser.signupPlayerInGame(ctx.baseURL, originalName, gameName)
+
+	// Navigate the same page (same session) to the auto-join link for a new player.
+	wait := original.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	original.Page.Navigate(ctx.baseURL + "/game/" + gameName + "?name=" + newName)
+	wait()
+
+	updated := &TestPlayer{Name: newName, Page: original.Page, logger: ctx.logger, t: t}
+
+	// Should be on the game page as the new player.
+	if !updated.isOnGamePage() {
+		info, _ := original.Page.Info()
+		t.Fatalf("Expected game page after auto-join, got: %s", info.URL)
+	}
+
+	// The new player should exist in the database.
+	var count int
+	if err := ctx.app.db.Get(&count, "SELECT COUNT(*) FROM player WHERE name = ?", newName); err != nil || count == 0 {
+		t.Fatalf("Expected new player '%s' to be created in DB", newName)
+	}
+
+	ctx.logger.Debug("=== Test passed ===")
+}
+
+// TestAutoJoinSameUserKeepsSession verifies that following a ?name= link as the
+// player with that exact name does NOT log them out — it just drops the param
+// and continues to the game page with the existing session intact.
+func TestAutoJoinSameUserKeepsSession(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	gameName := "autojoin-same-game"
+	playerName := "SamePlayer"
+	ctx.logger.Debug("=== Testing auto-join same user keeps session: %s ===", playerName)
+
+	// Sign up the player normally.
+	player := browser.signupPlayerInGame(ctx.baseURL, playerName, gameName)
+
+	secretCode := player.getSecretCode()
+	if secretCode == "" {
+		t.Fatal("Could not read secret code before auto-join")
+	}
+
+	// Navigate to the auto-join link for the same name they're already logged in as.
+	wait := player.Page.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	player.Page.Navigate(ctx.baseURL + "/game/" + gameName + "?name=" + playerName)
+	wait()
+
+	// Should still be on the game page.
+	if !player.isOnGamePage() {
+		info, _ := player.Page.Info()
+		t.Fatalf("Expected to stay on game page, got: %s", info.URL)
+	}
+
+	// Session must still be valid — secret code is still visible.
+	codeAfter := player.getSecretCode()
+	if codeAfter == "" {
+		t.Fatal("Secret code missing after auto-join — session was incorrectly cleared")
+	}
+	if codeAfter != secretCode {
+		t.Fatalf("Secret code changed after auto-join: before=%q after=%q", secretCode, codeAfter)
 	}
 
 	ctx.logger.Debug("=== Test passed ===")

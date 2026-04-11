@@ -559,6 +559,18 @@
           .catch(function () { setTimeout(poll, 1000); });
       }, 500);
     });
+
+    // If the browser restores this page from its back-forward cache (bfcache),
+    // check whether the session cookie is still present. If it's gone the user
+    // was logged out since the page was last shown — reload so the server can
+    // redirect them to the login page.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted && !document.cookie.split(';').some(function(c) {
+        return c.trim().startsWith('{{.SessionCookieName}}=');
+      })) {
+        location.reload();
+      }
+    });
     window.wsSend = function (params) {
       if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);
     };

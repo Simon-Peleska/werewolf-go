@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -62,17 +63,18 @@ func (app *App) getOrCreateHub(gameName string) *Hub {
 }
 
 type GameData struct {
-	Player        *Player
-	Players       []Player
-	Game          *Game
-	GameName      string
-	IsInGame      bool
-	GameComponent template.HTML
-	SidebarHTML   template.HTML
-	HistoryHTML   template.HTML
-	Theme         string
-	StyleTag      template.HTML // inline <style>...</style> with all CSS
-	ScriptTag     template.HTML // inline <script>...</script> with all JS libs
+	Player            *Player
+	Players           []Player
+	Game              *Game
+	GameName          string
+	IsInGame          bool
+	GameComponent     template.HTML
+	SidebarHTML       template.HTML
+	HistoryHTML       template.HTML
+	Theme             string
+	StyleTag          template.HTML // inline <style>...</style> with all CSS
+	ScriptTag         template.HTML // inline <script>...</script> with all JS libs
+	SessionCookieName string
 }
 
 // loadPageAssets reads CSS and JS files from the embedded static FS and builds
@@ -138,7 +140,34 @@ func gameTheme(db *sqlx.DB, game *Game) string {
 
 func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+		DebugLog("handleIndex", "Unknown path '%s', redirecting to index", r.URL.Path)
+		target := "/"
+		if name := r.URL.Query().Get("name"); name != "" {
+			target = "/?name=" + name
+			// Clear the session unless the logged-in user already has this name.
+			shouldLogout := true
+			if currentID, err := getPlayerIdFromSession(app.db, r); err == nil {
+				var currentName string
+				if err := app.db.Get(&currentName, "SELECT name FROM player WHERE rowid = ?", currentID); err == nil && currentName == name {
+					shouldLogout = false
+				}
+			}
+			if shouldLogout {
+				if cookie, err := r.Cookie(sessionCookieName); err == nil {
+					if token, err := strconv.ParseInt(cookie.Value, 10, 64); err == nil {
+						app.db.Exec("DELETE FROM session WHERE token = ?", token)
+					}
+				}
+				http.SetCookie(w, &http.Cookie{
+					Name:     sessionCookieName,
+					Value:    "",
+					Path:     "/",
+					MaxAge:   -1,
+					HttpOnly: true,
+				})
+			}
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther)
 		return
 	}
 
@@ -153,22 +182,99 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		DebugLog("handleIndex", "Page accessed by anonymous visitor")
 	}
 
+	gameName := r.URL.Query().Get("game")
+	playerName := r.URL.Query().Get("name")
+
 	app.templates.ExecuteTemplate(w, "index.html", struct {
-		LoggedIn  bool
-		StyleTag  template.HTML
-		ScriptTag template.HTML
-	}{loggedIn, app.pageStyleTag, app.pageIndexScriptTag})
+		LoggedIn   bool
+		GameName   string
+		PlayerName string
+		StyleTag   template.HTML
+		ScriptTag  template.HTML
+	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag})
 }
 
 func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
-	playerID, err := getPlayerIdFromSession(app.db, r)
-	if err != nil {
-		DebugLog("handleGame", "Redirecting anonymous visitor to index")
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	gameName := r.PathValue("name")
+
+	// If a ?name= parameter is present, treat this as an auto-join link.
+	// Clear any existing session first (so the link always switches identity),
+	// then either auto-create the player or redirect to the login page.
+	if playerName := r.URL.Query().Get("name"); playerName != "" {
+		// If the currently logged-in user already has this name, just drop the
+		// ?name= param and continue as normal — no session change needed.
+		if currentID, err := getPlayerIdFromSession(app.db, r); err == nil {
+			var currentName string
+			if err := app.db.Get(&currentName, "SELECT name FROM player WHERE rowid = ?", currentID); err == nil && currentName == playerName {
+				DebugLog("handleGame", "Auto-join link matches current session ('%s'), skipping logout", playerName)
+				http.Redirect(w, r, "/game/"+gameName, http.StatusSeeOther)
+				return
+			}
+		}
+
+		// Different (or no) session — clear it before switching identity.
+		if cookie, err := r.Cookie(sessionCookieName); err == nil {
+			if token, err := strconv.ParseInt(cookie.Value, 10, 64); err == nil {
+				app.db.Exec("DELETE FROM session WHERE token = ?", token)
+			}
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieName,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+		})
+
+		var existing Player
+		err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", playerName)
+		if err == sql.ErrNoRows {
+			// Player doesn't exist — auto-create and log them in.
+			secretCode, err := generateSecretCode()
+			if err != nil {
+				hub := app.getOrCreateHub(gameName)
+				hub.logError("handleGame: generateSecretCode", err)
+				http.Error(w, "Something went wrong", http.StatusInternalServerError)
+				return
+			}
+			result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", playerName, secretCode)
+			if err != nil {
+				hub := app.getOrCreateHub(gameName)
+				hub.logError("handleGame: insert player", err)
+				http.Error(w, "Something went wrong", http.StatusInternalServerError)
+				return
+			}
+			newPlayerID, _ := result.LastInsertId()
+			app.logf("Auto-created player via join link: name='%s', id=%d, game='%s'", playerName, newPlayerID, gameName)
+			if err := setSessionCookie(app.db, w, newPlayerID); err != nil {
+				hub := app.getOrCreateHub(gameName)
+				hub.logError("handleGame: setSessionCookie", err)
+				http.Error(w, "Something went wrong", http.StatusInternalServerError)
+				return
+			}
+			// Redirect without ?name= to avoid re-triggering this logic on reload.
+			http.Redirect(w, r, "/game/"+gameName, http.StatusSeeOther)
+			return
+		}
+		if err != nil {
+			hub := app.getOrCreateHub(gameName)
+			hub.logError("handleGame: lookup player by name", err)
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			return
+		}
+		// Player exists — redirect to login page with game and name pre-filled.
+		DebugLog("handleGame", "Player '%s' exists, redirecting to login with name+game prefilled", playerName)
+		http.Redirect(w, r, "/?game="+gameName+"&name="+playerName, http.StatusSeeOther)
 		return
 	}
 
-	gameName := r.PathValue("name")
+	playerID, err := getPlayerIdFromSession(app.db, r)
+	if err != nil {
+		DebugLog("handleGame", "Redirecting anonymous visitor to index with game=%s", gameName)
+		http.Redirect(w, r, "/?game="+gameName, http.StatusSeeOther)
+		return
+	}
+
 	hub := app.getOrCreateHub(gameName)
 
 	game, err := getOrCreateGameByName(app.db, gameName)
@@ -249,17 +355,18 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	historyBuf, _ := getGameHistory(app.db, app.templates, playerID, game)
 
 	data := GameData{
-		Player:        &player,
-		Players:       players,
-		Game:          game,
-		GameName:      gameName,
-		IsInGame:      isInGame,
-		GameComponent: template.HTML(buf.String()),
-		SidebarHTML:   template.HTML(sidebarBuf.String()),
-		HistoryHTML:   template.HTML(historyBuf.String()),
-		Theme:         gameTheme(app.db, game),
-		StyleTag:      app.pageStyleTag,
-		ScriptTag:     app.pageGameScriptTag,
+		Player:            &player,
+		Players:           players,
+		Game:              game,
+		GameName:          gameName,
+		IsInGame:          isInGame,
+		GameComponent:     template.HTML(buf.String()),
+		SidebarHTML:       template.HTML(sidebarBuf.String()),
+		HistoryHTML:       template.HTML(historyBuf.String()),
+		Theme:             gameTheme(app.db, game),
+		StyleTag:          app.pageStyleTag,
+		ScriptTag:         app.pageGameScriptTag,
+		SessionCookieName: sessionCookieName,
 	}
 
 	app.templates.ExecuteTemplate(w, "game.html", data)

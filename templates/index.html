@@ -84,7 +84,7 @@
                     <form id="join-game-form" onsubmit="return joinGame(event)">
                         <label for="join-game-name">
                             Game Name
-                            <input type="text" id="join-game-name" name="game_name" placeholder="Enter game name" required>
+                            <input type="text" id="join-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
                         </label>
                         <button type="submit" id="btn-join">Join Game</button>
                     </form>
@@ -104,11 +104,11 @@
                     <form hx-post="/signup" hx-target="#auth-container" hx-swap="innerHTML">
                         <label for="signup-game-name">
                             Game Name
-                            <input type="text" id="signup-game-name" name="game_name" placeholder="Enter game name" required>
+                            <input type="text" id="signup-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
                         </label>
                         <label for="signup-name">
                             Choose your name
-                            <input type="text" id="signup-name" name="name" placeholder="Enter your name" required>
+                            <input type="text" id="signup-name" name="name" placeholder="Enter your name" value="{{.PlayerName}}" required>
                         </label>
                         <button type="submit" id="btn-signup">Join Game</button>
                     </form>
@@ -122,11 +122,11 @@
                     <form hx-post="/login" hx-target="#auth-container" hx-swap="innerHTML">
                         <label for="login-game-name">
                             Game Name
-                            <input type="text" id="login-game-name" name="game_name" placeholder="Enter game name" required>
+                            <input type="text" id="login-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
                         </label>
                         <label for="login-name">
                             Name
-                            <input type="text" id="login-name" name="name" placeholder="Your name" required>
+                            <input type="text" id="login-name" name="name" placeholder="Your name" value="{{.PlayerName}}" required>
                         </label>
                         <label for="secret-code">
                             Secret Code
