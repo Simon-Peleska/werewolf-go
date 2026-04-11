@@ -69,7 +69,7 @@
       cursor: default;
       box-sizing: border-box;
       overflow: hidden;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s, border-radius ${FADE_DUR}ms ease-in-out;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s, border-radius ${FADE_DUR}ms ease-in-out, filter 0.15s ease;
     }
     .pc-card::before {
       content: '';
@@ -80,8 +80,10 @@
       pointer-events: none;
     }
     .pc-card:hover {
-      transform: translateY(-4px);
       box-shadow: 0 10px 32px var(--c-card-hover-shadow), 0 0 0 1px var(--c-card-hover-ring);
+    }
+    @media (hover: hover) {
+      .pc-card:hover { transform: translateY(-4px); }
     }
     :host([team=villager]) .pc-card { border-color: var(--c-card-team-villager); }
     :host([team=werewolf]) .pc-card { border-color: var(--c-card-team-werewolf); }
