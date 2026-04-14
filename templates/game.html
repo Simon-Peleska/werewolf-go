@@ -229,6 +229,13 @@
       padding-top: var(--pico-spacing);
     }
 
+    /* On initial server render, history.html OOB elements land as direct grid
+       children of .layout. Hide the stray #topbar-history-btn there — the real
+       one lives inside .topbar and is unaffected by this rule. */
+    .layout > #topbar-history-btn {
+      display: none;
+    }
+
     /* Mobile behavior */
     @media (max-width: 1280px) {
 

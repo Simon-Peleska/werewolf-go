@@ -178,8 +178,8 @@
     }
     .pc-count.pc-zero { color: var(--c-muted); text-shadow: none; }
 
-    /* ── ± buttons, count badge, and heart badge — circular overlays on seal wrap */
-    .pc-btn-wrap, .pc-count-wrap, .pc-heart-wrap {
+    /* ── ± buttons, count badge, heart badge, and doppelganger badge — circular overlays on seal wrap */
+    .pc-btn-wrap, .pc-count-wrap, .pc-heart-wrap, .pc-doppelganger-wrap {
       --bsz: calc(var(--pico-spacing) * 2.2);
       position: absolute; bottom: 0;
       width: var(--bsz); height: var(--bsz);
@@ -303,7 +303,7 @@
       border-color: var(--c-doppelganger-border);
       box-shadow: 0 0 0 1px var(--c-doppelganger-ring), 0 4px 16px var(--c-doppelganger-shadow);
     }
-    .pc-doppelganger-wrap { right: 0; }
+    .pc-doppelganger-wrap { left: 0; }
     .pc-doppelganger-icon {
       flex: 1; text-align: center; align-content: center;
       font-size: 1.1rem; pointer-events: none; color: var(--c-doppelganger-icon);
