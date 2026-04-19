@@ -24,6 +24,7 @@ type DayData struct {
 	Player               *Player  // this player's current vote (nil = no vote / pass)
 	AliveTargets         []Player // alive players; visibility pre-applied
 	NightNumber          int
+	HasHistory           bool
 	NightVictims         []Player // all players killed last night
 	Votes                []DayVote
 	DayVoteCounts        map[int64]int // vote count per target player ID

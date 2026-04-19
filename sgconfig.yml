@@ -1,0 +1,11 @@
+ruleDirs:
+  - rules
+languageGlobs:
+  go:
+    - "*.go"
+  html:
+    - "templates/*.html"
+  javascript:
+    - "static/*.js"
+  css:
+    - "static/*.css"

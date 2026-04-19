@@ -1,0 +1,46 @@
+{{define "night-doctor-section"}}
+<h3>Doctor: Your Protection</h3>
+{{if .HasProtected}}
+<p id="doctor-result"><em>You are protecting <strong>{{if .DoctorProtectingPlayer}}{{.DoctorProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
+<card-list>
+    <player-card
+        data-player-id="{{.DoctorProtectingPlayer.ID}}"
+        player-id="{{.DoctorProtectingPlayer.PlayerID}}"
+        player-name="{{.DoctorProtectingPlayer.Name}}"
+        role-name="{{.DoctorProtectingPlayer.RoleName}}"
+        role-desc="{{.DoctorProtectingPlayer.RoleDescription}}"
+        team="{{.DoctorProtectingPlayer.Team}}"
+        alive="{{if .DoctorProtectingPlayer.IsAlive}}true{{else}}false{{end}}"
+        profile-image="{{if .DoctorProtectingPlayer.ProfileImageID}}/player-image/{{.DoctorProtectingPlayer.ProfileImageID}}{{end}}"
+        {{if and (ne .DoctorProtectingPlayer.Lover 0) (eq .Player.PlayerID .DoctorProtectingPlayer.Lover)}}lover{{end}}>
+    </player-card>
+</card-list>
+{{else}}
+<p>Choose a player to protect, then confirm.</p>
+<card-list>
+{{range .AliveTargets}}
+<form ws-send id="doctor-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="doctor_select">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        {{if and $.DoctorSelectedPlayer (eq $.DoctorSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+<form ws-send id="doctor-protect-form" class="vote-form">
+    <input type="hidden" name="action" value="doctor_protect">
+    <button type="submit" id="doctor-protect-button" {{if not .DoctorSelectedPlayer}}disabled{{end}}>🩺 Protect</button>
+</form>
+{{end}}
+{{end}}

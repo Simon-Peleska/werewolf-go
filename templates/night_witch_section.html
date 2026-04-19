@@ -1,0 +1,95 @@
+{{define "night-witch-section"}}
+<h3>Witch: Your Potions</h3>
+{{if .WitchDoneThisNight}}
+{{if .WitchHealedThisNight}}<p><em>✓ You saved <strong>{{if .WitchHealedPlayer}}{{.WitchHealedPlayer.Name}}{{end}}</strong> with your heal potion.</em></p>{{end}}
+{{if .WitchKilledThisNight}}<p><em>☠️ You poisoned <strong>{{if .WitchKilledPlayer}}{{.WitchKilledPlayer.Name}}{{end}}</strong>.</em></p>{{end}}
+<p><em>Waiting for the night to end...</em></p>
+{{else}}
+
+<div id="witch-heal-section">
+{{if not .HealPotionUsed}}
+<h4>🧪 Heal Potion</h4>
+{{if .WitchVictimPlayer}}
+<p>The werewolves are targeting (click to save, click again to deselect):</p>
+<card-list id="witch-heal-targets">
+<form ws-send id="witch-select-heal-form-{{.WitchVictimPlayer.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="witch_select_heal">
+    <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer.PlayerID}}">
+    <player-card
+        data-player-id="{{.WitchVictimPlayer.ID}}"
+        player-id="{{.WitchVictimPlayer.PlayerID}}"
+        player-name="{{.WitchVictimPlayer.Name}}"
+        role-name="{{.WitchVictimPlayer.RoleName}}"
+        role-desc="{{.WitchVictimPlayer.RoleDescription}}"
+        team="{{.WitchVictimPlayer.Team}}"
+        alive="true"
+        profile-image="{{if .WitchVictimPlayer.ProfileImageID}}/player-image/{{.WitchVictimPlayer.ProfileImageID}}{{end}}"
+        selectable
+        {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer.PlayerID)}}selected{{end}}
+        {{if and (ne .WitchVictimPlayer.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer.Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{if .WitchVictimPlayer2}}
+<form ws-send id="witch-select-heal-form-{{.WitchVictimPlayer2.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="witch_select_heal">
+    <input type="hidden" name="target_player_id" value="{{.WitchVictimPlayer2.PlayerID}}">
+    <player-card
+        data-player-id="{{.WitchVictimPlayer2.ID}}"
+        player-id="{{.WitchVictimPlayer2.PlayerID}}"
+        player-name="{{.WitchVictimPlayer2.Name}}"
+        role-name="{{.WitchVictimPlayer2.RoleName}}"
+        role-desc="{{.WitchVictimPlayer2.RoleDescription}}"
+        team="{{.WitchVictimPlayer2.Team}}"
+        alive="true"
+        profile-image="{{if .WitchVictimPlayer2.ProfileImageID}}/player-image/{{.WitchVictimPlayer2.ProfileImageID}}{{end}}"
+        selectable
+        {{if and .WitchSelectedHealPlayer (eq .WitchSelectedHealPlayer.PlayerID .WitchVictimPlayer2.PlayerID)}}selected{{end}}
+        {{if and (ne .WitchVictimPlayer2.Lover 0) (eq .Player.PlayerID .WitchVictimPlayer2.Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+{{else}}
+<p><em>The werewolves have not chosen a target yet...</em></p>
+{{end}}
+{{else}}
+<p><em>Your heal potion has been used.</em></p>
+{{end}}
+</div>
+
+<div id="witch-poison-section">
+{{if not .PoisonPotionUsed}}
+<h4>☠️ Poison Potion</h4>
+<p>Choose a player to poison (click to select, click again to deselect):</p>
+<card-list id="witch-poison-targets">
+{{range .AliveTargets}}
+<form ws-send id="witch-select-poison-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="witch_select_poison">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        {{if and $.WitchSelectedPoisonPlayer (eq $.WitchSelectedPoisonPlayer.PlayerID .PlayerID)}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+{{else}}
+<p><em>Your poison potion has been used.</em></p>
+{{end}}
+</div>
+
+<form ws-send id="witch-apply-form" class="vote-form">
+    <input type="hidden" name="action" value="witch_apply">
+    <button type="submit" id="witch-apply-button" class="witch-apply-button">✓ Done for tonight</button>
+</form>
+{{end}}
+{{end}}

@@ -1,0 +1,65 @@
+{{define "night-cupid-section"}}
+<h3>Cupid: Link Two Lovers</h3>
+{{if .CupidLinked}}
+<p id="cupid-result"><em>You have linked <strong>{{if .CupidChosen1Player}}{{.CupidChosen1Player.Name}}{{end}}</strong> and <strong>{{if .CupidChosen2Player}}{{.CupidChosen2Player.Name}}{{end}}</strong> as lovers.</em></p>
+<card-list>
+    <player-card
+        data-player-id="{{.CupidChosen1Player.ID}}"
+        player-id="{{.CupidChosen1Player.PlayerID}}"
+        player-name="{{.CupidChosen1Player.Name}}"
+        role-name="{{.CupidChosen1Player.RoleName}}"
+        role-desc="{{.CupidChosen1Player.RoleDescription}}"
+        team="{{.CupidChosen1Player.Team}}"
+        alive="true"
+        profile-image="{{if .CupidChosen1Player.ProfileImageID}}/player-image/{{.CupidChosen1Player.ProfileImageID}}{{end}}"
+        selectable
+        {{if and (ne .CupidChosen1Player.Lover 0) (eq .Player.PlayerID .CupidChosen1Player.Lover)}}lover{{end}}
+    ></player-card>
+    <player-card
+        data-player-id="{{.CupidChosen2Player.ID}}"
+        player-id="{{.CupidChosen2Player.PlayerID}}"
+        player-name="{{.CupidChosen2Player.Name}}"
+        role-name="{{.CupidChosen2Player.RoleName}}"
+        role-desc="{{.CupidChosen2Player.RoleDescription}}"
+        team="{{.CupidChosen2Player.Team}}"
+        alive="true"
+        profile-image="{{if .CupidChosen2Player.ProfileImageID}}/player-image/{{.CupidChosen2Player.ProfileImageID}}{{end}}"
+        selectable
+        {{if and (ne .CupidChosen2Player.Lover 0) (eq .Player.PlayerID .CupidChosen2Player.Lover)}}lover{{end}}
+    ></player-card>
+</card-list>
+{{else}}
+{{if and .CupidChosen1Player .CupidChosen2Player}}
+<p>Chosen: <strong>{{.CupidChosen1Player.Name}}</strong> and <strong>{{.CupidChosen2Player.Name}}</strong>. Click a card to deselect.</p>
+{{else if or .CupidChosen1Player .CupidChosen2Player}}
+<p>One chosen. Select the second lover.</p>
+{{else}}
+<p>Choose two players to become lovers. They will know each other's identities.</p>
+{{end}}
+<card-list>
+{{range .AliveTargets}}
+<form ws-send id="cupid-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="cupid_choose">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        {{if or (and $.CupidChosen1Player (eq $.CupidChosen1Player.PlayerID .PlayerID)) (and $.CupidChosen2Player (eq $.CupidChosen2Player.PlayerID .PlayerID))}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+<form ws-send id="cupid-link-form" class="vote-form">
+    <input type="hidden" name="action" value="cupid_link">
+    <button type="submit" id="cupid-link-button" {{if not (and .CupidChosen1Player .CupidChosen2Player)}}disabled{{end}}>💞 Link lovers</button>
+</form>
+{{end}}
+{{end}}

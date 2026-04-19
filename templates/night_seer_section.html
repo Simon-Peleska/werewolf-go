@@ -1,0 +1,47 @@
+{{define "night-seer-section"}}
+<h3>Seer: Your Investigation</h3>
+{{if .HasInvestigated}}
+<p><em>You have already investigated tonight.</em></p>
+<card-list>
+    <player-card
+        id="seer-result"
+        data-player-id="{{.SeerSelectedPlayer.ID}}"
+        player-id="{{.SeerSelectedPlayer.PlayerID}}"
+        player-name="{{.SeerSelectedPlayer.Name}}"
+        role-name="{{.SeerSelectedPlayer.RoleName}}"
+        role-desc="{{.SeerSelectedPlayer.RoleDescription}}"
+        team="{{.SeerSelectedPlayer.Team}}"
+        alive="true"
+        show-role-seal
+        {{if and (ne .SeerSelectedPlayer.Lover 0) (eq .Player.PlayerID .SeerSelectedPlayer.Lover)}}lover{{end}}
+    ></player-card>
+</card-list>
+{{else}}
+<p>Choose a player to investigate, then confirm your choice.</p>
+<card-list>
+{{range .AliveTargets}}
+<form ws-send id="seer-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="seer_select">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        {{if and $.SeerSelectedPlayer (eq $.SeerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+<form ws-send id="seer-investigate-form" class="vote-form">
+    <input type="hidden" name="action" value="seer_investigate">
+    <button type="submit" id="seer-investigate-button" {{if not .SeerSelectedPlayer}}disabled{{end}}>🔮 Investigate</button>
+</form>
+{{end}}
+{{end}}

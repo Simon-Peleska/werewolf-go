@@ -1,0 +1,23 @@
+{{define "night-mason-section"}}
+<h3>Mason: Your Fellow Masons</h3>
+{{if .Masons}}
+<p>You know these confirmed villagers:</p>
+<card-list id="mason-card-list">
+    {{range .Masons}}
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+    {{end}}
+</card-list>
+{{else}}
+<p><em>You are the only Mason.</em></p>
+{{end}}
+{{end}}

@@ -321,15 +321,7 @@
   <input type="checkbox" id="sidebar-nav-toggle" hidden>
   <input type="checkbox" id="history-bar-nav-toggle" hidden>
   <main class="layout">
-    <header class="topbar">
-      <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">
-        ☰
-      </label>
-      <div id="topbar-phase">
-        <h1>Werewolf</h1>
-      </div>
-      <div id="topbar-history-btn"></div>
-    </header>
+    {{.TopbarHTML}}
     <div class="nav-backdrop" id="nav-backdrop"></div>
     {{.SidebarHTML}}
     <section class="container">

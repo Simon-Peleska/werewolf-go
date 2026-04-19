@@ -1,0 +1,52 @@
+{{define "night-doppelganger-section"}}
+<h3>Doppelganger: Choose Your Identity</h3>
+{{if .DoppelgangerHasCopied}}
+<p id="doppelganger-result"><em>You have become <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.RoleName}}{{end}}</strong> (copied from <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.Name}}{{end}}</strong>).</em></p>
+{{if .DoppelgangerCopiedPlayer}}
+<card-list>
+    <player-card
+        data-player-id="{{.DoppelgangerCopiedPlayer.ID}}"
+        player-id="{{.DoppelgangerCopiedPlayer.PlayerID}}"
+        player-name="{{.DoppelgangerCopiedPlayer.Name}}"
+        role-name="{{.DoppelgangerCopiedPlayer.RoleName}}"
+        role-desc="{{.DoppelgangerCopiedPlayer.RoleDescription}}"
+        team="{{.DoppelgangerCopiedPlayer.Team}}"
+        alive="true"
+        show-role-seal
+        profile-image="{{if .DoppelgangerCopiedPlayer.ProfileImageID}}/player-image/{{.DoppelgangerCopiedPlayer.ProfileImageID}}{{end}}"
+    ></player-card>
+</card-list>
+{{end}}
+{{else}}
+{{if .DoppelgangerSelectedPlayer}}
+<p>Selected: <strong>{{.DoppelgangerSelectedPlayer.Name}}</strong>. Click to deselect or confirm below.</p>
+{{else}}
+<p>Choose a player. You will secretly become their role for the rest of the game.</p>
+{{end}}
+<card-list>
+{{range .DoppelgangerTargets}}
+<form ws-send id="doppelganger-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="doppelganger_select">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        {{if and $.DoppelgangerSelectedPlayer (eq $.DoppelgangerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+<form ws-send id="doppelganger-copy-form" class="vote-form">
+    <input type="hidden" name="action" value="doppelganger_copy">
+    <button type="submit" id="doppelganger-copy-button" {{if not .DoppelgangerSelectedPlayer}}disabled{{end}}>🎭 Become</button>
+</form>
+{{end}}
+{{end}}

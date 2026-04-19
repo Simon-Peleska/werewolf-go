@@ -1,0 +1,9 @@
+<header class="topbar" id="topbar" hx-swap-oob="morph">
+  <label class="nav-toggle-button" for="sidebar-nav-toggle" role="button" aria-label="Sidebar Toggle navigation">☰</label>
+  <div id="topbar-phase">
+    {{if eq .Game.Status "night"}}<span class="topbar-phase-label" id="topbar-phase-label">Night {{.Game.Round}}</span>
+    {{else if eq .Game.Status "day"}}<span class="topbar-phase-label topbar-phase-day" id="topbar-phase-label">Day {{.Game.Round}}</span>
+    {{else}}<h1>Werewolf</h1>{{end}}
+  </div>
+  <div id="topbar-history-btn">{{if .HasHistory}}<label class="nav-toggle-button" for="history-bar-nav-toggle" role="button" aria-label="History Toggle navigation">H</label>{{end}}</div>
+</header>

@@ -310,12 +310,17 @@ func (h *Hub) broadcastGameUpdate() {
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 
+		historyEntries := buildHistoryEntries(h.db, p.PlayerID, game)
 		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game)
 		if err != nil {
 			h.logError("broadcastGameHistory: getGameHistory", err)
 			continue
 		}
 		combined.Write(historyBuf.Bytes())
+
+		var topbarBuf bytes.Buffer
+		h.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0})
+		combined.Write(topbarBuf.Bytes())
 
 		h.sendToPlayer(p.PlayerID, combined.Bytes())
 	}

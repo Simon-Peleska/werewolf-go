@@ -1,0 +1,93 @@
+{{define "night-werewolf-section"}}
+<h3>Werewolf: Choose a Victim</h3>
+<div id="wolf-vote-section">
+{{if .WolfEndVoted}}
+<p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
+{{else}}
+<p>Select a player to kill, or pass. When all werewolves have acted, end the vote.</p>
+<card-list>
+{{range .AliveTargets}}
+{{$wvCount := index $.WerewolfVoteCounts .PlayerID}}
+<form ws-send id="vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <input type="hidden" name="action" value="werewolf_vote">
+    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+    <player-card
+        data-player-id="{{.ID}}"
+        player-id="{{.PlayerID}}"
+        player-name="{{.Name}}"
+        role-name="{{.RoleName}}"
+        role-desc="{{.RoleDescription}}"
+        team="{{.Team}}"
+        alive="true"
+        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+        selectable
+        count="{{$wvCount}}"
+        {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
+        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+    ></player-card>
+</form>
+{{end}}
+</card-list>
+<form ws-send id="werewolf-pass-form" class="vote-form">
+    <input type="hidden" name="action" value="werewolf_pass">
+    <button type="submit" id="werewolf-pass-btn" class="vote-button">Pass</button>
+</form>
+<form ws-send id="werewolf-end-vote-form">
+    <input type="hidden" name="action" value="werewolf_end_vote">
+    <button type="submit" id="werewolf-end-vote-btn" {{if not .AllWolvesActed}}disabled{{end}}>End Vote</button>
+</form>
+{{end}}
+</div>
+
+{{if .Votes}}
+<h4 id="wolf-vote-title">Current Votes</h4>
+<ul id="wolf-vote-list" class="vote-list">
+    {{range .Votes}}
+    <li id="wolf-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+    {{end}}
+</ul>
+{{end}}
+
+{{if .WolfCubDoubleKill}}
+<div id="wolf-cub-vote-section" class="night-wolf-cub-section">
+    <div class="phase-heading" style="margin-bottom:0.5rem">
+        <img class="seal seal-sm" src="/static/seals/Wolf_Cub.webp" alt="Wolf Cub">
+        <h4 style="margin:0">Wolf Cub's Revenge — Second Victim</h4>
+    </div>
+    {{if .WolfEndVoted2}}
+    <p id="wolf-end-voted2-msg"><em>Second vote locked in. Waiting for night to end...</em></p>
+    {{else}}
+    <p>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</p>
+    <card-list>
+    {{range .AliveTargets}}
+    <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+        <input type="hidden" name="action" value="werewolf_vote_2">
+        <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
+        <player-card
+            data-player-id="{{.ID}}"
+            player-id="{{.PlayerID}}"
+            player-name="{{.Name}}"
+            role-name="{{.RoleName}}"
+            role-desc="{{.RoleDescription}}"
+            team="{{.Team}}"
+            alive="true"
+            profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
+            selectable
+            {{if and $.CurrentVotePlayer2 (eq $.CurrentVotePlayer2.PlayerID .PlayerID)}}selected{{end}}
+            {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
+        ></player-card>
+    </form>
+    {{end}}
+    </card-list>
+    <form ws-send id="werewolf-pass2-form" class="vote-form">
+        <input type="hidden" name="action" value="werewolf_pass_2">
+        <button type="submit" id="werewolf-pass2-btn" class="vote-button">Pass</button>
+    </form>
+    <form ws-send id="werewolf-end-vote2-form">
+        <input type="hidden" name="action" value="werewolf_end_vote_2">
+        <button type="submit" id="werewolf-end-vote2-btn" {{if not .AllWolvesActed2}}disabled{{end}}>End Second Vote</button>
+    </form>
+    {{end}}
+</div>
+{{end}}
+{{end}}
