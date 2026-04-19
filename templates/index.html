@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="{{.Lang}}" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Werewolf - Sign In</title>
+    <title>{{T .Lang "page_title_index"}}</title>
     {{.StyleTag}}
     <link rel="prefetch" href="/static/seals/Villager.webp" as="image">
     <link rel="prefetch" href="/static/seals/Werewolf.webp" as="image">
@@ -67,6 +67,23 @@
             to { opacity: 0; transform: translateX(100%); }
         }
         .toast.removing { animation: toast-out 0.3s ease-in forwards; }
+        .lang-switcher {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-bottom: 1rem;
+        }
+        .lang-switcher a {
+            font-size: 1rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--pico-border-radius);
+            text-decoration: none;
+            color: var(--pico-muted-color);
+        }
+        .lang-switcher a.active {
+            color: var(--pico-primary);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -75,20 +92,24 @@
         <article>
             <header>
                 <h1>Werewolf</h1>
+                <div class="lang-switcher">
+                    <a href="/set-lang?lang=en" {{if eq .Lang "en"}}class="active"{{end}}>EN</a>
+                    <a href="/set-lang?lang=de" {{if eq .Lang "de"}}class="active"{{end}}>DE</a>
+                </div>
             </header>
 
             <div id="auth-container">
                 {{if .LoggedIn}}
                 <section>
-                    <h2>Join Game</h2>
+                    <h2>{{T .Lang "join_game_heading"}}</h2>
                     <form id="join-game-form" onsubmit="return joinGame(event)">
                         <label for="join-game-name">
-                            Game Name
-                            <input type="text" id="join-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
+                            {{T .Lang "game_name_label"}}
+                            <input type="text" id="join-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
                         </label>
-                        <button type="submit" id="btn-join">Join Game</button>
+                        <button type="submit" id="btn-join">{{T .Lang "btn_join"}}</button>
                     </form>
-                    <a href="/logout" role="button" class="secondary">Logout</a>
+                    <a href="/logout" role="button" class="secondary">{{T .Lang "btn_logout"}}</a>
                 </section>
                 <script>
                 function joinGame(e) {
@@ -100,39 +121,39 @@
                 </script>
                 {{else}}
                 <section>
-                    <h2>New Player</h2>
+                    <h2>{{T .Lang "new_player_heading"}}</h2>
                     <form hx-post="/signup" hx-target="#auth-container" hx-swap="innerHTML">
                         <label for="signup-game-name">
-                            Game Name
-                            <input type="text" id="signup-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
+                            {{T .Lang "game_name_label"}}
+                            <input type="text" id="signup-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
                         </label>
                         <label for="signup-name">
-                            Choose your name
-                            <input type="text" id="signup-name" name="name" placeholder="Enter your name" value="{{.PlayerName}}" required>
+                            {{T .Lang "choose_name_label"}}
+                            <input type="text" id="signup-name" name="name" placeholder="{{T .Lang "name_placeholder"}}" value="{{.PlayerName}}" required>
                         </label>
-                        <button type="submit" id="btn-signup">Join Game</button>
+                        <button type="submit" id="btn-signup">{{T .Lang "btn_join"}}</button>
                     </form>
                 </section>
 
                 <hr>
 
                 <section>
-                    <h2>Returning Player</h2>
-                    <p>Already signed up on another device? Enter your name and secret code.</p>
+                    <h2>{{T .Lang "returning_player_heading"}}</h2>
+                    <p>{{T .Lang "returning_player_desc"}}</p>
                     <form hx-post="/login" hx-target="#auth-container" hx-swap="innerHTML">
                         <label for="login-game-name">
-                            Game Name
-                            <input type="text" id="login-game-name" name="game_name" placeholder="Enter game name" value="{{.GameName}}" required>
+                            {{T .Lang "game_name_label"}}
+                            <input type="text" id="login-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
                         </label>
                         <label for="login-name">
-                            Name
-                            <input type="text" id="login-name" name="name" placeholder="Your name" value="{{.PlayerName}}" required>
+                            {{T .Lang "name_label"}}
+                            <input type="text" id="login-name" name="name" placeholder="{{T .Lang "your_name_placeholder"}}" value="{{.PlayerName}}" required>
                         </label>
                         <label for="secret-code">
-                            Secret Code
-                            <input type="text" id="secret-code" name="secret_code" placeholder="Your secret code" required>
+                            {{T .Lang "secret_code_label"}}
+                            <input type="text" id="secret-code" name="secret_code" placeholder="{{T .Lang "secret_code_placeholder"}}" required>
                         </label>
-                        <button type="submit" id="btn-login">Login</button>
+                        <button type="submit" id="btn-login">{{T .Lang "btn_login"}}</button>
                     </form>
                 </section>
                 {{end}}

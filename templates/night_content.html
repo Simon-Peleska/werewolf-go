@@ -8,7 +8,7 @@
         <!-- Submitted survey — waiting message -->
         <div id="survey-waiting" class="night-sleeping">
             <img class="night-seal-pulse" src="/static/seals/Night.webp" alt="Night">
-            <p><em>Waiting for {{subtract .AliveCount .SurveyCount}} more player(s)...</em></p>
+            <p><em>{{T .Lang "waiting_for_players" (subtract .AliveCount .SurveyCount)}}</em></p>
         </div>
 
         {{else}}
@@ -17,7 +17,7 @@
         <div class="phase-action-panel" id="phase-action-panel">
 
             {{if not .Player.IsAlive}}
-            <p><em>You are dead. The village sleeps around you.</em></p>
+            <p><em>{{T .Lang "you_are_dead_night"}}</em></p>
 
             {{else if eq .Player.Team "werewolf"}}
             {{template "night-werewolf-section" .}}
@@ -47,8 +47,8 @@
             <!-- Sleeping villager (no special role) -->
             <div class="night-sleeping">
                 <img class="night-seal-pulse" src="/static/seals/Night.webp" alt="Night">
-                <p>The village sleeps...</p>
-                <p><em>Close your eyes and wait for morning.</em></p>
+                <p>{{T .Lang "village_sleeps"}}</p>
+                <p><em>{{T .Lang "close_eyes"}}</em></p>
             </div>
             {{end}}
 
@@ -57,8 +57,8 @@
         {{if .ShowSurvey}}
         <hr>
         <section id="night-survey-section" class="night-survey">
-            <h3>The storyteller is asking you</h3>
-            <label>Who do you think is a Werewolf?</label>
+            <h3>{{T .Lang "storyteller_asking"}}</h3>
+            <label>{{T .Lang "who_is_werewolf"}}</label>
             <card-list id="survey-suspects">
             {{range .SurveyTargets}}
             <form ws-send id="survey-suspect-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -82,13 +82,13 @@
             </card-list>
             <form ws-send id="night-survey-form">
                 <input type="hidden" name="action" value="night_survey">
-                <label>How do you think the victim died?
-                    <input id="survey-death-theory" type="text" name="death_theory" placeholder="(optional)">
+                <label>{{T .Lang "how_victim_died"}}
+                    <input id="survey-death-theory" type="text" name="death_theory" placeholder="{{T .Lang "optional"}}">
                 </label>
-                <label>Notes
-                    <textarea id="survey-notes" name="notes" placeholder="(optional)"></textarea>
+                <label>{{T .Lang "notes_label"}}
+                    <textarea id="survey-notes" name="notes" placeholder="{{T .Lang "optional"}}"></textarea>
                 </label>
-                <button type="submit">Continue →</button>
+                <button type="submit">{{T .Lang "btn_continue"}}</button>
             </form>
         </section>
         {{end}}

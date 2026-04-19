@@ -23,7 +23,7 @@
                     </card-list>
                 </div>
                 {{else}}
-                <p id="no-death-message">The village awakens. No one died last night.</p>
+                <p id="no-death-message">{{T .Lang "no_deaths_last_night"}}</p>
                 {{end}}
 
                 {{if .HunterRevengeNeeded}}
@@ -31,16 +31,16 @@
                     {{if .HunterRevengeDone}}
                     <div class="death-announcement" id="hunter-revenge-result">
                         {{if .HunterVictimPlayer}}
-                        <p>🏹 The Hunter's last shot killed <strong>{{.HunterVictimPlayer.Name}}</strong>!</p>
-                        <p>They were a <strong>{{.HunterVictimPlayer.RoleName}}</strong>.</p>
+                        <p>{{T .Lang "hunter_shot_killed" .HunterVictimPlayer.Name}}</p>
+                        <p>{{T .Lang "hunter_victim_was" .HunterVictimPlayer.RoleName}}</p>
                         {{end}}
                     </div>
                     {{else if eq .Player.RoleName "Hunter"}}
                     <div class="phase-heading" style="margin-bottom:0.75rem">
                         <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
-                        <h3 style="margin:0">Your Last Shot</h3>
+                        <h3 style="margin:0">{{T .Lang "hunter_last_shot"}}</h3>
                     </div>
-                    <p>You have been eliminated! Choose a player to take down with you, then confirm.</p>
+                    <p>{{T .Lang "hunter_eliminated_desc"}}</p>
                     <card-list>
                     {{range .HunterTargets}}
                     <form ws-send id="hunter-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -64,10 +64,10 @@
                     </card-list>
                     <form ws-send id="hunter-shoot-form" class="vote-form">
                         <input type="hidden" name="action" value="hunter_revenge">
-                        <button type="submit" id="hunter-shoot-button" {{if not .HunterSelectedPlayer}}disabled{{end}}>🏹 Shoot</button>
+                        <button type="submit" id="hunter-shoot-button" {{if not .HunterSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_hunter_shoot"}}</button>
                     </form>
                     {{else}}
-                    <p id="hunter-waiting"><em>The Hunter is choosing their final target...</em></p>
+                    <p id="hunter-waiting"><em>{{T .Lang "hunter_choosing"}}</em></p>
                     {{end}}
                 </div>
                 {{end}}
@@ -76,9 +76,9 @@
 
     {{if not .HunterRevengeNeeded | or .HunterRevengeDone}}
     <section id="day-vote-section">
-        <h3>Vote to Eliminate</h3>
+        <h3>{{T .Lang "vote_to_eliminate"}}</h3>
         {{if .Player.IsAlive}}
-        <p>Choose a player to eliminate, or pass. Majority vote required.</p>
+        <p>{{T .Lang "choose_to_eliminate"}}</p>
 
         <card-list>
         {{range .AliveTargets}}
@@ -104,23 +104,23 @@
         </card-list>
         <form ws-send id="day-pass-form" class="vote-form">
             <input type="hidden" name="action" value="day_pass">
-            <button type="submit" id="day-pass-btn" class="vote-button{{if and .HasVoted (not .CurrentVotePlayer)}} selected{{end}}">Pass</button>
+            <button type="submit" id="day-pass-btn" class="vote-button{{if and .HasVoted (not .CurrentVotePlayer)}} selected{{end}}">{{T .Lang "btn_pass"}}</button>
         </form>
 
         <form ws-send id="day-end-vote-form">
             <input type="hidden" name="action" value="day_end_vote">
-            <button type="submit" id="day-end-vote-btn" {{if not .AllActed}}disabled{{end}}>End Vote</button>
+            <button type="submit" id="day-end-vote-btn" {{if not .AllActed}}disabled{{end}}>{{T .Lang "btn_end_vote"}}</button>
         </form>
 
         {{else}}
-        <p><em>You are dead and cannot vote.</em></p>
+        <p><em>{{T .Lang "dead_cannot_vote"}}</em></p>
         {{end}}
 
         {{if .Votes}}
-        <h3 id="day-vote-title">Current Votes</h3>
+        <h3 id="day-vote-title">{{T .Lang "current_votes"}}</h3>
         <ul id="day-vote-list" class="vote-list">
             {{range .Votes}}
-            <li id="day-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+            <li id="day-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>{{T $.Lang "vote_pass"}}</em>{{end}}</li>
             {{end}}
         </ul>
         {{end}}

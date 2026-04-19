@@ -5,18 +5,18 @@
     <!-- Hero: big centered win seal -->
     <section id="phase-main-section" class="win-hero">
         {{if eq .Winner "villagers"}}
-        <img class="win-seal-glow win-seal-villagers" src="/static/seals/Villagers_win.webp" alt="Villagers win">
+        <img class="win-seal-glow win-seal-villagers" src="/static/seals/Villagers_win.webp" alt="{{T .Lang "villagers_win_alt"}}">
         {{else if eq .Winner "lovers"}}
-        <img class="win-seal-glow win-seal-lovers" src="/static/seals/lovers_win.webp" alt="Lovers win">
+        <img class="win-seal-glow win-seal-lovers" src="/static/seals/lovers_win.webp" alt="{{T .Lang "lovers_win_alt"}}">
         {{else}}
-        <img class="win-seal-glow win-seal-werewolves" src="/static/seals/Werewolves_win.webp" alt="Werewolves win">
+        <img class="win-seal-glow win-seal-werewolves" src="/static/seals/Werewolves_win.webp" alt="{{T .Lang "werewolves_win_alt"}}">
         {{end}}
     </section>
 
     <!-- Victors -->
     {{if .Winners}}
     <section id="victors-section">
-        <h3 class="win-section-title">Victors</h3>
+        <h3 class="win-section-title">{{T .Lang "victors"}}</h3>
         <card-list class="win-list">
             {{range .Winners}}
             <player-card
@@ -39,7 +39,7 @@
     <!-- The Fallen -->
     {{if .Losers}}
     <section id="losers-section">
-        <h3 class="win-section-title win-section-title-fallen">The Fallen</h3>
+        <h3 class="win-section-title win-section-title-fallen">{{T .Lang "the_fallen"}}</h3>
         <card-list class="win-list">
             {{range .Losers}}
             <player-card
@@ -63,7 +63,7 @@
     <section id="game-action-section">
         <form ws-send>
             <input type="hidden" id="action-new-game" name="action" value="new_game">
-            <button type="submit" id="btn-new-game">Play Again</button>
+            <button type="submit" id="btn-new-game">{{T .Lang "btn_play_again"}}</button>
         </form>
     </section>
 </div>

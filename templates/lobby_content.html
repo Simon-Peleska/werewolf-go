@@ -2,24 +2,24 @@
 
 <div class="game-content" id="game-content" hx-swap-oob="morph" data-phase="lobby">
     <div id="status-bar" class="status-bar">
-        <span><strong>Players:</strong> {{.PlayerCount}}</span>
-        <span><strong>Roles:</strong> {{.TotalRoles}}</span>
+        <span><strong>{{T .Lang "players_label"}}</strong> {{.PlayerCount}}</span>
+        <span><strong>{{T .Lang "roles_label"}}</strong> {{.TotalRoles}}</span>
         <span id="status-message" class="status-msg">
             {{if .CanStart}}
-                Ready to start!
+                {{T .Lang "ready_to_start"}}
             {{else if gt .TotalRoles .PlayerCount}}
-                Need {{subtract .TotalRoles .PlayerCount}} more players
+                {{T .Lang "need_more_players" (subtract .TotalRoles .PlayerCount)}}
             {{else if lt .TotalRoles .PlayerCount}}
-                Need {{subtract .PlayerCount .TotalRoles}} more roles
+                {{T .Lang "need_more_roles" (subtract .PlayerCount .TotalRoles)}}
             {{else if eq .TotalRoles 0}}
-                Configure roles below
+                {{T .Lang "configure_roles"}}
             {{end}}
         </span>
     </div>
 
     <section id="phase-main-section">
-        <h2>Roles</h2>
-        <p>Select which roles and how many of each to include in the game.</p>
+        <h2>{{T .Lang "roles_heading"}}</h2>
+        <p>{{T .Lang "roles_desc"}}</p>
 
         <card-list>
         {{range .RoleConfigs}}
@@ -44,7 +44,7 @@
         <form ws-send>
             <input type="hidden" id="action-start-game" name="action" value="start_game">
             <button type="submit" id="btn-start" {{if not .CanStart}}disabled{{end}}>
-                Start Game
+                {{T .Lang "btn_start_game"}}
             </button>
         </form>
     </section>

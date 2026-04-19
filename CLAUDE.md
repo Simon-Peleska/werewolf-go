@@ -466,6 +466,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | Path | Purpose |
 |------|---------|
 | `./config.go` | AppConfig struct, loadConfig (env→JSON→CLI priority), registerFlags, flagValues |
+| `./translations.go` | Translation table (EN/DE), `T(lang, key, args...)` lookup function, `getLangFromCookie(r)` |
 | `./main.go` | Entry point, HTTP route handlers, GameData struct, game component dispatcher |
 | `./database.go` | Database models (Game, Player, Role, GameAction), all queries, schema initialization |
 | `./auth.go` | Session management, signup/login/logout handlers, player authentication |

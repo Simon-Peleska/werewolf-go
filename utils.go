@@ -615,6 +615,7 @@ func newTestContext(t *testing.T) *TestContext {
 		"roleIcon": func(name string) string {
 			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
+		"T": T,
 	}
 	testTemplates, tmplErr := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if tmplErr != nil {

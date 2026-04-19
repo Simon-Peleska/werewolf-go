@@ -11,22 +11,25 @@
   </div>
 
   {{if eq .Game.Status "night"}}
-  <h2 id="sidebar-phase-label" class="sidebar-phase-label">Night {{.Game.Round}}</h2>
+  <h2 id="sidebar-phase-label" class="sidebar-phase-label">{{T .Lang "night_round" .Game.Round}}</h2>
   {{else if eq .Game.Status "day"}}
-  <h2 id="sidebar-phase-label" class="sidebar-phase-label sidebar-phase-day">Day {{.Game.Round}}</h2>
+  <h2 id="sidebar-phase-label" class="sidebar-phase-label sidebar-phase-day">{{T .Lang "day_round" .Game.Round}}</h2>
   {{end}}
 
   <section id="sidebar-info-section">
-    <p><strong>{{.Player.Name}}</strong> (Code: <code
+    <p><strong>{{.Player.Name}}</strong> ({{T .Lang "code_label"}}: <code
           id="secret-code-display">{{.Player.SecretCode}}</code>)</p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
-    <button id="mute-btn" class="secondary" onclick="toggleMute()" style="width:100%;margin-top:0.5rem">🔊 Narrator</button>
+    <button id="mute-btn" class="secondary" onclick="toggleMute()"
+      data-text-unmuted="{{T .Lang "narrator_unmuted"}}"
+      data-text-muted="{{T .Lang "narrator_muted"}}"
+      style="width:100%;margin-top:0.5rem">{{T .Lang "narrator_unmuted"}}</button>
   </section>
 
   <hr id="sidebar-divider">
 
   <section id="sidebar-players-section">
-    <h3>Players</h3>
+    <h3>{{T .Lang "sidebar_players"}}</h3>
     <card-list id="player-list">
       {{range .Players}}
       <player-card
@@ -44,5 +47,15 @@
         {{if not (eq .PlayerID $.Player.PlayerID)}}collapsed{{end}}></player-card>
       {{end}}
     </card-list>
+  </section>
+
+  <hr>
+
+  <section id="sidebar-lang-section">
+    <div style="display:flex;gap:0.5rem;justify-content:center">
+      <a href="/set-lang?lang=en&return=/game/{{.Game.Name}}" style="{{if eq .Lang "en"}}font-weight:bold;color:var(--pico-primary){{else}}color:var(--pico-muted-color){{end}}">EN</a>
+      <span style="color:var(--pico-muted-color)">|</span>
+      <a href="/set-lang?lang=de&return=/game/{{.Game.Name}}" style="{{if eq .Lang "de"}}font-weight:bold;color:var(--pico-primary){{else}}color:var(--pico-muted-color){{end}}">DE</a>
+    </div>
   </section>
 </aside>

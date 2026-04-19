@@ -1,7 +1,7 @@
 {{define "night-mason-section"}}
-<h3>Mason: Your Fellow Masons</h3>
+<h3>{{T .Lang "mason_title"}}</h3>
 {{if .Masons}}
-<p>You know these confirmed villagers:</p>
+<p>{{T .Lang "mason_know_these"}}</p>
 <card-list id="mason-card-list">
     {{range .Masons}}
     <player-card
@@ -18,6 +18,6 @@
     {{end}}
 </card-list>
 {{else}}
-<p><em>You are the only Mason.</em></p>
+<p><em>{{T .Lang "mason_alone"}}</em></p>
 {{end}}
 {{end}}

@@ -26,6 +26,38 @@
   <link rel="prefetch" href="/static/seals/lovers_win.webp" as="image">
   {{.ScriptTag}}
   <script>
+    window.i18n = {
+      alive: "{{T .Lang "card_alive"}}",
+      dead:  "{{T .Lang "card_dead"}}",
+      roleNames: {
+        "Villager":     "{{T .Lang "role_name_Villager"}}",
+        "Werewolf":     "{{T .Lang "role_name_Werewolf"}}",
+        "Seer":         "{{T .Lang "role_name_Seer"}}",
+        "Doctor":       "{{T .Lang "role_name_Doctor"}}",
+        "Witch":        "{{T .Lang "role_name_Witch"}}",
+        "Hunter":       "{{T .Lang "role_name_Hunter"}}",
+        "Cupid":        "{{T .Lang "role_name_Cupid"}}",
+        "Guard":        "{{T .Lang "role_name_Guard"}}",
+        "Mason":        "{{T .Lang "role_name_Mason"}}",
+        "Wolf Cub":     "{{T .Lang "role_name_Wolf Cub"}}",
+        "Doppelganger": "{{T .Lang "role_name_Doppelganger"}}",
+      },
+      roleDescs: {
+        "Villager":     "{{T .Lang "role_desc_Villager"}}",
+        "Werewolf":     "{{T .Lang "role_desc_Werewolf"}}",
+        "Seer":         "{{T .Lang "role_desc_Seer"}}",
+        "Doctor":       "{{T .Lang "role_desc_Doctor"}}",
+        "Witch":        "{{T .Lang "role_desc_Witch"}}",
+        "Hunter":       "{{T .Lang "role_desc_Hunter"}}",
+        "Cupid":        "{{T .Lang "role_desc_Cupid"}}",
+        "Guard":        "{{T .Lang "role_desc_Guard"}}",
+        "Mason":        "{{T .Lang "role_desc_Mason"}}",
+        "Wolf Cub":     "{{T .Lang "role_desc_Wolf Cub"}}",
+        "Doppelganger": "{{T .Lang "role_desc_Doppelganger"}}",
+      },
+    };
+  </script>
+  <script>
     // Must be set before HTMX creates the WebSocket so binary frames
     // arrive as ArrayBuffer instead of Blob.
     htmx.config.wsBinaryType = 'arraybuffer';
@@ -705,7 +737,10 @@
 
     function _syncMuteBtn() {
       var btn = document.getElementById('mute-btn');
-      if (btn) btn.textContent = _muted ? '🔇 Narrator' : '🔊 Narrator';
+      if (!btn) return;
+      btn.textContent = _muted
+        ? (btn.dataset.textMuted || '🔇 Narrator')
+        : (btn.dataset.textUnmuted || '🔊 Narrator');
     }
     function toggleMute() {
       _muted = !_muted;

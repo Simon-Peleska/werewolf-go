@@ -409,6 +409,9 @@
       const playerName = this.getAttribute('player-name')  || '';
       const roleDesc   = this.getAttribute('role-desc')    || '';
       const team       = this.getAttribute('team')         || '';
+      const i18n       = window.i18n || {};
+      const displayRoleName = (i18n.roleNames && i18n.roleNames[roleName]) || roleName;
+      const displayRoleDesc = (i18n.roleDescs && i18n.roleDescs[roleName]) || roleDesc;
       const countAttr  = this.getAttribute('count');
       const count      = countAttr ?? '0';
       const roleId     = this.getAttribute('role-id')      || '';
@@ -467,12 +470,14 @@
         if (playerName) h += `<span class="pc-name">${esc(playerName)}</span>`;
         h += team === 'unknown'
           ? `<p class="pc-desc pc-desc-unknown">???</p>`
-          : `<p class="pc-desc">${esc(roleDesc)}</p>`;
-        const footerLabel = (roleName && team !== 'unknown') ? `<span class="pc-role">${esc(roleName)}</span>` : `<span class="pc-team">${esc(team)}</span>`;
+          : `<p class="pc-desc">${esc(displayRoleDesc)}</p>`;
+        const footerLabel = (roleName && team !== 'unknown') ? `<span class="pc-role">${esc(displayRoleName)}</span>` : `<span class="pc-team">${esc(team)}</span>`;
         h += `<div class="pc-footer">${footerLabel}`;
         if (aliveAttr !== null) {
           const alive = aliveAttr === 'true';
-          h += `<span class="${alive ? 'pc-alive' : 'pc-dead'}">&nbsp;| ${alive ? 'Alive' : 'Dead'}</span>`;
+          const aliveLabel = (i18n.alive) || 'Alive';
+          const deadLabel  = (i18n.dead)  || 'Dead';
+          h += `<span class="${alive ? 'pc-alive' : 'pc-dead'}">&nbsp;| ${alive ? aliveLabel : deadLabel}</span>`;
         }
         h += `</div>`;
       } else {
@@ -481,8 +486,8 @@
         const sep = `<span class="pc-sep"> | </span>`;
         let infoParts = [];
         if (playerName) infoParts.push(`<span class="pc-name">${esc(playerName)}</span>`);
-        if (roleName && team !== 'unknown') infoParts.push(`<span class="pc-role">${esc(roleName)}</span>`);
-        if (aliveAttr !== null && aliveAttr !== 'true') infoParts.push(`<span class="pc-dead">Dead</span>`);
+        if (roleName && team !== 'unknown') infoParts.push(`<span class="pc-role">${esc(displayRoleName)}</span>`);
+        if (aliveAttr !== null && aliveAttr !== 'true') infoParts.push(`<span class="pc-dead">${i18n.dead || 'Dead'}</span>`);
         if (infoParts.length) h += `<span class="pc-info">${infoParts.join(sep)}</span>`;
         if (countAttr !== null) {
           h += `<div class="pc-count-wrap${count === '0' ? ' pc-zero' : ''}">`

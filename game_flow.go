@@ -7,6 +7,7 @@ type FinishedData struct {
 	Winners []Player
 	Losers  []Player
 	Winner  string // "villagers", "werewolves", or "lovers"
+	Lang    string
 }
 
 // transitionToNight moves the game to the next night phase
@@ -85,16 +86,17 @@ func (h *Hub) checkWinConditions(game *Game) bool {
 // handleWSNewGame resets the game: creates a new lobby game with the same role counts,
 // cleans up the finished game, and puts all connected players into the new lobby.
 func (h *Hub) handleWSNewGame(client *Client) {
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNewGame: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "finished" {
 		h.logf("Cannot start new game: game status is '%s', expected 'finished'", game.Status)
-		h.sendErrorToast(client.playerID, "Game is not finished yet")
+		h.sendErrorToast(client.playerID, T(lang, "err_game_not_finished"))
 		return
 	}
 
@@ -103,7 +105,7 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
 		h.logError("handleWSNewGame: db.Select roleConfigs", err)
-		h.sendErrorToast(client.playerID, "Failed to get role config")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_role_config"))
 		return
 	}
 
@@ -119,7 +121,7 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	result, err := h.db.Exec("INSERT INTO game (name, status, round) VALUES (?, 'lobby', 0)", h.gameName)
 	if err != nil {
 		h.logError("handleWSNewGame: create new game", err)
-		h.sendErrorToast(client.playerID, "Failed to create new game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_create_game"))
 		return
 	}
 	newGameID, _ := result.LastInsertId()

@@ -36,6 +36,7 @@ type Client struct {
 	playerID int64
 	hub      *Hub
 	send     chan hubMsg // buffered outbound messages; closed on disconnect
+	lang     string
 }
 
 // writer drains the send channel and writes to the WebSocket connection.
@@ -66,6 +67,7 @@ type Hub struct {
 	wg             sync.WaitGroup
 	clientWg       sync.WaitGroup // tracks active WebSocket reader goroutines
 
+	playerLang   map[int64]string // last-known language per player
 	db           *sqlx.DB
 	templates    *template.Template
 	storyteller  Storyteller
@@ -83,6 +85,7 @@ func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, 
 		unregister:     make(chan *websocket.Conn, 64),
 		broadcastReqCh: make(chan struct{}, 1),
 		done:           make(chan struct{}),
+		playerLang:     make(map[int64]string),
 		db:             db,
 		templates:      templates,
 		storyteller:    storyteller,
@@ -102,6 +105,16 @@ func (h *Hub) getGame() (*Game, error) {
 // logError logs an error with context, routed through hub's logf so tests see it via t.Logf.
 func (h *Hub) logError(context string, err error) {
 	h.logf("ERROR [%s]: %v", context, err)
+}
+
+// getPlayerLang returns the language preference for a player, defaulting to "en".
+func (h *Hub) getPlayerLang(playerID int64) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if lang, ok := h.playerLang[playerID]; ok {
+		return lang
+	}
+	return "en"
 }
 
 // triggerBroadcast signals the broadcast worker to call broadcastGameUpdate.
@@ -193,6 +206,9 @@ func (h *Hub) run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.conn] = client
+			if client.lang != "" {
+				h.playerLang[client.playerID] = client.lang
+			}
 			h.mu.Unlock()
 			h.clientWg.Add(1)
 			go client.writer()
@@ -290,9 +306,10 @@ func (h *Hub) broadcastGameUpdate() {
 		// Build all three template outputs and combine into a single WebSocket message.
 		// HTMX processes all hx-swap-oob elements found in one message atomically,
 		// which means clients receive a consistent update in one htmx:wsAfterMessage event.
+		lang := h.getPlayerLang(p.PlayerID)
 		var combined bytes.Buffer
 
-		buf, err := getGameComponent(h, p.PlayerID, game)
+		buf, err := getGameComponent(h, p.PlayerID, game, lang)
 		if err != nil {
 			h.logError("broadcastGameUpdate: getGameComponent", err)
 			continue
@@ -307,6 +324,7 @@ func (h *Hub) broadcastGameUpdate() {
 			Game:           game,
 			LoverPartnerID: getLoverPartner(h.db, game.ID, p.PlayerID),
 			IsLobby:        game.Status == "lobby",
+			Lang:           lang,
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 
@@ -319,7 +337,7 @@ func (h *Hub) broadcastGameUpdate() {
 		combined.Write(historyBuf.Bytes())
 
 		var topbarBuf bytes.Buffer
-		h.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0})
+		h.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0, Lang: lang})
 		combined.Write(topbarBuf.Bytes())
 
 		h.sendToPlayer(p.PlayerID, combined.Bytes())
@@ -433,7 +451,7 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := &Client{conn: conn, playerID: playerID, hub: currentHub, send: make(chan hubMsg, clientSendBuf)}
+	client := &Client{conn: conn, playerID: playerID, hub: currentHub, send: make(chan hubMsg, clientSendBuf), lang: getLangFromCookie(r)}
 	currentHub.register <- client
 
 	// Handle messages and disconnection.

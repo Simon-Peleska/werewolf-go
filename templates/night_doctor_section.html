@@ -1,7 +1,7 @@
 {{define "night-doctor-section"}}
-<h3>Doctor: Your Protection</h3>
+<h3>{{T .Lang "doctor_title"}}</h3>
 {{if .HasProtected}}
-<p id="doctor-result"><em>You are protecting <strong>{{if .DoctorProtectingPlayer}}{{.DoctorProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
+{{if .DoctorProtectingPlayer}}<p id="doctor-result"><em>{{T .Lang "doctor_protecting" .DoctorProtectingPlayer.Name}}</em></p>{{end}}
 <card-list>
     <player-card
         data-player-id="{{.DoctorProtectingPlayer.ID}}"
@@ -16,7 +16,7 @@
     </player-card>
 </card-list>
 {{else}}
-<p>Choose a player to protect, then confirm.</p>
+<p>{{T .Lang "doctor_choose"}}</p>
 <card-list>
 {{range .AliveTargets}}
 <form ws-send id="doctor-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -40,7 +40,7 @@
 </card-list>
 <form ws-send id="doctor-protect-form" class="vote-form">
     <input type="hidden" name="action" value="doctor_protect">
-    <button type="submit" id="doctor-protect-button" {{if not .DoctorSelectedPlayer}}disabled{{end}}>🩺 Protect</button>
+    <button type="submit" id="doctor-protect-button" {{if not .DoctorSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_doctor_protect"}}</button>
 </form>
 {{end}}
 {{end}}

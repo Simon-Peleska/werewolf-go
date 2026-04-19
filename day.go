@@ -38,6 +38,7 @@ type DayData struct {
 	HunterTargets        []Player // alive targets for the Hunter; visibility pre-applied
 	AllActed             bool     // all alive players have voted or passed this round
 	HasVoted             bool     // this player has a day_vote record (including pass)
+	Lang                 string
 }
 
 // applyHeartbreaks checks if any of the given killed players have a living lover.

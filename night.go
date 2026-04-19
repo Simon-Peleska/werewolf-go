@@ -15,6 +15,7 @@ type NightData struct {
 	AliveTargets []Player // alive players; visibility pre-applied
 	NightNumber  int
 	HasHistory   bool
+	Lang         string
 
 	ShowSurvey            bool
 	HasSubmittedSurvey    bool

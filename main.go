@@ -76,11 +76,13 @@ type GameData struct {
 	StyleTag          template.HTML // inline <style>...</style> with all CSS
 	ScriptTag         template.HTML // inline <script>...</script> with all JS libs
 	SessionCookieName string
+	Lang              string
 }
 
 type TopbarData struct {
 	Game       *Game
 	HasHistory bool
+	Lang       string
 }
 
 // loadPageAssets reads CSS and JS files from the embedded static FS and builds
@@ -191,13 +193,34 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	gameName := r.URL.Query().Get("game")
 	playerName := r.URL.Query().Get("name")
 
+	lang := getLangFromCookie(r)
 	app.templates.ExecuteTemplate(w, "index.html", struct {
 		LoggedIn   bool
 		GameName   string
 		PlayerName string
 		StyleTag   template.HTML
 		ScriptTag  template.HTML
-	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag})
+		Lang       string
+	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag, lang})
+}
+
+func (app *App) handleSetLang(w http.ResponseWriter, r *http.Request) {
+	lang := r.URL.Query().Get("lang")
+	if lang != "en" && lang != "de" {
+		lang = "en"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "lang",
+		Value:    lang,
+		Path:     "/",
+		MaxAge:   365 * 24 * 60 * 60,
+		SameSite: http.SameSiteLaxMode,
+	})
+	returnURL := r.URL.Query().Get("return")
+	if returnURL == "" || !strings.HasPrefix(returnURL, "/") {
+		returnURL = "/"
+	}
+	http.Redirect(w, r, returnURL, http.StatusSeeOther)
 }
 
 func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
@@ -340,7 +363,8 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		hub.logError("handleGame: getPlayersByGameId", err)
 	}
 
-	buf, err := getGameComponent(hub, playerID, game)
+	lang := getLangFromCookie(r)
+	buf, err := getGameComponent(hub, playerID, game, lang)
 	if err != nil {
 		hub.logError("handleGame: getGameComponent", err)
 	}
@@ -354,6 +378,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		Game:           game,
 		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
 		IsLobby:        game.Status == "lobby",
+		Lang:           lang,
 	}
 	var sidebarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
@@ -363,7 +388,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	app.templates.ExecuteTemplate(&historyBuf, "history.html", historyEntries)
 
 	var topbarBuf bytes.Buffer
-	app.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0})
+	app.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0, Lang: lang})
 
 	data := GameData{
 		Player:            &player,
@@ -379,6 +404,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		StyleTag:          app.pageStyleTag,
 		ScriptTag:         app.pageGameScriptTag,
 		SessionCookieName: sessionCookieName,
+		Lang:              lang,
 	}
 
 	app.templates.ExecuteTemplate(w, "game.html", data)
@@ -390,6 +416,7 @@ type SidebarData struct {
 	Game           *Game
 	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 	IsLobby        bool  // true during lobby: hide history, show players as unknown role/team
+	Lang           string
 }
 
 // selfFirstPlayers returns players sorted so the player with selfPlayerID is first.
@@ -628,7 +655,7 @@ func handleWSMessage(client *Client, message []byte) {
 }
 
 // getGameComponent returns the HTML buffer for the current game state
-func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error) {
+func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.Buffer, error) {
 	db := h.db
 	tmpl := h.templates
 	var buf bytes.Buffer
@@ -675,6 +702,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 			CanStart:    totalRoles > 0 && totalRoles == len(players),
 			GameID:      game.ID,
 			GameStatus:  game.Status,
+			Lang:        lang,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "lobby_content.html", data); err != nil {
@@ -706,6 +734,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 			Player:                &player,
 			AliveTargets:          aliveTargets,
 			NightNumber:           game.Round,
+			Lang:                  lang,
 			WerewolfNightData:     buildWerewolfNightData(db, game, playerID, player, seerInvestigated, aliveTargets),
 			SeerNightData:         buildSeerNightData(db, game, playerID, player, seerInvestigated),
 			DoctorNightData:       buildDoctorNightData(db, game, playerID, player, seerInvestigated),
@@ -910,6 +939,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 			HunterTargets:        hunterTargets,
 			AllActed:             totalDayActed >= len(aliveTargets),
 			HasVoted:             playerActed > 0,
+			Lang:                 lang,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
@@ -959,6 +989,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game) (*bytes.Buffer, error)
 			Winners: winners,
 			Losers:  losers,
 			Winner:  winner,
+			Lang:    lang,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "finished_content.html", data); err != nil {
@@ -1052,6 +1083,7 @@ func main() {
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
+		"T": T,
 	}
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -1092,6 +1124,7 @@ func main() {
 	wrapHandler("/signup", app.handleSignup)
 	wrapHandler("/login", app.handleLogin)
 	wrapHandler("/logout", app.handleLogout)
+	wrapHandler("/set-lang", app.handleSetLang)
 	wrapHandler("/game/{name}", app.handleGame)
 	wrapHandler("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
 		gameName := r.PathValue("name")

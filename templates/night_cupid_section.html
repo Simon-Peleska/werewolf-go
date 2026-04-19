@@ -1,8 +1,11 @@
 {{define "night-cupid-section"}}
-<h3>Cupid: Link Two Lovers</h3>
+<h3>{{T .Lang "cupid_title"}}</h3>
 {{if .CupidLinked}}
-<p id="cupid-result"><em>You have linked <strong>{{if .CupidChosen1Player}}{{.CupidChosen1Player.Name}}{{end}}</strong> and <strong>{{if .CupidChosen2Player}}{{.CupidChosen2Player.Name}}{{end}}</strong> as lovers.</em></p>
+{{if and .CupidChosen1Player .CupidChosen2Player}}
+<p id="cupid-result"><em>{{T .Lang "cupid_linked" .CupidChosen1Player.Name .CupidChosen2Player.Name}}</em></p>
+{{end}}
 <card-list>
+    {{if .CupidChosen1Player}}
     <player-card
         data-player-id="{{.CupidChosen1Player.ID}}"
         player-id="{{.CupidChosen1Player.PlayerID}}"
@@ -15,6 +18,8 @@
         selectable
         {{if and (ne .CupidChosen1Player.Lover 0) (eq .Player.PlayerID .CupidChosen1Player.Lover)}}lover{{end}}
     ></player-card>
+    {{end}}
+    {{if .CupidChosen2Player}}
     <player-card
         data-player-id="{{.CupidChosen2Player.ID}}"
         player-id="{{.CupidChosen2Player.PlayerID}}"
@@ -27,14 +32,15 @@
         selectable
         {{if and (ne .CupidChosen2Player.Lover 0) (eq .Player.PlayerID .CupidChosen2Player.Lover)}}lover{{end}}
     ></player-card>
+    {{end}}
 </card-list>
 {{else}}
 {{if and .CupidChosen1Player .CupidChosen2Player}}
-<p>Chosen: <strong>{{.CupidChosen1Player.Name}}</strong> and <strong>{{.CupidChosen2Player.Name}}</strong>. Click a card to deselect.</p>
+<p>{{T .Lang "cupid_chosen_two" .CupidChosen1Player.Name .CupidChosen2Player.Name}}</p>
 {{else if or .CupidChosen1Player .CupidChosen2Player}}
-<p>One chosen. Select the second lover.</p>
+<p>{{T .Lang "cupid_one_chosen"}}</p>
 {{else}}
-<p>Choose two players to become lovers. They will know each other's identities.</p>
+<p>{{T .Lang "cupid_choose_two"}}</p>
 {{end}}
 <card-list>
 {{range .AliveTargets}}
@@ -59,7 +65,7 @@
 </card-list>
 <form ws-send id="cupid-link-form" class="vote-form">
     <input type="hidden" name="action" value="cupid_link">
-    <button type="submit" id="cupid-link-button" {{if not (and .CupidChosen1Player .CupidChosen2Player)}}disabled{{end}}>💞 Link lovers</button>
+    <button type="submit" id="cupid-link-button" {{if not (and .CupidChosen1Player .CupidChosen2Player)}}disabled{{end}}>{{T .Lang "btn_cupid_link"}}</button>
 </form>
 {{end}}
 {{end}}

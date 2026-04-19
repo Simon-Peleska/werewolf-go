@@ -1,10 +1,10 @@
 {{define "night-werewolf-section"}}
-<h3>Werewolf: Choose a Victim</h3>
+<h3>{{T .Lang "werewolf_title"}}</h3>
 <div id="wolf-vote-section">
 {{if .WolfEndVoted}}
-<p id="wolf-end-voted-msg"><em>Vote locked in. Waiting for night to end...</em></p>
+<p id="wolf-end-voted-msg"><em>{{T .Lang "vote_locked_waiting"}}</em></p>
 {{else}}
-<p>Select a player to kill, or pass. When all werewolves have acted, end the vote.</p>
+<p>{{T .Lang "werewolf_select_desc"}}</p>
 <card-list>
 {{range .AliveTargets}}
 {{$wvCount := index $.WerewolfVoteCounts .PlayerID}}
@@ -30,20 +30,20 @@
 </card-list>
 <form ws-send id="werewolf-pass-form" class="vote-form">
     <input type="hidden" name="action" value="werewolf_pass">
-    <button type="submit" id="werewolf-pass-btn" class="vote-button">Pass</button>
+    <button type="submit" id="werewolf-pass-btn" class="vote-button">{{T .Lang "btn_pass"}}</button>
 </form>
 <form ws-send id="werewolf-end-vote-form">
     <input type="hidden" name="action" value="werewolf_end_vote">
-    <button type="submit" id="werewolf-end-vote-btn" {{if not .AllWolvesActed}}disabled{{end}}>End Vote</button>
+    <button type="submit" id="werewolf-end-vote-btn" {{if not .AllWolvesActed}}disabled{{end}}>{{T .Lang "btn_end_vote"}}</button>
 </form>
 {{end}}
 </div>
 
 {{if .Votes}}
-<h4 id="wolf-vote-title">Current Votes</h4>
+<h4 id="wolf-vote-title">{{T .Lang "current_votes"}}</h4>
 <ul id="wolf-vote-list" class="vote-list">
     {{range .Votes}}
-    <li id="wolf-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>Pass</em>{{end}}</li>
+    <li id="wolf-vote-item-{{.VoterName}}">{{.VoterName}} → {{if .TargetName}}{{.TargetName}}{{else}}<em>{{T $.Lang "vote_pass"}}</em>{{end}}</li>
     {{end}}
 </ul>
 {{end}}
@@ -52,12 +52,12 @@
 <div id="wolf-cub-vote-section" class="night-wolf-cub-section">
     <div class="phase-heading" style="margin-bottom:0.5rem">
         <img class="seal seal-sm" src="/static/seals/Wolf_Cub.webp" alt="Wolf Cub">
-        <h4 style="margin:0">Wolf Cub's Revenge — Second Victim</h4>
+        <h4 style="margin:0">{{T .Lang "wolf_cub_title"}}</h4>
     </div>
     {{if .WolfEndVoted2}}
-    <p id="wolf-end-voted2-msg"><em>Second vote locked in. Waiting for night to end...</em></p>
+    <p id="wolf-end-voted2-msg"><em>{{T .Lang "vote2_locked"}}</em></p>
     {{else}}
-    <p>The Wolf Cub was slain. Choose a second player to kill tonight, or pass.</p>
+    <p>{{T .Lang "wolf_cub_desc"}}</p>
     <card-list>
     {{range .AliveTargets}}
     <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -81,11 +81,11 @@
     </card-list>
     <form ws-send id="werewolf-pass2-form" class="vote-form">
         <input type="hidden" name="action" value="werewolf_pass_2">
-        <button type="submit" id="werewolf-pass2-btn" class="vote-button">Pass</button>
+        <button type="submit" id="werewolf-pass2-btn" class="vote-button">{{T .Lang "btn_pass"}}</button>
     </form>
     <form ws-send id="werewolf-end-vote2-form">
         <input type="hidden" name="action" value="werewolf_end_vote_2">
-        <button type="submit" id="werewolf-end-vote2-btn" {{if not .AllWolvesActed2}}disabled{{end}}>End Second Vote</button>
+        <button type="submit" id="werewolf-end-vote2-btn" {{if not .AllWolvesActed2}}disabled{{end}}>{{T .Lang "btn_end_second_vote"}}</button>
     </form>
     {{end}}
 </div>

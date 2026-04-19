@@ -16,6 +16,7 @@ type LobbyData struct {
 	CanStart    bool
 	GameID      int64
 	GameStatus  string
+	Lang        string
 }
 
 type RoleConfigDisplay struct {
@@ -25,16 +26,17 @@ type RoleConfigDisplay struct {
 
 func handleWSUpdateRole(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSUpdateRole: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "lobby" {
 		h.logf("Cannot update roles: game status is '%s', expected 'lobby'", game.Status)
-		h.sendErrorToast(client.playerID, "Cannot update roles: game already started")
+		h.sendErrorToast(client.playerID, T(lang, "err_game_already_started"))
 		return
 	}
 
@@ -84,10 +86,11 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 
 func handleWSStartGame(client *Client) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSStartGame: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
@@ -95,7 +98,7 @@ func handleWSStartGame(client *Client) {
 
 	if game.Status != "lobby" {
 		h.logf("Cannot start: game status is '%s', expected 'lobby'", game.Status)
-		h.sendErrorToast(client.playerID, "Game already started")
+		h.sendErrorToast(client.playerID, T(lang, "err_game_started"))
 		return
 	}
 
@@ -103,7 +106,7 @@ func handleWSStartGame(client *Client) {
 	players, err := getPlayersByGameId(h.db, game.ID)
 	if err != nil {
 		h.logError("handleWSStartGame: getPlayersByGameId", err)
-		h.sendErrorToast(client.playerID, "Failed to get players")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_players"))
 		return
 	}
 	h.logf("Found %d players in game", len(players))
@@ -113,7 +116,7 @@ func handleWSStartGame(client *Client) {
 	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
 		h.logError("handleWSStartGame: db.Select roleConfigs", err)
-		h.sendErrorToast(client.playerID, "Failed to get role configuration")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_roles"))
 		return
 	}
 	h.logf("Found %d role configs", len(roleConfigs))
@@ -129,7 +132,7 @@ func handleWSStartGame(client *Client) {
 
 	if len(rolePool) != len(players) {
 		h.logf("Cannot start: role count (%d) != player count (%d)", len(rolePool), len(players))
-		h.sendErrorToast(client.playerID, "Role count must match player count")
+		h.sendErrorToast(client.playerID, T(lang, "err_role_count_mismatch"))
 		return
 	}
 
@@ -146,7 +149,7 @@ func handleWSStartGame(client *Client) {
 		if roleID == jokerRoleID {
 			jBig, err := rand.Int(rand.Reader, big.NewInt(int64(len(allRoleIDs))))
 			if err != nil {
-				h.sendErrorToast(client.playerID, "Failed to assign Joker role")
+				h.sendErrorToast(client.playerID, T(lang, "err_failed_assign_joker"))
 				return
 			}
 			rolePool[i] = allRoleIDs[jBig.Int64()]
@@ -160,7 +163,7 @@ func handleWSStartGame(client *Client) {
 		_, err := h.db.Exec("UPDATE game_player SET role_id = ? WHERE rowid = ?", rolePool[i], gp.ID)
 		if err != nil {
 			h.logError("handleWSStartGame: db.Exec assign role", err)
-			h.sendErrorToast(client.playerID, "Failed to assign roles")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_assign_roles"))
 			return
 		}
 	}
@@ -170,7 +173,7 @@ func handleWSStartGame(client *Client) {
 	_, err = h.db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
 		h.logError("handleWSStartGame: db.Exec update game status", err)
-		h.sendErrorToast(client.playerID, "Failed to start game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_start_game"))
 		return
 	}
 	h.logf("Game status updated to 'night' (night 1), broadcasting...")

@@ -74,48 +74,47 @@ func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	lang := getLangFromCookie(r)
+	toast := func(key string) {
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", T(lang, key))))
+	}
 
 	gameName := r.FormValue("game_name")
 	if gameName == "" {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Game name is required")))
+		toast("err_game_name_required")
 		return
 	}
 
 	name := r.FormValue("name")
 	if name == "" {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name is required")))
+		toast("err_name_required")
 		return
 	}
 
 	var existing Player
 	err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
 	if err == nil {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name already taken. Use login with secret code if this is you.")))
+		toast("err_name_taken")
 		return
 	}
 	if err != sql.ErrNoRows {
 		app.logf("ERROR [handleSignup: db.Get player]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 
 	secretCode, err := generateSecretCode()
 	if err != nil {
 		app.logf("ERROR [handleSignup: generateSecretCode]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 
 	result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, secretCode)
 	if err != nil {
 		app.logf("ERROR [handleSignup: db.Exec insert player]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 
@@ -126,8 +125,7 @@ func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 
 	if err := setSessionCookie(app.db, w, playerID); err != nil {
 		app.logf("ERROR [handleSignup: setSessionCookie]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 	w.Header().Set("HX-Redirect", "/game/"+gameName)
@@ -138,11 +136,15 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	lang := getLangFromCookie(r)
+	toast := func(key string) {
+		w.Header().Set("HX-Reswap", "none")
+		w.Write([]byte(renderToast(app.templates, app.logf, "error", T(lang, key))))
+	}
 
 	gameName := r.FormValue("game_name")
 	if gameName == "" {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Game name is required")))
+		toast("err_game_name_required")
 		return
 	}
 
@@ -150,22 +152,19 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	secretCode := r.FormValue("secret_code")
 
 	if name == "" || secretCode == "" {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Name and secret code are required")))
+		toast("err_name_code_required")
 		return
 	}
 
 	var player Player
 	err := app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ? AND secret_code = ?", name, secretCode)
 	if err == sql.ErrNoRows {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Invalid name or secret code")))
+		toast("err_invalid_credentials")
 		return
 	}
 	if err != nil {
 		app.logf("ERROR [handleLogin: db.Get player]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 
@@ -173,8 +172,7 @@ func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	DebugLog("handleLogin", "Player '%s' logged in with ID %d", name, player.ID)
 	if err := setSessionCookie(app.db, w, player.ID); err != nil {
 		app.logf("ERROR [handleLogin: setSessionCookie]: %v", err)
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", "Something went wrong")))
+		toast("err_something_wrong")
 		return
 	}
 	w.Header().Set("HX-Redirect", "/game/"+gameName)

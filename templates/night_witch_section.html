@@ -1,16 +1,16 @@
 {{define "night-witch-section"}}
-<h3>Witch: Your Potions</h3>
+<h3>{{T .Lang "witch_title"}}</h3>
 {{if .WitchDoneThisNight}}
-{{if .WitchHealedThisNight}}<p><em>✓ You saved <strong>{{if .WitchHealedPlayer}}{{.WitchHealedPlayer.Name}}{{end}}</strong> with your heal potion.</em></p>{{end}}
-{{if .WitchKilledThisNight}}<p><em>☠️ You poisoned <strong>{{if .WitchKilledPlayer}}{{.WitchKilledPlayer.Name}}{{end}}</strong>.</em></p>{{end}}
-<p><em>Waiting for the night to end...</em></p>
+{{if .WitchHealedThisNight}}{{if .WitchHealedPlayer}}<p><em>{{T .Lang "witch_saved" .WitchHealedPlayer.Name}}</em></p>{{end}}{{end}}
+{{if .WitchKilledThisNight}}{{if .WitchKilledPlayer}}<p><em>{{T .Lang "witch_poisoned" .WitchKilledPlayer.Name}}</em></p>{{end}}{{end}}
+<p><em>{{T .Lang "witch_waiting"}}</em></p>
 {{else}}
 
 <div id="witch-heal-section">
 {{if not .HealPotionUsed}}
-<h4>🧪 Heal Potion</h4>
+<h4>{{T .Lang "heal_potion"}}</h4>
 {{if .WitchVictimPlayer}}
-<p>The werewolves are targeting (click to save, click again to deselect):</p>
+<p>{{T .Lang "witch_targeting"}}</p>
 <card-list id="witch-heal-targets">
 <form ws-send id="witch-select-heal-form-{{.WitchVictimPlayer.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
     <input type="hidden" name="action" value="witch_select_heal">
@@ -50,17 +50,17 @@
 {{end}}
 </card-list>
 {{else}}
-<p><em>The werewolves have not chosen a target yet...</em></p>
+<p><em>{{T .Lang "witch_no_target"}}</em></p>
 {{end}}
 {{else}}
-<p><em>Your heal potion has been used.</em></p>
+<p><em>{{T .Lang "heal_potion_used"}}</em></p>
 {{end}}
 </div>
 
 <div id="witch-poison-section">
 {{if not .PoisonPotionUsed}}
-<h4>☠️ Poison Potion</h4>
-<p>Choose a player to poison (click to select, click again to deselect):</p>
+<h4>{{T .Lang "poison_potion"}}</h4>
+<p>{{T .Lang "witch_poison_choose"}}</p>
 <card-list id="witch-poison-targets">
 {{range .AliveTargets}}
 <form ws-send id="witch-select-poison-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -83,13 +83,13 @@
 {{end}}
 </card-list>
 {{else}}
-<p><em>Your poison potion has been used.</em></p>
+<p><em>{{T .Lang "poison_potion_used"}}</em></p>
 {{end}}
 </div>
 
 <form ws-send id="witch-apply-form" class="vote-form">
     <input type="hidden" name="action" value="witch_apply">
-    <button type="submit" id="witch-apply-button" class="witch-apply-button">✓ Done for tonight</button>
+    <button type="submit" id="witch-apply-button" class="witch-apply-button">{{T .Lang "btn_witch_done"}}</button>
 </form>
 {{end}}
 {{end}}

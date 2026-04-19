@@ -1,8 +1,8 @@
 {{define "night-doppelganger-section"}}
-<h3>Doppelganger: Choose Your Identity</h3>
+<h3>{{T .Lang "doppelganger_title"}}</h3>
 {{if .DoppelgangerHasCopied}}
-<p id="doppelganger-result"><em>You have become <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.RoleName}}{{end}}</strong> (copied from <strong>{{if .DoppelgangerCopiedPlayer}}{{.DoppelgangerCopiedPlayer.Name}}{{end}}</strong>).</em></p>
 {{if .DoppelgangerCopiedPlayer}}
+<p id="doppelganger-result"><em>{{T .Lang "doppelganger_became" .DoppelgangerCopiedPlayer.RoleName .DoppelgangerCopiedPlayer.Name}}</em></p>
 <card-list>
     <player-card
         data-player-id="{{.DoppelgangerCopiedPlayer.ID}}"
@@ -19,9 +19,9 @@
 {{end}}
 {{else}}
 {{if .DoppelgangerSelectedPlayer}}
-<p>Selected: <strong>{{.DoppelgangerSelectedPlayer.Name}}</strong>. Click to deselect or confirm below.</p>
+<p>{{T .Lang "doppelganger_selected" .DoppelgangerSelectedPlayer.Name}}</p>
 {{else}}
-<p>Choose a player. You will secretly become their role for the rest of the game.</p>
+<p>{{T .Lang "doppelganger_choose"}}</p>
 {{end}}
 <card-list>
 {{range .DoppelgangerTargets}}
@@ -46,7 +46,7 @@
 </card-list>
 <form ws-send id="doppelganger-copy-form" class="vote-form">
     <input type="hidden" name="action" value="doppelganger_copy">
-    <button type="submit" id="doppelganger-copy-button" {{if not .DoppelgangerSelectedPlayer}}disabled{{end}}>🎭 Become</button>
+    <button type="submit" id="doppelganger-copy-button" {{if not .DoppelgangerSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_doppelganger_become"}}</button>
 </form>
 {{end}}
 {{end}}

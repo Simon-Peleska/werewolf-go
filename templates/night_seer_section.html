@@ -1,7 +1,7 @@
 {{define "night-seer-section"}}
-<h3>Seer: Your Investigation</h3>
+<h3>{{T .Lang "seer_title"}}</h3>
 {{if .HasInvestigated}}
-<p><em>You have already investigated tonight.</em></p>
+<p><em>{{T .Lang "seer_already_done"}}</em></p>
 <card-list>
     <player-card
         id="seer-result"
@@ -17,7 +17,7 @@
     ></player-card>
 </card-list>
 {{else}}
-<p>Choose a player to investigate, then confirm your choice.</p>
+<p>{{T .Lang "seer_choose"}}</p>
 <card-list>
 {{range .AliveTargets}}
 <form ws-send id="seer-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -41,7 +41,7 @@
 </card-list>
 <form ws-send id="seer-investigate-form" class="vote-form">
     <input type="hidden" name="action" value="seer_investigate">
-    <button type="submit" id="seer-investigate-button" {{if not .SeerSelectedPlayer}}disabled{{end}}>🔮 Investigate</button>
+    <button type="submit" id="seer-investigate-button" {{if not .SeerSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_investigate"}}</button>
 </form>
 {{end}}
 {{end}}

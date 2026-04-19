@@ -1,9 +1,9 @@
 {{define "night-guard-section"}}
-<h3>Guard: Your Protection</h3>
+<h3>{{T .Lang "guard_title"}}</h3>
 {{if .GuardHasProtected}}
-<p id="guard-result"><em>You are protecting <strong>{{if .GuardProtectingPlayer}}{{.GuardProtectingPlayer.Name}}{{end}}</strong> tonight.</em></p>
+{{if .GuardProtectingPlayer}}<p id="guard-result"><em>{{T .Lang "guard_protecting" .GuardProtectingPlayer.Name}}</em></p>{{end}}
 {{else}}
-<p>Choose a player to protect, then confirm. You cannot protect yourself or the same player twice in a row.</p>
+<p>{{T .Lang "guard_choose"}}</p>
 <card-list>
 {{range .GuardTargets}}
 <form ws-send id="guard-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
@@ -27,7 +27,7 @@
 </card-list>
 <form ws-send id="guard-protect-form" class="vote-form">
     <input type="hidden" name="action" value="guard_protect">
-    <button type="submit" id="guard-protect-button" {{if not .GuardSelectedPlayer}}disabled{{end}}>🛡️ Protect</button>
+    <button type="submit" id="guard-protect-button" {{if not .GuardSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_guard_protect"}}</button>
 </form>
 {{end}}
 {{end}}
