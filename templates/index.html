@@ -67,11 +67,16 @@
             to { opacity: 0; transform: translateX(100%); }
         }
         .toast.removing { animation: toast-out 0.3s ease-in forwards; }
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        .page-header h1 { margin: 0; }
         .lang-switcher {
             display: flex;
             gap: 0.5rem;
-            justify-content: flex-end;
-            margin-bottom: 1rem;
         }
         .lang-switcher a {
             font-size: 1rem;
@@ -91,10 +96,12 @@
     <main class="container">
         <article>
             <header>
-                <h1>Werewolf</h1>
-                <div class="lang-switcher">
-                    <a href="/set-lang?lang=en" {{if eq .Lang "en"}}class="active"{{end}}>EN</a>
-                    <a href="/set-lang?lang=de" {{if eq .Lang "de"}}class="active"{{end}}>DE</a>
+                <div class="page-header">
+                    <h1>Werewolf</h1>
+                    <div class="lang-switcher">
+                        <a href="/set-lang?lang=en" {{if eq .Lang "en"}}class="active"{{end}}>EN</a>
+                        <a href="/set-lang?lang=de" {{if eq .Lang "de"}}class="active"{{end}}>DE</a>
+                    </div>
                 </div>
             </header>
 
