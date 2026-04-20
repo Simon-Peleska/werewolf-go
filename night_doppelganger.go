@@ -187,9 +187,9 @@ WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_t
 		game.ID, client.playerID, ActionDoppelgangerSelect)
 	copyDesc := fmt.Sprintf("Night 1: You secretly became a %s (copied from %s)", target.RoleName, target.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, client.playerID, ActionDoppelgangerCopy, targetID, VisibilityActor, copyDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, client.playerID, ActionDoppelgangerCopy, targetID, VisibilityActor, copyDesc, "hist_doppelganger", histArgs(target.RoleName, target.Name))
 	if err != nil {
 		h.logError("handleWSDoppelgangerCopy: insert copy action", err)
 		h.sendErrorToast(client.playerID, "Failed to record copy")

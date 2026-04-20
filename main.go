@@ -383,9 +383,9 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	var sidebarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
 
-	historyEntries := buildHistoryEntries(app.db, playerID, game)
+	historyEntries := buildHistoryEntries(app.db, playerID, game, lang)
 	var historyBuf bytes.Buffer
-	app.templates.ExecuteTemplate(&historyBuf, "history.html", historyEntries)
+	app.templates.ExecuteTemplate(&historyBuf, "history.html", HistoryData{Lang: lang, Entries: historyEntries})
 
 	var topbarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&topbarBuf, "topbar.html", TopbarData{Game: game, HasHistory: len(historyEntries) > 0, Lang: lang})
@@ -514,24 +514,39 @@ type HistoryEntry struct {
 	Description string
 }
 
-func buildHistoryEntries(db *sqlx.DB, playerID int64, game *Game) []HistoryEntry {
+type HistoryData struct {
+	Lang    string
+	Entries []HistoryEntry
+}
+
+// roleNameArgKeys maps translation keys to which arg indices hold role names that need translation.
+var roleNameArgKeys = map[string][]int{
+	"hist_found_dead":      {2}, // args: round, playerName, roleName
+	"hist_eliminated":      {2}, // args: round, playerName, roleName
+	"hist_doppelganger":    {0}, // args: roleName, copiedFromName
+	"hist_witch_confirmed": {},  // no role name args
+}
+
+func buildHistoryEntries(db *sqlx.DB, playerID int64, game *Game, lang string) []HistoryEntry {
 	viewer, err := getPlayerInGame(db, game.ID, playerID)
 	if err != nil {
 		return nil
 	}
 
 	type historyRow struct {
-		ID            int64  `db:"id"`
-		Description   string `db:"description"`
-		Visibility    string `db:"visibility"`
-		ActorPlayerID int64  `db:"actor_player_id"`
-		Round         int    `db:"round"`
-		Phase         string `db:"phase"`
+		ID              int64  `db:"id"`
+		Description     string `db:"description"`
+		DescriptionKey  string `db:"description_key"`
+		DescriptionArgs string `db:"description_args"`
+		Visibility      string `db:"visibility"`
+		ActorPlayerID   int64  `db:"actor_player_id"`
+		Round           int    `db:"round"`
+		Phase           string `db:"phase"`
 	}
 
 	var rows []historyRow
 	db.Select(&rows, `
-		SELECT rowid as id, description, visibility, actor_player_id, round, phase
+		SELECT rowid as id, description, description_key, description_args, visibility, actor_player_id, round, phase
 		FROM game_action
 		WHERE game_id = ? AND description != ''
 		ORDER BY rowid ASC`, game.ID)
@@ -544,17 +559,37 @@ func buildHistoryEntries(db *sqlx.DB, playerID int64, game *Game) []HistoryEntry
 			Round:         row.Round,
 			Phase:         row.Phase,
 		}
-		if canSeeAction(action, viewer, game.Round, game.Status) {
-			entries = append(entries, HistoryEntry{ID: row.ID, Description: row.Description})
+		if !canSeeAction(action, viewer, game.Round, game.Status) {
+			continue
 		}
+		desc := row.Description
+		if row.DescriptionKey != "" {
+			var args []interface{}
+			if row.DescriptionArgs != "" {
+				parts := strings.Split(row.DescriptionArgs, "\t")
+				// Translate role name args where needed
+				if indices, ok := roleNameArgKeys[row.DescriptionKey]; ok {
+					for _, idx := range indices {
+						if idx < len(parts) {
+							parts[idx] = T(lang, "role_name_"+parts[idx])
+						}
+					}
+				}
+				for _, p := range parts {
+					args = append(args, p)
+				}
+			}
+			desc = T(lang, row.DescriptionKey, args...)
+		}
+		entries = append(entries, HistoryEntry{ID: row.ID, Description: desc})
 	}
 	return entries
 }
 
-func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game) (*bytes.Buffer, error) {
-	entries := buildHistoryEntries(db, playerID, game)
+func getGameHistory(db *sqlx.DB, tmpl *template.Template, playerID int64, game *Game, lang string) (*bytes.Buffer, error) {
+	entries := buildHistoryEntries(db, playerID, game, lang)
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "history.html", entries); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "history.html", HistoryData{Lang: lang, Entries: entries}); err != nil {
 		return nil, err
 	}
 	return &buf, nil

@@ -179,15 +179,17 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerSelect)
 
+	seerKey := "hist_seer_not_wolf"
 	result := "not a werewolf"
 	if target.Team == "werewolf" {
+		seerKey = "hist_seer_wolf"
 		result = "a werewolf"
 	}
 	seerDesc := fmt.Sprintf("Night %d: You investigated %s — they are %s", game.Round, target.Name, result)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc, seerKey, histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
 		h.sendErrorToast(client.playerID, "Failed to record investigation")

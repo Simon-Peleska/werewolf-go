@@ -246,10 +246,10 @@ func handleWSCupidLink(client *Client) {
 
 	desc1 := fmt.Sprintf("Night 1: Your lover is %s", second.Name)
 	desc2 := fmt.Sprintf("Night 1: Your lover is %s", first.Name)
-	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, firstLoverID, ActionCupidLink, secondLoverID, VisibilityActor, desc1)
-	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, 1, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, secondLoverID, ActionCupidLink, firstLoverID, VisibilityActor, desc2)
+	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, firstLoverID, ActionCupidLink, secondLoverID, VisibilityActor, desc1, "hist_cupid_lover", histArgs(second.Name))
+	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, secondLoverID, ActionCupidLink, firstLoverID, VisibilityActor, desc2, "hist_cupid_lover", histArgs(first.Name))
 
 	// Clear Cupid's staged picks once finalized.
 	_, _ = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND phase = 'night' AND actor_player_id = ? AND action_type IN (?, ?)`,

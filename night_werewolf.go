@@ -209,12 +209,13 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	}
 
 	description := fmt.Sprintf("Night %d: %s voted to kill %s", game.Round, voter.Name, target.Name)
+	dKey, dArgs := "hist_wolf_vote", histArgs(game.Round, voter.Name, target.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-DO UPDATE SET target_player_id = ?, description = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, targetID, description)
+DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, description_args = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, dKey, dArgs, targetID, description, dKey, dArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfVote: db.Exec insert vote", err)
 		h.sendErrorToast(client.playerID, "Failed to record vote")
@@ -303,12 +304,13 @@ AND r.name = 'Wolf Cub'`,
 	}
 
 	description2 := fmt.Sprintf("Night %d: %s voted to kill %s (Wolf Cub revenge)", game.Round, voter.Name, target.Name)
+	dKey2, dArgs2 := "hist_wolf_vote_cub", histArgs(game.Round, voter.Name, target.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-DO UPDATE SET target_player_id = ?, description = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, targetID, description2)
+DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, description_args = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, dKey2, dArgs2, targetID, description2, dKey2, dArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
 		h.sendErrorToast(client.playerID, "Failed to record second vote")
@@ -356,12 +358,13 @@ func handleWSWerewolfPass(client *Client, msg WSMessage) {
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed", game.Round, voter.Name)
+	passKey, passArgs := "hist_wolf_pass", histArgs(game.Round, voter.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, NULL, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-DO UPDATE SET target_player_id = NULL, description = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passDesc)
+DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, description_args = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passKey, passArgs, passDesc, passKey, passArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfPass: db.Exec", err)
 		h.sendErrorToast(client.playerID, "Failed to record pass")
@@ -405,12 +408,13 @@ func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed (second kill)", game.Round, voter.Name)
+	passKey2, passArgs2 := "hist_wolf_pass_2", histArgs(game.Round, voter.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, NULL, ?, ?)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, NULL, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
-DO UPDATE SET target_player_id = NULL, description = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passDesc)
+DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, description_args = ?`,
+		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passKey2, passArgs2, passDesc, passKey2, passArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: db.Exec", err)
 		h.sendErrorToast(client.playerID, "Failed to record pass")

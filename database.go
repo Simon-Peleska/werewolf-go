@@ -292,6 +292,8 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		target_player_id INTEGER,
 		visibility TEXT NOT NULL DEFAULT 'public',
 		description TEXT NOT NULL DEFAULT '',
+		description_key TEXT NOT NULL DEFAULT '',
+		description_args TEXT NOT NULL DEFAULT '',
 		FOREIGN KEY (game_id) REFERENCES game(rowid),
 		FOREIGN KEY (actor_player_id) REFERENCES player(rowid),
 		FOREIGN KEY (target_player_id) REFERENCES player(rowid),
@@ -347,6 +349,16 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
+	// Migration: add description_key and description_args to game_action for i18n (idempotent)
+	if err := addColumnIfNotExists(db, "game_action", "description_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+	if err := addColumnIfNotExists(db, "game_action", "description_args", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+
 	logfn("Database initialized successfully")
 	return nil
 }
@@ -357,6 +369,16 @@ func addColumnIfNotExists(db *sqlx.DB, table, column, definition string) error {
 		return nil
 	}
 	return err
+}
+
+// histArgs encodes translation arguments for a history entry as a tab-separated string.
+// All args are formatted as strings via %v. Tabs in arg values are not expected.
+func histArgs(args ...interface{}) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = fmt.Sprintf("%v", a)
+	}
+	return strings.Join(parts, "\t")
 }
 
 func savePlayerImage(db *sqlx.DB, playerID int64, data []byte, mimeType string) (int64, error) {

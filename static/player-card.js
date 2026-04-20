@@ -222,19 +222,24 @@
       align-items: center; justify-content: center;
     }
     .pc-footer {
-      display: flex; justify-content: center; align-items: center;
+      display: flex; justify-content: center; align-items: center; flex-wrap: nowrap;
       width: 100%; border-top: 1px solid var(--c-border);
       padding-top: calc(var(--pico-spacing) * 0.4); margin-top: auto;
+      overflow: hidden;
     }
     .pc-team, .pc-alive, .pc-dead {
       font-size: 1rem;
       text-transform: uppercase;
       color: var(--c-muted);
+      white-space: nowrap;
     }
+    .pc-team { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+    .pc-alive, .pc-dead { flex-shrink: 0; }
     .pc-footer .pc-role {
       font-size: 1rem;
       text-transform: uppercase;
       color: var(--c-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1;
     }
     :host([team=villager]) .pc-team,
     :host([team=villager]) .pc-footer .pc-role { color: var(--c-team-villager-label); }
@@ -471,13 +476,12 @@
         h += team === 'unknown'
           ? `<p class="pc-desc pc-desc-unknown">???</p>`
           : `<p class="pc-desc">${esc(displayRoleDesc)}</p>`;
-        const footerLabel = (roleName && team !== 'unknown') ? `<span class="pc-role">${esc(displayRoleName)}</span>` : `<span class="pc-team">${esc(team)}</span>`;
+        const unknownLabel = (i18n.unknown) || 'Unknown';
+        const footerLabel = (roleName && team !== 'unknown') ? `<span class="pc-role">${esc(displayRoleName)}</span>` : `<span class="pc-team">${esc(unknownLabel)}</span>`;
         h += `<div class="pc-footer">${footerLabel}`;
-        if (aliveAttr !== null) {
-          const alive = aliveAttr === 'true';
-          const aliveLabel = (i18n.alive) || 'Alive';
-          const deadLabel  = (i18n.dead)  || 'Dead';
-          h += `<span class="${alive ? 'pc-alive' : 'pc-dead'}">&nbsp;| ${alive ? aliveLabel : deadLabel}</span>`;
+        if (aliveAttr !== null && aliveAttr !== 'true') {
+          const deadLabel = (i18n.dead) || 'Dead';
+          h += `<span class="pc-dead">&nbsp;| ${deadLabel}</span>`;
         }
         h += `</div>`;
       } else {

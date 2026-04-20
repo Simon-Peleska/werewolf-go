@@ -356,9 +356,9 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		h.db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", targetID)
 		witchHealDesc := fmt.Sprintf("Night %d: You saved %s with your heal potion", game.Round, targetName)
 		_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
-			game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+			game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc, "hist_witch_heal", histArgs(game.Round, targetName))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit heal", err)
 			h.sendErrorToast(client.playerID, "Failed to commit heal")
@@ -390,9 +390,9 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		}
 		witchKillDesc := fmt.Sprintf("Night %d: You poisoned %s", game.Round, target.Name)
 		_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
-			game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+			game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc, "hist_witch_poison", histArgs(game.Round, target.Name))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit poison", err)
 			h.sendErrorToast(client.playerID, "Failed to commit poison")
@@ -403,9 +403,9 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
 
 	witchApplyDesc := fmt.Sprintf("Night %d: Witch %s confirmed her actions", game.Round, witch.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionWitchApply, VisibilityActor, witchApplyDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionWitchApply, VisibilityActor, witchApplyDesc, "hist_witch_confirmed", histArgs(game.Round, witch.Name))
 	if err != nil {
 		h.logError("handleWSWitchApply: insert apply", err)
 		h.sendErrorToast(client.playerID, "Failed to record witch action")

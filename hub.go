@@ -328,8 +328,8 @@ func (h *Hub) broadcastGameUpdate() {
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 
-		historyEntries := buildHistoryEntries(h.db, p.PlayerID, game)
-		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game)
+		historyEntries := buildHistoryEntries(h.db, p.PlayerID, game, lang)
+		historyBuf, err := getGameHistory(h.db, h.templates, p.PlayerID, game, lang)
 		if err != nil {
 			h.logError("broadcastGameHistory: getGameHistory", err)
 			continue

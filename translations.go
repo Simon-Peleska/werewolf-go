@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 var translations = map[string]map[string]string{
@@ -136,6 +137,7 @@ var translations = map[string]map[string]string{
 		"dead_cannot_vote":       "You are dead and cannot vote.",
 		"card_alive":             "Alive",
 		"card_dead":              "Dead",
+		"card_unknown":           "Unknown",
 
 		// Role names and descriptions (for player cards)
 		"role_name_Villager":     "Villager",
@@ -188,6 +190,34 @@ var translations = map[string]map[string]string{
 		"err_game_not_finished":    "Game is not finished yet",
 		"err_failed_role_config":   "Failed to get role config",
 		"err_failed_create_game":   "Failed to create new game",
+
+		// Night survey labels
+		"survey_prefix":   "Night %v: %s — %s",
+		"survey_suspects": "Suspects",
+		"survey_theory":   "Theory",
+		"survey_notes":    "Notes",
+
+		// History bar and entries
+		"hist_heading":          "History",
+		"hist_wolf_vote":        "Night %s: %s voted to kill %s",
+		"hist_wolf_vote_cub":    "Night %s: %s voted to kill %s (Wolf Cub revenge)",
+		"hist_wolf_pass":        "Night %s: %s passed",
+		"hist_wolf_pass_2":      "Night %s: %s passed (second kill)",
+		"hist_found_dead":       "Night %s: %s (%s) was found dead",
+		"hist_protected":        "Night %s: You protected %s",
+		"hist_seer_wolf":        "Night %s: You investigated %s — they are a werewolf",
+		"hist_seer_not_wolf":    "Night %s: You investigated %s — they are not a werewolf",
+		"hist_witch_heal":       "Night %s: You saved %s with your heal potion",
+		"hist_witch_poison":     "Night %s: You poisoned %s",
+		"hist_witch_confirmed":  "Night %s: Witch %s confirmed her actions",
+		"hist_cupid_lover":      "Night 1: Your lover is %s",
+		"hist_doppelganger":     "Night 1: You secretly became a %s (copied from %s)",
+		"hist_heartbreak_night": "Night %s: %s died of heartbreak after their lover %s was killed",
+		"hist_heartbreak_day":   "Day %s: %s died of heartbreak after their lover %s was killed",
+		"hist_day_vote":         "Day %s: %s voted to eliminate %s",
+		"hist_day_pass":         "Day %s: %s passed",
+		"hist_eliminated":       "Day %s: %s (%s) was eliminated by the village",
+		"hist_hunter_shot":      "Day %s: Hunter %s shot %s",
 	},
 	"de": {
 		"lang_name": "Deutsch",
@@ -319,6 +349,7 @@ var translations = map[string]map[string]string{
 		"dead_cannot_vote":       "Du bist tot und kannst nicht abstimmen.",
 		"card_alive":             "Am Leben",
 		"card_dead":              "Tot",
+		"card_unknown":           "Unbekannt",
 
 		// Role names and descriptions (for player cards)
 		"role_name_Villager":     "Dorfbewohner",
@@ -371,6 +402,34 @@ var translations = map[string]map[string]string{
 		"err_game_not_finished":    "Das Spiel ist noch nicht beendet",
 		"err_failed_role_config":   "Rollenkonfiguration konnte nicht geladen werden",
 		"err_failed_create_game":   "Neues Spiel konnte nicht erstellt werden",
+
+		// Night survey labels
+		"survey_prefix":   "Nacht %v: %s — %s",
+		"survey_suspects": "Verdächtige",
+		"survey_theory":   "Theorie",
+		"survey_notes":    "Notizen",
+
+		// History bar and entries
+		"hist_heading":          "Verlauf",
+		"hist_wolf_vote":        "Nacht %s: %s stimmte für die Tötung von %s",
+		"hist_wolf_vote_cub":    "Nacht %s: %s stimmte für die Tötung von %s (Wolfsjunges Rache)",
+		"hist_wolf_pass":        "Nacht %s: %s hat gepasst",
+		"hist_wolf_pass_2":      "Nacht %s: %s hat gepasst (zweiter Kill)",
+		"hist_found_dead":       "Nacht %s: %s (%s) wurde tot aufgefunden",
+		"hist_protected":        "Nacht %s: Du hast %s beschützt",
+		"hist_seer_wolf":        "Nacht %s: Du hast %s untersucht — sie sind ein Werwolf",
+		"hist_seer_not_wolf":    "Nacht %s: Du hast %s untersucht — sie sind kein Werwolf",
+		"hist_witch_heal":       "Nacht %s: Du hast %s mit deinem Heiltrank gerettet",
+		"hist_witch_poison":     "Nacht %s: Du hast %s vergiftet",
+		"hist_witch_confirmed":  "Nacht %s: Hexe %s hat ihre Aktionen bestätigt",
+		"hist_cupid_lover":      "Nacht 1: Dein Liebhaber ist %s",
+		"hist_doppelganger":     "Nacht 1: Du wurdest heimlich zu einem %s (kopiert von %s)",
+		"hist_heartbreak_night": "Nacht %s: %s starb an gebrochenem Herzen, nachdem ihr Liebhaber %s getötet wurde",
+		"hist_heartbreak_day":   "Tag %s: %s starb an gebrochenem Herzen, nachdem ihr Liebhaber %s getötet wurde",
+		"hist_day_vote":         "Tag %s: %s stimmte für die Eliminierung von %s",
+		"hist_day_pass":         "Tag %s: %s hat gepasst",
+		"hist_eliminated":       "Tag %s: %s (%s) wurde vom Dorf eliminiert",
+		"hist_hunter_shot":      "Tag %s: Jäger %s erschoss %s",
 	},
 }
 
@@ -398,11 +457,22 @@ func T(lang, key string, args ...interface{}) string {
 	return s
 }
 
-// getLangFromCookie reads the "lang" cookie and returns "en" or "de".
+// getLangFromCookie reads the "lang" cookie, falling back to Accept-Language.
+// Returns "en" or "de".
 func getLangFromCookie(r *http.Request) string {
 	c, err := r.Cookie("lang")
-	if err != nil || (c.Value != "en" && c.Value != "de") {
-		return "en"
+	if err == nil && (c.Value == "en" || c.Value == "de") {
+		return c.Value
 	}
-	return c.Value
+	// No valid cookie — detect from browser Accept-Language header.
+	for _, tag := range strings.Split(r.Header.Get("Accept-Language"), ",") {
+		lang := strings.ToLower(strings.TrimSpace(strings.SplitN(tag, ";", 2)[0]))
+		if strings.HasPrefix(lang, "de") {
+			return "de"
+		}
+		if strings.HasPrefix(lang, "en") {
+			return "en"
+		}
+	}
+	return "en"
 }

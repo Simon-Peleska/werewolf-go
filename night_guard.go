@@ -222,9 +222,9 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 
 	guardDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
 	_, err = h.db.Exec(`
-INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description)
-VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionGuardProtect, targetID, VisibilityActor, guardDesc)
+INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
+VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, client.playerID, ActionGuardProtect, targetID, VisibilityActor, guardDesc, "hist_protected", histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSGuardProtect: db.Exec insert protection", err)
 		h.sendErrorToast(client.playerID, "Failed to record protection")

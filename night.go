@@ -208,24 +208,28 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 	deathTheory := strings.TrimSpace(msg.DeathTheory)
 	notes := strings.TrimSpace(msg.Notes)
 
+	lang := client.lang
+	if lang == "" {
+		lang = "en"
+	}
 	var parts []string
 	if suspectID > 0 {
 		var suspectName string
 		h.db.Get(&suspectName, "SELECT name FROM player WHERE rowid=?", suspectID)
 		if suspectName != "" {
-			parts = append(parts, "Suspects: "+suspectName)
+			parts = append(parts, T(lang, "survey_suspects")+": "+suspectName)
 		}
 	}
 	if deathTheory != "" {
-		parts = append(parts, "Theory: "+deathTheory)
+		parts = append(parts, T(lang, "survey_theory")+": "+deathTheory)
 	}
 	if notes != "" {
-		parts = append(parts, "Notes: "+notes)
+		parts = append(parts, T(lang, "survey_notes")+": "+notes)
 	}
 
 	var description string
 	if len(parts) > 0 {
-		description = fmt.Sprintf("Night %d: %s — %s", game.Round, player.Name, strings.Join(parts, " | "))
+		description = fmt.Sprintf(T(lang, "survey_prefix"), game.Round, player.Name, strings.Join(parts, " | "))
 	}
 	// If all empty, description stays "" (counts as submitted, hidden from history)
 
@@ -273,7 +277,8 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 			h.db.Get(&name, "SELECT name FROM player WHERE rowid=?", pk.TargetPlayerID)
 			h.db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id=r.rowid WHERE gp.game_id=? AND gp.player_id=?`, game.ID, pk.TargetPlayerID)
 			desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
-			h.db.Exec(`UPDATE game_action SET description=? WHERE rowid=?`, desc, pk.ID)
+			h.db.Exec(`UPDATE game_action SET description=?, description_key=?, description_args=? WHERE rowid=?`,
+				desc, "hist_found_dead", histArgs(game.Round, name, roleName), pk.ID)
 			nightKills = append(nightKills, pk.TargetPlayerID)
 			nightKillNames = append(nightKillNames, name)
 			h.logf("Applied pending night kill: %s (%s)", name, roleName)
@@ -312,8 +317,8 @@ func recordPublicDeath(h *Hub, game *Game, playerID int64) {
 	var roleName string
 	h.db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.player_id = ?`, game.ID, playerID)
 	desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
-	_, err := h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, playerID, ActionNightKill, playerID, VisibilityPublic, desc)
+	_, err := h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
+		game.ID, game.Round, playerID, ActionNightKill, playerID, VisibilityPublic, desc, "hist_found_dead", histArgs(game.Round, name, roleName))
 	if err != nil {
 		h.logError("recordPublicDeath: insert death record", err)
 	} else {
