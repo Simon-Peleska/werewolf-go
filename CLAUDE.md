@@ -495,10 +495,20 @@ Test files are organized by feature and contain all tests and helpers for that f
 | Path | Purpose |
 |------|---------|
 | `./lobby_test.go` | Tests for lobby player management and game start (role assignment, player count) |
-| `./night_test.go` | Tests for night phase: werewolf voting, seer investigation, doctor/guard protection |
-| `./day_test.go` | Tests for day phase: voting, elimination, hunter revenge mechanics (largest test file) |
+| `./night_test.go` | Night phase shared helpers + AI Storyteller + Night Survey tests |
+| `./night_werewolf_test.go` | Werewolf voting tests |
+| `./night_witch_test.go` | Witch potion tests |
+| `./night_mason_test.go` | Mason tests |
+| `./night_wolfcub_test.go` | Wolf Cub double-kill tests |
+| `./night_cupid_test.go` | Cupid + lovers tests |
+| `./night_doppelganger_test.go` | Doppelganger + Seer helper + Seer notification tests |
+| `./night_seer_test.go` | Seer investigation tests |
+| `./night_doctor_test.go` | Doctor protection tests |
+| `./night_guard_test.go` | Guard protection tests |
+| `./hunter_test.go` | Hunter death-shot tests (triggers in both day and night) |
+| `./day_test.go` | Day phase: voting, win conditions, dead-player rules |
 | `./auth_test.go` | Tests for authentication and session management |
-| `./hub_test.go` | Tests for WebSocket connection and message handling |
+| `./hub_test.go` | Tests for WebSocket connection and message handling; also contains `TestMain` which launches the shared Chromium browser |
 
 ### Template Files
 
@@ -652,6 +662,8 @@ You are a senior developer with many years of hard-won experience. You think lik
   - Waiting steps shoud be stopped event driven
 
 ### go-rod (browser automation) patterns
+- **i18n gotcha**: Chromium is launched with `--lang=en-US --accept-lang=en-US` in `TestMain` (`hub_test.go`). **Never remove these flags** — without them the browser sends a German `Accept-Language` header, the server renders all strings in German, and tests that check phase labels or history text time out silently at ~230s.
+- **Phase detection**: Use `data-phase="day"/"night"` on `#topbar-phase-label` (set in `templates/topbar.html`), never check translated text. Any new phase-dependent test selector must use a `data-*` attribute or CSS class, not a translated string.
 - Always select by ID (`#my-id`) for unique elements; use attribute selectors (`[name='...']`) only for form fields without IDs
 - Select dropdown by visible option text: `MustElement("select[name='...']").MustSelect(optionText)`
 - Type into textarea: `MustElement("textarea[name='...']").MustInput(text)`

@@ -29,6 +29,9 @@ func TestMain(m *testing.M) {
 			Set("disable-backgrounding-occluded-windows", "").
 			Set("disable-renderer-backgrounding", "").
 			Set("mute-audio", "").
+			// Force English so all UI strings and history entries are predictable in tests.
+			Set("lang", "en-US").
+			Set("accept-lang", "en-US").
 			Launch()
 		if err == nil {
 			b := rod.New().ControlURL(u)
