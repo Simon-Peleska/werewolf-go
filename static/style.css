@@ -19,6 +19,24 @@
   font-display: swap;
 }
 
+/* Cross-document view transitions: crossfade full page navigations (e.g. the
+   login → game redirect) so the load feels seamless instead of a white flash.
+   Progressive enhancement — unsupported browsers just navigate normally.
+   Both pages share this inlined CSS, so both opt in (required for cross-doc). */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 /* ── Global (theme-independent) ────────────────────────────────────────── */
 :root {
   --pico-font-family: "IM Fell Great Primer", "Noto Serif", var(--pico-font-family-emoji);
