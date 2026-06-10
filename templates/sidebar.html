@@ -20,10 +20,13 @@
     <p><strong>{{.Player.Name}}</strong> ({{T .Lang "code_label"}}: <code
           id="secret-code-display">{{.Player.SecretCode}}</code>)</p>
     <span id="player-id" hidden>{{.Player.ID}}</span>
-    <button id="mute-btn" class="secondary" onclick="toggleMute()"
-      data-text-unmuted="{{T .Lang "narrator_unmuted"}}"
-      data-text-muted="{{T .Lang "narrator_muted"}}"
-      style="width:100%;margin-top:0.5rem">{{T .Lang "narrator_unmuted"}}</button>
+    <form id="narrator-toggle-form">
+      <label for="narrator-toggle-switch">
+        <input type="checkbox" role="switch" id="narrator-toggle-switch"
+          checked onchange="toggleMute()">
+        {{T .Lang "narrator_label"}}
+      </label>
+    </form>
     {{if .AIAvailable}}
     <form ws-send id="ai-toggle-form">
       <input type="hidden" name="action" value="toggle_ai">

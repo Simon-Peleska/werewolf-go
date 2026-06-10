@@ -536,16 +536,6 @@ button,
   }
 }
 
-/* ── Mute button ───────────────────────────────────────────────────────── */
-/* Pico overrides --pico-color on .secondary buttons to --pico-secondary-inverse (#fff).
-   Re-override it here so text is always readable in both themes. */
-#mute-btn,
-#mute-btn:hover,
-#mute-btn:focus {
-  --pico-color: var(--c-amber);
-  --pico-secondary-inverse: var(--c-amber);
-}
-
 /* ── Status bar (lobby) ────────────────────────────────────────────────── */
 .status-bar {
   display: flex;

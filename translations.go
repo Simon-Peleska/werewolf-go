@@ -29,13 +29,12 @@ var translations = map[string]map[string]string{
 		"btn_login":                "Login",
 
 		// Sidebar
-		"sidebar_players":  "Players",
-		"ai_features":      "AI features",
-		"narrator_unmuted": "🔊 Narrator",
-		"narrator_muted":   "🔇 Narrator",
-		"code_label":       "Code",
-		"night_round":      "Night %d",
-		"day_round":        "Day %d",
+		"sidebar_players": "Players",
+		"ai_features":     "AI features",
+		"narrator_label":  "Narrator",
+		"code_label":      "Code",
+		"night_round":     "Night %d",
+		"day_round":       "Day %d",
 
 		// Lobby
 		"players_label":     "Players:",
@@ -242,13 +241,12 @@ var translations = map[string]map[string]string{
 		"btn_login":                "Anmelden",
 
 		// Sidebar
-		"sidebar_players":  "Spieler",
-		"ai_features":      "KI-Funktionen",
-		"narrator_unmuted": "🔊 Erzähler",
-		"narrator_muted":   "🔇 Erzähler",
-		"code_label":       "Code",
-		"night_round":      "Nacht %d",
-		"day_round":        "Tag %d",
+		"sidebar_players": "Spieler",
+		"ai_features":     "KI-Funktionen",
+		"narrator_label":  "Erzähler",
+		"code_label":      "Code",
+		"night_round":     "Nacht %d",
+		"day_round":       "Tag %d",
 
 		// Lobby
 		"players_label":     "Spieler:",

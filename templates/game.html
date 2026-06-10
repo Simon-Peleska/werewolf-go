@@ -756,20 +756,21 @@
     var _narratorSampleRate = 24000; // matches server narrator_sample_rate (default 24000)
     var _muted = localStorage.getItem('narrator-muted') === 'true';
 
-    function _syncMuteBtn() {
-      var btn = document.getElementById('mute-btn');
-      if (!btn) return;
-      btn.textContent = _muted
-        ? (btn.dataset.textMuted || '🔇 Narrator')
-        : (btn.dataset.textUnmuted || '🔊 Narrator');
+    // The narrator switch is server-rendered as "on" (checked). Re-sync it to the
+    // client-local mute state after every render, since the server has no idea
+    // whether this particular client has muted.
+    function _syncMuteSwitch() {
+      var sw = document.getElementById('narrator-toggle-switch');
+      if (sw) sw.checked = !_muted;
     }
     function toggleMute() {
-      _muted = !_muted;
+      var sw = document.getElementById('narrator-toggle-switch');
+      _muted = sw ? !sw.checked : !_muted;
       localStorage.setItem('narrator-muted', _muted);
-      _syncMuteBtn();
     }
-    document.addEventListener('htmx:afterSettle', _syncMuteBtn);
-    document.addEventListener('DOMContentLoaded', _syncMuteBtn);
+    document.addEventListener('htmx:afterSettle', _syncMuteSwitch);
+    document.addEventListener('htmx:wsAfterMessage', _syncMuteSwitch);
+    document.addEventListener('DOMContentLoaded', _syncMuteSwitch);
 
     function ensureAudioCtx() {
       if (!_audioCtx) {
