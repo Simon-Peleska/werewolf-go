@@ -29,24 +29,23 @@ func (h *Hub) transitionToNight(game *Game) {
 
 // checkWinConditions checks if the game has ended and returns true if so
 func (h *Hub) checkWinConditions(game *Game) bool {
-	var werewolfCount, villagerCount int
-	err := h.db.Get(&werewolfCount, `
-		SELECT COUNT(*) FROM game_player g
+	var counts struct {
+		Werewolves int `db:"werewolf_count"`
+		Villagers  int `db:"villager_count"`
+	}
+	err := h.db.Get(&counts, `
+		SELECT
+			SUM(CASE WHEN r.team='werewolf' THEN 1 ELSE 0 END) as werewolf_count,
+			SUM(CASE WHEN r.team='villager' THEN 1 ELSE 0 END) as villager_count
+		FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
-		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
+		WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
 	if err != nil {
-		h.logError("checkWinConditions: count werewolves", err)
+		h.logError("checkWinConditions: count teams", err)
 		return false
 	}
-
-	err = h.db.Get(&villagerCount, `
-		SELECT COUNT(*) FROM game_player g
-		JOIN role r ON g.role_id = r.rowid
-		WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'villager'`, game.ID)
-	if err != nil {
-		h.logError("checkWinConditions: count villagers", err)
-		return false
-	}
+	werewolfCount := counts.Werewolves
+	villagerCount := counts.Villagers
 
 	h.logf("Win check: %d werewolves, %d villagers alive", werewolfCount, villagerCount)
 

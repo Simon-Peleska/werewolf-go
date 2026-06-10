@@ -322,7 +322,7 @@ func (h *Hub) broadcastGameUpdate() {
 			Player:         &p,
 			Players:        visiblePlayers,
 			Game:           game,
-			LoverPartnerID: getLoverPartner(h.db, game.ID, p.PlayerID),
+			LoverPartnerID: p.Lover,
 			IsLobby:        game.Status == "lobby",
 			Lang:           lang,
 		}

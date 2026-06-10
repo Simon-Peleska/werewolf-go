@@ -56,22 +56,7 @@ func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]
 		return fmt.Errorf("TTS API %s: %s", resp.Status, errBody)
 	}
 
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			onChunk(chunk)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return streamPCM(resp.Body, onChunk)
 }
 
 // elevenlabsNarrator streams PCM from the ElevenLabs TTS REST API.
@@ -111,22 +96,26 @@ func (n *elevenlabsNarrator) Speak(ctx context.Context, text string, onChunk fun
 		return fmt.Errorf("ElevenLabs TTS %s: %s", resp.Status, errBody)
 	}
 
+	return streamPCM(resp.Body, onChunk)
+}
+
+// streamPCM reads raw PCM bytes from body and calls onChunk for each chunk.
+func streamPCM(body io.Reader, onChunk func([]byte)) error {
 	buf := make([]byte, 4096)
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := body.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
 			onChunk(chunk)
 		}
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return err
 		}
 	}
-	return nil
 }
 
 // initNarrator creates a Narrator from config, or returns nil if disabled.
