@@ -254,7 +254,8 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 	CREATE TABLE IF NOT EXISTS game (
 		name TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'lobby',
-		round INTEGER NOT NULL DEFAULT 0
+		round INTEGER NOT NULL DEFAULT 0,
+		ai_enabled INTEGER NOT NULL DEFAULT 1
 	);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_game_name ON game(name) WHERE name != '';
 	CREATE TABLE IF NOT EXISTS player (
