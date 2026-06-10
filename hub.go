@@ -145,10 +145,11 @@ func (h *Hub) stop() {
 }
 
 func (h *Hub) sendToPlayer(playerID int64, message []byte) {
-	// Fetch player name for logging before acquiring the lock.
-	var playerName string
-	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
-	LogWSMessage("OUT", playerName, string(message))
+	// Only pay for the name lookup when WS logging is actually on — this runs
+	// on every outbound message.
+	if WSLoggingEnabled() {
+		LogWSMessage("OUT", getPlayerName(h.db, playerID), string(message))
+	}
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -212,8 +213,7 @@ func (h *Hub) run() {
 			h.mu.Unlock()
 			h.clientWg.Add(1)
 			go client.writer()
-			var playerName string
-			h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", client.playerID)
+			playerName := getPlayerName(h.db, client.playerID)
 			h.logf("WebSocket client connected (player %d: %s). Total: %d", client.playerID, playerName, len(h.clients))
 			DebugLog("hub.register", "Player '%s' (ID: %d) connected via WebSocket", playerName, client.playerID)
 			h.addPlayerToLobby(client.playerID)
@@ -224,8 +224,7 @@ func (h *Hub) run() {
 			client, ok := h.clients[conn]
 			if ok {
 				playerID := client.playerID
-				var playerName string
-				h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+				playerName := getPlayerName(h.db, playerID)
 				delete(h.clients, conn)
 				close(client.send) // signal writer goroutine to exit
 				conn.Close()
@@ -351,8 +350,7 @@ func (h *Hub) logDBState(context string) {
 
 // addPlayerToLobby adds a player to the game if it's in lobby state
 func (h *Hub) addPlayerToLobby(playerID int64) {
-	var playerName string
-	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	playerName := getPlayerName(h.db, playerID)
 
 	game, err := h.getGame()
 	if err != nil {
@@ -384,8 +382,7 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 
 // removePlayerFromLobby removes a player from the game if it's still in lobby state
 func (h *Hub) removePlayerFromLobby(playerID int64) {
-	var playerName string
-	h.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	playerName := getPlayerName(h.db, playerID)
 
 	game, err := h.getGame()
 	if err != nil {
@@ -420,8 +417,7 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var playerName string
-	hub.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	playerName := getPlayerName(hub.db, playerID)
 	DebugLog("handleWebSocket", "Player '%s' (ID: %d) initiating WebSocket connection", playerName, playerID)
 
 	var upgrader = websocket.Upgrader{

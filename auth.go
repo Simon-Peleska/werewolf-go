@@ -268,8 +268,7 @@ func (app *App) handleUploadPlayerImage(w http.ResponseWriter, r *http.Request) 
 
 func (app *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	playerID, _ := getPlayerIdFromSession(app.db, r)
-	var playerName string
-	app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
+	playerName := getPlayerName(app.db, playerID)
 
 	cookie, err := r.Cookie(sessionCookieName)
 	if err == nil {

@@ -66,9 +66,8 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 				continue
 			}
 			// Record public heartbreak action: actor=trigger person, target=heartbreak victim
-			var killedName, partnerName string
-			h.db.Get(&killedName, "SELECT name FROM player WHERE rowid = ?", killed)
-			h.db.Get(&partnerName, "SELECT name FROM player WHERE rowid = ?", partnerID)
+			killedName := getPlayerName(h.db, killed)
+			partnerName := getPlayerName(h.db, partnerID)
 			heartbreakKey := "hist_heartbreak_night"
 			phaseLabel := "Night"
 			if phase == "day" {
@@ -330,9 +329,8 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		return
 	}
 
-	var eliminatedName, eliminatedRole string
-	h.db.Get(&eliminatedName, "SELECT name FROM player WHERE rowid = ?", eliminatedID)
-	h.db.Get(&eliminatedRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, eliminatedID)
+	eliminatedName := getPlayerName(h.db, eliminatedID)
+	eliminatedRole := getRoleName(h.db, game.ID, eliminatedID)
 
 	// Record the elimination action
 	eliminationDesc := fmt.Sprintf("Day %d: %s (%s) was eliminated by the village", game.Round, eliminatedName, eliminatedRole)
@@ -352,11 +350,8 @@ func (h *Hub) resolveDayVotes(game *Game) {
 
 	// Check if any of the dead (eliminated + heartbroken) are Hunters needing revenge
 	for _, deadID := range append([]int64{eliminatedID}, heartbroken...) {
-		var deadRole string
-		h.db.Get(&deadRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, deadID)
-		if deadRole == "Hunter" {
-			var deadName string
-			h.db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
+		if getRoleName(h.db, game.ID, deadID) == "Hunter" {
+			deadName := getPlayerName(h.db, deadID)
 			h.logf("Hunter '%s' was eliminated — waiting for revenge shot before transitioning", deadName)
 			LogDBState(h.db, "after hunter elimination - waiting for revenge")
 			h.triggerBroadcast()
@@ -539,11 +534,8 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 
 	// Check if the target (or any heartbreak victim) is also a Hunter
 	for _, deadID := range append([]int64{targetID}, heartbroken...) {
-		var deadRole string
-		h.db.Get(&deadRole, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, game.ID, deadID)
-		if deadRole == "Hunter" {
-			var deadName string
-			h.db.Get(&deadName, "SELECT name FROM player WHERE rowid = ?", deadID)
+		if getRoleName(h.db, game.ID, deadID) == "Hunter" {
+			deadName := getPlayerName(h.db, deadID)
 			h.logf("Hunter '%s' was killed — entering chained revenge", deadName)
 			h.triggerBroadcast()
 			return

@@ -511,6 +511,12 @@ func LogWSMessage(direction, playerID, message string) {
 	}
 }
 
+// WSLoggingEnabled reports whether WebSocket message logging is active, so hot
+// paths can skip the player-name lookup that only feeds the log line.
+func WSLoggingEnabled() bool {
+	return appLogger != nil && appLogger.logWS
+}
+
 // LogDBState logs the database state using the global logger
 func LogDBState(db *sqlx.DB, context string) {
 	if appLogger != nil {

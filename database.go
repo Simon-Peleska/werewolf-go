@@ -64,6 +64,20 @@ func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 	return player, err
 }
 
+// getPlayerName returns the player's display name, or "" if not found.
+func getPlayerName(db *sqlx.DB, playerID int64) string {
+	var name string
+	db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
+	return name
+}
+
+// getRoleName returns the player's role name in the given game, or "" if not found.
+func getRoleName(db *sqlx.DB, gameID, playerID int64) string {
+	var name string
+	db.Get(&name, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, gameID, playerID)
+	return name
+}
+
 func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 	var players []Player
 	err := db.Select(&players, `
