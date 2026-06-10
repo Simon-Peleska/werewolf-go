@@ -5,6 +5,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Werewolf - Lobby</title>
+  <!-- Preload the two main fonts so they fetch in parallel with the big inlined CSS
+       (font-display: swap still paints text in the fallback first). crossorigin is
+       required even same-origin: fonts always fetch in anonymous CORS mode. -->
+  <link rel="preload" href="/static/fonts/MetalMania-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/IMFellGreatPrimer-Regular.woff2" as="font" type="font/woff2" crossorigin>
   {{.StyleTag}}
   <link rel="prefetch" href="/static/seals/Villager.webp" as="image">
   <link rel="prefetch" href="/static/seals/Werewolf.webp" as="image">
