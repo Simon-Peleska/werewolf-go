@@ -291,8 +291,10 @@ html::before {
   position: fixed;
   inset: 0;
   z-index: 0;
+  /* gradient overlay, full image, then the inlined blur-up placeholder behind it */
   background-image: linear-gradient(rgba(7, 8, 13, 0.7), rgba(7, 8, 13, 0.7)),
-                    url('/static/backgrounds/background_night.webp');
+                    url('/static/backgrounds/background_night.webp'),
+                    var(--bg-night-lqip, none);
   background-size: cover;
   background-position: center;
   transition: opacity 0.6s ease;
@@ -306,7 +308,8 @@ html::after {
   inset: 0;
   z-index: 0;
   background-image: linear-gradient(rgba(242, 234, 214, 0.7), rgba(242, 234, 214, 0.7)),
-                    url('/static/backgrounds/background_day.webp');
+                    url('/static/backgrounds/background_day.webp'),
+                    var(--bg-day-lqip, none);
   background-size: cover;
   background-position: center;
   opacity: 0;
@@ -320,7 +323,8 @@ html::after {
 /* Lovers win — replace the after layer with the lovers background */
 :root[data-winner=lovers]::after {
   background-image: linear-gradient(rgba(20, 8, 16, 0.5), rgba(20, 8, 16, 0.5)),
-                    url('/static/backgrounds/background_lovers.webp');
+                    url('/static/backgrounds/background_lovers.webp'),
+                    var(--bg-lovers-lqip, none);
   opacity: 1;
 }
 :root[data-winner=lovers]::before { opacity: 0; }
@@ -369,6 +373,15 @@ button,
 .seal-lg  { width: 56px;  height: 56px; }
 .seal-xl  { width: 280px; height: 280px; }
 .seal-win { width: 140px; height: 140px; border-radius: 0.75rem; }
+
+/* Blur-up: a tiny placeholder (inline background-image) is shown until the full
+   seal image loads, then dropped via .seal-loaded. WebP has no progressive decode. */
+.lqip {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.lqip.seal-loaded { background-image: none !important; }
 
 /* ── Phase heading ─────────────────────────────────────────────────────── */
 .phase-heading {

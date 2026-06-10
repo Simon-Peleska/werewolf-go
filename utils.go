@@ -613,7 +613,7 @@ func newTestContext(t *testing.T) *TestContext {
 	logger.Debug("Database initialized on port %d, dbPath: %s", port, dbPath)
 
 	// Parse templates
-	funcMap := template.FuncMap{
+	funcMap := addSealLQIPFuncs(template.FuncMap{
 		"subtract": func(a, b int) int { return a - b },
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
@@ -622,7 +622,7 @@ func newTestContext(t *testing.T) *TestContext {
 			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
 		"T": T,
-	}
+	})
 	testTemplates, tmplErr := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if tmplErr != nil {
 		t.Fatalf("Failed to parse templates: %v", tmplErr)

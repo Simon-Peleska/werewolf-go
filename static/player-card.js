@@ -146,6 +146,14 @@
       transition: filter 0.15s;
       object-fit: contain; display: block;
     }
+    /* Blur-up: a tiny placeholder is scaled up behind the seal until the real
+       image loads, then the background is dropped (no halo on transparent edges). */
+    .pc-seal.lqip {
+      background-size: contain;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    .pc-seal.seal-loaded { background-image: none !important; }
     .pc-seal.pc-seal-profile {
       object-fit: cover;
       aspect-ratio: 1 / 1;
@@ -439,10 +447,15 @@
       const heartBadge         = `<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>`;
       const doppelgangerBadge  = `<div class="pc-doppelganger-wrap"><span class="pc-doppelganger-icon">🎭</span></div>`;
 
+      // Blurred placeholder for the role seal — shown until the full image loads.
+      const lqip = (window.SEAL_LQIP && window.SEAL_LQIP[roleName.replace(/ /g, '_')]) || '';
+
       // When using a profile image, fall back to role seal on load error
       const sealImg = (profileImage && !showRoleSeal)
         ? `<img class="pc-seal pc-seal-profile" src="${seal}" onerror="this.onerror=null;this.src='${roleSealUrl}';this.classList.remove('pc-seal-profile')" alt="${esc(roleName)}">`
-        : `<img class="pc-seal" src="${seal}" alt="${esc(roleName)}">`;
+        : lqip
+          ? `<img class="pc-seal lqip" style="background-image:url(${lqip})" src="${seal}" onload="this.classList.add('seal-loaded')" alt="${esc(roleName)}">`
+          : `<img class="pc-seal" src="${seal}" alt="${esc(roleName)}">`;
 
       let h = '';
 
@@ -596,6 +609,11 @@
       } else {
         shadow.appendChild(newCard);
       }
+
+      // Cached/already-decoded seals never fire onload — drop their placeholder now.
+      shadow.querySelectorAll('img.lqip').forEach((img) => {
+        if (img.complete) img.classList.add('seal-loaded');
+      });
 
       // Bind file input handler (input is inside .pc-card, may be recreated by morph)
       const fileInput = shadow.querySelector('#pc-file-input');

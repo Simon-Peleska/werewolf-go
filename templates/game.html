@@ -59,6 +59,8 @@
     };
   </script>
   <script>
+    // Blurred placeholders shown until each full seal image loads (set by player-card.js).
+    window.SEAL_LQIP = {{sealLQIPJSON}};
     // Must be set before HTMX creates the WebSocket so binary frames
     // arrive as ArrayBuffer instead of Blob.
     htmx.config.wsBinaryType = 'arraybuffer';

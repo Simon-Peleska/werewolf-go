@@ -385,6 +385,7 @@ The `tools/` directory contains bash scripts for common development tasks. These
 | `/run-server` | `./tools/run_server.sh` | Start the dev server with auto-cleanup |
 | `/run-tests` | `./tools/run_tests.sh` | Run tests with extensive logging options |
 | `/start-chromium` | `./tools/start_chromium.sh` | Open multiple Chromium instances for manual testing |
+| `/gen-seals` | `./tools/gen_seals.sh` | Re-encode seal images from originals + regenerate blur-up placeholders |
 
 Use `--help` with any script for full usage details.
 
@@ -460,6 +461,9 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./originals/seals/` | High-resolution original seal images (*.orig.webp) — kept outside `static/` so they are NOT embedded in the binary |
 | `./sgconfig.yml` | ast-grep configuration (language globs, rule directories) |
 | `./rules/` | ast-grep lint rules for Go code |
+| `./tools/gen_seals.sh` | Re-encodes `originals/seals/` → `static/seals/<Name>.webp` (600px) + regenerates the blur-up placeholders `static/seal_lqip.json` and `static/bg_lqip.json`. Full background images are read-only here (hand-tuned — never re-encoded). Run after changing any seal/background. |
+| `./static/seal_lqip.json` | Generated map of seal name → tiny base64 WebP data URI (blur-up placeholder shown until the full seal loads). **Do not hand-edit — run `/gen-seals`.** |
+| `./static/bg_lqip.json` | Generated map of background name → tiny base64 WebP data URI. Injected by `bgLQIPCSS()` as `--bg-<x>-lqip` CSS vars, used as the bottom background layer behind the full phase image. **Do not hand-edit — run `/gen-seals`.** |
 
 ### Code Files (Backend Implementation)
 
