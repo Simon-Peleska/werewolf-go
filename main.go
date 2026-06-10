@@ -1233,6 +1233,13 @@ func main() {
 	// Image endpoint: register directly (not via wrapHandler) to allow browser caching
 	http.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 
+	// Liveness probe: the game page polls this to detect when the server is back
+	// after a disconnect. Kept tiny (no DB, no gzip, no logging) since it's polled.
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write([]byte("ok"))
+	})
+
 	// Serve static files. Files are embedded in the binary and never change at
 	// runtime, so in production we set immutable cache headers (1 year). In dev
 	// mode we skip the cache header so the browser always re-validates.

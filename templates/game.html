@@ -589,14 +589,21 @@
       _wsSocket = e.detail.socketWrapper;
       _wsConnected = true;
     });
+    var _reconnectPolling = false;
     document.body.addEventListener('htmx:wsClose', function () {
-      if (!_wsConnected) return;
-      // Server went down — poll until it's back, then reload.
-      setTimeout(function poll() {
-        fetch('/static/htmx.js', { cache: 'no-store' })
-          .then(function () { location.reload(); })
-          .catch(function () { setTimeout(poll, 1000); });
-      }, 500);
+      // Server went down — poll the liveness endpoint until it's back, then reload.
+      // htmx-ws fires wsClose repeatedly while it retries the socket, so guard with
+      // a flag: without it every wsClose spawned its own self-perpetuating loop and
+      // they piled up into hundreds of overlapping requests.
+      if (!_wsConnected || _reconnectPolling) return;
+      _reconnectPolling = true;
+      (function poll() {
+        setTimeout(function () {
+          fetch('/healthz', { cache: 'no-store' })
+            .then(function () { location.reload(); })
+            .catch(function () { poll(); });
+        }, 500);
+      })();
     });
 
     // If the browser restores this page from its back-forward cache (bfcache),
@@ -659,6 +666,11 @@
       if (!gc || !gc._phaseChanging) return;
       // Defer clear so the MutationObserver microtask still sees the flag.
       setTimeout(function() { delete gc._phaseChanging; }, 0);
+      // New phase → jump the content back to the top (.container scrolls on
+      // desktop, the window on mobile) so players start at the top of the new view.
+      var container = document.querySelector('.container');
+      if (container) container.scrollTop = 0;
+      window.scrollTo(0, 0);
       var children = Array.from(gc.children);
       children.forEach(function(c) { c.style.animation = 'none'; });
       void gc.offsetHeight;
