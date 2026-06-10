@@ -442,6 +442,7 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
 		IsLobby:        game.Status == "lobby",
 		Lang:           lang,
+		AIAvailable:    hub.storyteller != nil || hub.narrator != nil,
 	}
 	var sidebarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
@@ -480,6 +481,7 @@ type SidebarData struct {
 	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 	IsLobby        bool  // true during lobby: hide history, show players as unknown role/team
 	Lang           string
+	AIAvailable    bool // true if a storyteller or narrator is configured: show the AI on/off switch
 }
 
 // selfFirstPlayers returns players sorted so the player with selfPlayerID is first.
@@ -745,6 +747,8 @@ func handleWSMessage(client *Client, message []byte) {
 		handleWSNightSurveySuspect(client, msg)
 	case "night_survey":
 		handleWSNightSurvey(client, msg)
+	case "toggle_ai":
+		client.hub.handleWSToggleAI(client)
 	case "new_game":
 		client.hub.handleWSNewGame(client)
 	default:

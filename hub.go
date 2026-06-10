@@ -107,6 +107,34 @@ func (h *Hub) logError(context string, err error) {
 	h.logf("ERROR [%s]: %v", context, err)
 }
 
+// aiEnabled reports whether AI features (storyteller + narrator) are switched on
+// for the given game. Defaults to true; players can toggle it from the sidebar.
+func (h *Hub) aiEnabled(gameID int64) bool {
+	var enabled bool
+	if err := h.db.Get(&enabled, "SELECT ai_enabled FROM game WHERE rowid = ?", gameID); err != nil {
+		h.logError("aiEnabled: query", err)
+		return true
+	}
+	return enabled
+}
+
+// handleWSToggleAI flips the game's AI on/off switch and rebroadcasts so every
+// player's sidebar reflects the new state.
+func (h *Hub) handleWSToggleAI(client *Client) {
+	game, err := h.getGame()
+	if err != nil {
+		h.logError("handleWSToggleAI: getGame", err)
+		return
+	}
+	if _, err := h.db.Exec("UPDATE game SET ai_enabled = NOT ai_enabled WHERE rowid = ?", game.ID); err != nil {
+		h.logError("handleWSToggleAI: update", err)
+		h.sendErrorToast(client.playerID, "Failed to toggle AI features")
+		return
+	}
+	h.logf("AI features toggled for game %d", game.ID)
+	h.triggerBroadcast()
+}
+
 // getPlayerLang returns the language preference for a player, defaulting to "en".
 func (h *Hub) getPlayerLang(playerID int64) string {
 	h.mu.RLock()
@@ -324,6 +352,7 @@ func (h *Hub) broadcastGameUpdate() {
 			LoverPartnerID: p.Lover,
 			IsLobby:        game.Status == "lobby",
 			Lang:           lang,
+			AIAvailable:    h.storyteller != nil || h.narrator != nil,
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 

@@ -172,6 +172,9 @@ func buildEndingUserPrompt(winner string, players []Player, history []string) st
 // maybeGenerateEnding generates a dramatic AI-written game summary and speaks it via TTS.
 // Falls back to a static maybeSpeakStory announcement if no storyteller is configured.
 func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
+	if !h.aiEnabled(gameID) {
+		return
+	}
 	if h.storyteller == nil {
 		switch winner {
 		case "villagers":
@@ -386,7 +389,7 @@ func loadEndingPrompt(cfg AppConfig) string {
 // Returns immediately; story tokens appear progressively via broadcastGameUpdate.
 // actorPlayerID must be a valid player rowid (typically the victim's ID).
 func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int64) {
-	if h.storyteller == nil {
+	if h.storyteller == nil || !h.aiEnabled(gameID) {
 		return
 	}
 
@@ -531,7 +534,7 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 
 // maybeSpeakStory asynchronously narrates text as audio streamed to all connected clients.
 func (h *Hub) maybeSpeakStory(gameID int64, text string) {
-	if h.narrator == nil {
+	if h.narrator == nil || !h.aiEnabled(gameID) {
 		return
 	}
 	go func() {

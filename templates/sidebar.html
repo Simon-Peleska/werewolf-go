@@ -24,6 +24,16 @@
       data-text-unmuted="{{T .Lang "narrator_unmuted"}}"
       data-text-muted="{{T .Lang "narrator_muted"}}"
       style="width:100%;margin-top:0.5rem">{{T .Lang "narrator_unmuted"}}</button>
+    {{if .AIAvailable}}
+    <form ws-send id="ai-toggle-form">
+      <input type="hidden" name="action" value="toggle_ai">
+      <label for="ai-toggle-switch">
+        <input type="checkbox" role="switch" id="ai-toggle-switch" name="ai_enabled"
+          {{if .Game.AIEnabled}}checked{{end}} onchange="this.form.requestSubmit()">
+        {{T .Lang "ai_features"}}
+      </label>
+    </form>
+    {{end}}
   </section>
 
   <hr id="sidebar-divider">

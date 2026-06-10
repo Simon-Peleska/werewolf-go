@@ -8,10 +8,11 @@ import (
 )
 
 type Game struct {
-	ID     int64  `db:"id"`
-	Name   string `db:"name"`
-	Status string `db:"status"` // lobby, night, day, finished
-	Round  int    `db:"round"`
+	ID        int64  `db:"id"`
+	Name      string `db:"name"`
+	Status    string `db:"status"` // lobby, night, day, finished
+	Round     int    `db:"round"`
+	AIEnabled bool   `db:"ai_enabled"` // true = AI storyteller + narrator active for this game (default on)
 }
 
 type GameRoleConfig struct {
@@ -363,6 +364,12 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
+	// Migration: add ai_enabled to game (idempotent) — lets players switch AI features on/off per game
+	if err := addColumnIfNotExists(db, "game", "ai_enabled", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+
 	// Migration: add description_key and description_args to game_action for i18n (idempotent)
 	if err := addColumnIfNotExists(db, "game_action", "description_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		logfn("initDB migration error: %v", err)
@@ -430,6 +437,6 @@ func getPlayerImage(db *sqlx.DB, imageID int64) ([]byte, string, error) {
 func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	db.Exec("INSERT OR IGNORE INTO game (name, status, round) VALUES (?, 'lobby', 0)", name)
 	var game Game
-	err := db.Get(&game, "SELECT rowid as id, name, status, round FROM game WHERE name = ?", name)
+	err := db.Get(&game, "SELECT rowid as id, name, status, round, ai_enabled FROM game WHERE name = ?", name)
 	return &game, err
 }

@@ -439,6 +439,112 @@ func TestAIStoryteller(t *testing.T) {
 	ctx.logger.Debug("=== TestAIStoryteller passed ===")
 }
 
+// TestAISwitchDisablesStoryteller verifies the sidebar AI switch suppresses
+// the storyteller for the whole game: with AI off, no story is generated even
+// when a storyteller is configured.
+func TestAISwitchDisablesStoryteller(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	ctx.logger.Debug("=== Testing AI switch suppresses the storyteller ===")
+
+	storyText := []string{"The village ", "wept ", "in silence."}
+	fakeOpenAi := createFakeOpenAiServer(t, storyText)
+	defer fakeOpenAi.Close()
+
+	hub := ctx.app.hubs["test-game"]
+	hub.storyteller = initStoryteller(AppConfig{
+		Storyteller:   true,
+		OpenAIModel:   "llm-1",
+		OpenAIAPIBase: fakeOpenAi.URL + "/v1",
+		OpenAIAPIKey:  "test-key",
+	})
+	defer func() { hub.storyteller = nil }()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	var players []*TestPlayer
+	for _, name := range []string{"SW1", "SW2", "SW3"} {
+		players = append(players, browser.signupPlayer(ctx.baseURL, name))
+	}
+
+	players[0].addRoleByID(RoleWerewolf)
+	players[0].addRoleByID(RoleVillager)
+	players[0].addRoleByID(RoleVillager)
+	players[0].startGame()
+
+	werewolves, villagers := findPlayersByRole(players)
+	if len(werewolves) == 0 || len(villagers) < 2 {
+		t.Skip("Role assignment didn't produce expected roles")
+	}
+	wolf := werewolves[0]
+	other := villagers[1]
+
+	// The switch starts on (AI enabled by default) for everyone.
+	if !wolf.aiSwitchChecked() {
+		t.Fatalf("AI switch should start checked for the wolf (AI on by default)")
+	}
+	if !other.aiSwitchChecked() {
+		t.Fatalf("AI switch should start checked for the other player too")
+	}
+
+	// The wolf flips it OFF — clickAndWait waits for the wolf's own WS rebroadcast.
+	wolf.clickAndWait("#ai-toggle-switch")
+	if wolf.aiSwitchChecked() {
+		t.Errorf("AI switch should be unchecked for the wolf after toggling off")
+	}
+	// End to end: the OTHER player's UI must show the switch flipped off too.
+	if err := other.waitUntilSwitchChecked(false); err != nil {
+		t.Errorf("AI switch did not propagate off to the other player: %v", err)
+	}
+	// The setting is game-wide and server-authoritative.
+	game, _ := hub.getGame()
+	if hub.aiEnabled(game.ID) {
+		t.Errorf("AI should be disabled in the game state after toggling off")
+	}
+
+	// Run a full night kill. With AI off, no story should ever be generated.
+	wolf.voteForPlayer(villagers[0].Name)
+	submitNightSurveysForAllPlayers(players)
+
+	// Wait until day begins so the (gated) story step has run.
+	if err := other.waitUntilCondition(
+		`() => { const l = document.querySelector('#topbar-phase-label'); return l && l.dataset.phase === 'day'; }`,
+		"day phase begins",
+	); err != nil {
+		t.Fatalf("day phase did not begin: %v", err)
+	}
+	if other.historyContains(strings.Join(storyText, "")) {
+		t.Errorf("AI story appeared even though AI features were switched off")
+	}
+
+	// Flip it back ON from the other player; the wolf's UI must reflect it.
+	other.clickAndWait("#ai-toggle-switch")
+	if !other.aiSwitchChecked() {
+		t.Errorf("AI switch should be checked again after toggling on")
+	}
+	if err := wolf.waitUntilSwitchChecked(true); err != nil {
+		t.Errorf("AI switch did not propagate on to the wolf: %v", err)
+	}
+
+	ctx.logger.Debug("=== TestAISwitchDisablesStoryteller passed ===")
+}
+
+// aiSwitchChecked reports the live checked state of the sidebar AI switch.
+func (tp *TestPlayer) aiSwitchChecked() bool {
+	return tp.p().MustElement("#ai-toggle-switch").MustProperty("checked").Bool()
+}
+
+// waitUntilSwitchChecked waits until this player's AI switch reaches the wanted state.
+func (tp *TestPlayer) waitUntilSwitchChecked(want bool) error {
+	return tp.waitUntilCondition(
+		fmt.Sprintf(`() => { const s = document.querySelector('#ai-toggle-switch'); return s && s.checked === %t; }`, want),
+		fmt.Sprintf("AI switch reaches checked=%t", want),
+	)
+}
+
 // ============================================================================
 // Night Survey Tests
 // ============================================================================

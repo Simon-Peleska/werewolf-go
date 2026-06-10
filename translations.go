@@ -30,6 +30,7 @@ var translations = map[string]map[string]string{
 
 		// Sidebar
 		"sidebar_players":  "Players",
+		"ai_features":      "AI features",
 		"narrator_unmuted": "🔊 Narrator",
 		"narrator_muted":   "🔇 Narrator",
 		"code_label":       "Code",
@@ -242,6 +243,7 @@ var translations = map[string]map[string]string{
 
 		// Sidebar
 		"sidebar_players":  "Spieler",
+		"ai_features":      "KI-Funktionen",
 		"narrator_unmuted": "🔊 Erzähler",
 		"narrator_muted":   "🔇 Erzähler",
 		"code_label":       "Code",
