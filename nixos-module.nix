@@ -57,6 +57,11 @@ in {
       default = null;
       description = "OpenAI API base URL (default: https://api.openai.com/v1).";
     };
+    storytellerLanguage = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Prompt language: \"en\" (default) or \"de\".";
+    };
     storytellerTemperature = lib.mkOption {
       type    = lib.types.nullOr lib.types.str;
       default = null;
@@ -113,9 +118,10 @@ in {
         DB = "file:/var/lib/werewolf/werewolf.db?cache=shared&_journal_mode=WAL";
       }
       // (if cfg.storyteller then { STORYTELLER = "true"; } else {})
-      // optionalEnv "OPENAI_MODEL"            cfg.openaiModel
-      // optionalEnv "OPENAI_API_BASE"         cfg.openaiApiBase
-      // optionalEnv "STORYTELLER_TEMPERATURE" cfg.storytellerTemperature
+      // optionalEnv "OPENAI_MODEL"              cfg.openaiModel
+      // optionalEnv "OPENAI_API_BASE"           cfg.openaiApiBase
+      // optionalEnv "STORYTELLER_LANGUAGE"      cfg.storytellerLanguage
+      // optionalEnv "STORYTELLER_TEMPERATURE"   cfg.storytellerTemperature
       // optionalEnv "NARRATOR_PROVIDER"       cfg.narratorProvider
       // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
       // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice
