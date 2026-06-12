@@ -37,8 +37,8 @@ func (h *Hub) checkWinConditions(game *Game) bool {
 	}
 	err := h.db.Get(&counts, `
 		SELECT
-			SUM(CASE WHEN r.team='werewolf' THEN 1 ELSE 0 END) as werewolf_count,
-			SUM(CASE WHEN r.team='villager' THEN 1 ELSE 0 END) as villager_count
+			COALESCE(SUM(CASE WHEN r.team='werewolf' THEN 1 ELSE 0 END), 0) as werewolf_count,
+			COALESCE(SUM(CASE WHEN r.team='villager' THEN 1 ELSE 0 END), 0) as villager_count
 		FROM game_player g
 		JOIN role r ON g.role_id = r.rowid
 		WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
