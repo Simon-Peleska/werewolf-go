@@ -401,6 +401,11 @@ body {
 }
 
 input, textarea, select { text-shadow: none; }
+button,
+[type=submit],
+[type=reset],
+[type=button],
+[role=button] { text-shadow: none; }
 
 /* All elements get smooth color/surface transitions on theme change.        */
 /* Elements with explicit transition rules override this for their own props. */
@@ -422,6 +427,7 @@ button,
     border-color     var(--pico-transition),
     color            var(--pico-transition),
     box-shadow       var(--pico-transition),
+    text-shadow      var(--pico-transition),
     opacity          var(--pico-transition);
 }
 /* ── hr ────────────────────────────────────────────────────────────────── */

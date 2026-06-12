@@ -21,14 +21,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Full seal: big enough for the 500px hero seals at ~1.2x and 280px cards at ~2x.
-FULL_SIZE=600
+# Full seal: 1024px covers 500px hero seals at ~2x (HiDPI) and 280px cards at ~3.5x.
+FULL_SIZE=1024
 FULL_Q=80
 # Placeholder: tiny + low quality; the frontend blurs it, so detail is wasted bytes.
 LQIP_SIZE=32
 LQIP_Q=40
-
-command -v cwebp >/dev/null || { echo "cwebp not found — run: nix shell nixpkgs#libwebp -c $0" >&2; exit 1; }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

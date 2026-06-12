@@ -129,6 +129,9 @@
             # AST-based code search and rewrite
             ast-grep
 
+            # Image encoding for gen_seals.sh (cwebp / dwebp)
+            libwebp
+
             # Bash completions for tools/*.sh and go-test-tui
             tools-completions
           ];
