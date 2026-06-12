@@ -100,14 +100,35 @@ func (n *elevenlabsNarrator) Speak(ctx context.Context, text string, onChunk fun
 }
 
 // streamPCM reads raw PCM bytes from body and calls onChunk for each chunk.
+// Chunks are always an even number of bytes so Int16Array on the frontend
+// never straddles a sample boundary and causes misalignment static.
 func streamPCM(body io.Reader, onChunk func([]byte)) error {
 	buf := make([]byte, 4096)
+	var leftover byte
+	hasLeftover := false
 	for {
 		n, err := body.Read(buf)
 		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			onChunk(chunk)
+			data := buf[:n]
+			if hasLeftover {
+				// Prepend the held-back byte from the previous read.
+				combined := make([]byte, 1+n)
+				combined[0] = leftover
+				copy(combined[1:], data)
+				data = combined
+				hasLeftover = false
+			}
+			if len(data)%2 != 0 {
+				// Hold back the trailing odd byte for the next chunk.
+				leftover = data[len(data)-1]
+				hasLeftover = true
+				data = data[:len(data)-1]
+			}
+			if len(data) > 0 {
+				chunk := make([]byte, len(data))
+				copy(chunk, data)
+				onChunk(chunk)
+			}
 		}
 		if err == io.EOF {
 			return nil
