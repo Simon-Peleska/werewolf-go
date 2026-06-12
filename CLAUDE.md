@@ -364,6 +364,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 | OpenAI model | `OPENAI_MODEL` | `openai_model` | `-openai-model` | — | Model name |
 | OpenAI API base | `OPENAI_API_BASE` | `openai_api_base` | `-openai-api-base` | — | Base URL (default: `https://api.openai.com/v1`) |
 | OpenAI API key | `OPENAI_API_KEY` | `openai_api_key` | `-openai-api-key` | — | API key |
+| Language | `STORYTELLER_LANGUAGE` | `storyteller_language` | `-storyteller-language` | `en` | Prompt language: `en` or `de` |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
 | System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides default) |
 | Ending prompt file | `STORYTELLER_ENDING_PROMPT_FILE` | `storyteller_ending_prompt_file` | `-storyteller-ending-prompt-file` | — | Path to file with ending prompt (overrides default `ending_prompt.md`) |
@@ -459,6 +460,10 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./README.md` | Project overview, game description, roles, build/run instructions, dev tools — **update if build steps, dependencies, or core game rules change** |
 | `./flake.nix` | Nix flake: binary build (`packages.default`), Docker image (`packages.docker`), dev shell — **update `vendorHash` after changing Go deps** |
 | `./originals/seals/` | High-resolution original seal images (*.orig.webp) — kept outside `static/` so they are NOT embedded in the binary |
+| `./prompt.md` | Default (English) AI storyteller system prompt |
+| `./prompt_de.md` | German AI storyteller system prompt |
+| `./ending_prompt.md` | Default (English) AI storyteller game-ending prompt |
+| `./ending_prompt_de.md` | German AI storyteller game-ending prompt |
 | `./sgconfig.yml` | ast-grep configuration (language globs, rule directories) |
 | `./rules/` | ast-grep lint rules for Go code |
 | `./tools/gen_seals.sh` | Re-encodes `originals/seals/` → `static/seals/<Name>.webp` (600px) + regenerates the blur-up placeholders `static/seal_lqip.json` and `static/bg_lqip.json`. Full background images are read-only here (hand-tuned — never re-encoded). Run after changing any seal/background. |

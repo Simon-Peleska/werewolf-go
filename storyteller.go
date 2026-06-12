@@ -20,8 +20,14 @@ import (
 //go:embed prompt.md
 var defaultSystemPrompt string
 
+//go:embed prompt_de.md
+var defaultSystemPromptDE string
+
 //go:embed ending_prompt.md
 var defaultEndingPrompt string
+
+//go:embed ending_prompt_de.md
+var defaultEndingPromptDE string
 
 // Storyteller generates a dramatic story after deaths in the game.
 // onChunk is called with each text chunk as it streams in.
@@ -262,9 +268,6 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 		}
 
 		endingPrompt := h.endingPrompt
-		if endingPrompt == "" {
-			endingPrompt = defaultEndingPrompt
-		}
 
 		// Use a copy of the storyteller with the ending prompt appended to the system prompt
 		storyteller := h.storyteller
@@ -345,6 +348,9 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	}
 
 	systemPrompt := defaultSystemPrompt
+	if cfg.StorytellerLanguage == "de" {
+		systemPrompt = defaultSystemPromptDE
+	}
 	if cfg.StorytellerSystemPromptFile != "" {
 		data, err := os.ReadFile(cfg.StorytellerSystemPromptFile)
 		if err != nil {
@@ -368,19 +374,22 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: model, systemPrompt: systemPrompt, temperature: temperature, hasTemp: hasTemp}
 }
 
-// loadEndingPrompt reads the ending prompt from a file if configured, otherwise returns "".
-// An empty return means the default embedded ending_prompt.md will be used at runtime.
+// loadEndingPrompt returns the ending prompt to use.
+// Priority: explicit file > language-specific default > English default.
 func loadEndingPrompt(cfg AppConfig) string {
-	if cfg.StorytellerEndingPromptFile == "" {
-		return ""
+	if cfg.StorytellerEndingPromptFile != "" {
+		data, err := os.ReadFile(cfg.StorytellerEndingPromptFile)
+		if err != nil {
+			log.Printf("Storyteller: failed to read ending prompt file %s: %v", cfg.StorytellerEndingPromptFile, err)
+		} else {
+			log.Printf("Storyteller: loaded ending prompt from %s (%d bytes)", cfg.StorytellerEndingPromptFile, len(data))
+			return string(data)
+		}
 	}
-	data, err := os.ReadFile(cfg.StorytellerEndingPromptFile)
-	if err != nil {
-		log.Printf("Storyteller: failed to read ending prompt file %s: %v", cfg.StorytellerEndingPromptFile, err)
-		return ""
+	if cfg.StorytellerLanguage == "de" {
+		return defaultEndingPromptDE
 	}
-	log.Printf("Storyteller: loaded ending prompt from %s (%d bytes)", cfg.StorytellerEndingPromptFile, len(data))
-	return string(data)
+	return defaultEndingPrompt
 }
 
 // ── Story generation ─────────────────────────────────────────────────────────

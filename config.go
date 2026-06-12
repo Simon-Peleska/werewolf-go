@@ -29,6 +29,7 @@ type AppConfig struct {
 	OpenAIModel                 string `json:"openai_model"`                   // model name
 	OpenAIAPIBase               string `json:"openai_api_base"`                // base URL (default: https://api.openai.com/v1)
 	OpenAIAPIKey                string `json:"openai_api_key"`                 // API key
+	StorytellerLanguage         string `json:"storyteller_language"`           // language for built-in prompts: "en" (default) or "de"
 	StorytellerTemperature      string `json:"storyteller_temperature"`        // float 0-2 as string (default 1.2)
 	StorytellerSystemPromptFile string `json:"storyteller_system_prompt_file"` // path to file with system prompt (overrides default)
 	StorytellerEndingPromptFile string `json:"storyteller_ending_prompt_file"` // path to file with ending prompt (overrides default)
@@ -114,6 +115,9 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("OPENAI_API_KEY"); v != "" {
 		cfg.OpenAIAPIKey = v
 	}
+	if v := envStr("STORYTELLER_LANGUAGE"); v != "" {
+		cfg.StorytellerLanguage = v
+	}
 	if v := envStr("STORYTELLER_TEMPERATURE"); v != "" {
 		cfg.StorytellerTemperature = v
 	}
@@ -186,6 +190,7 @@ func (cfg AppConfig) logConfig() {
 	log.Printf("  openai_model:                  %s", cfg.OpenAIModel)
 	log.Printf("  openai_api_base:               %s", cfg.OpenAIAPIBase)
 	log.Printf("  openai_api_key:                %s", censor(cfg.OpenAIAPIKey))
+	log.Printf("  storyteller_language:          %s", cfg.StorytellerLanguage)
 	log.Printf("  storyteller_temperature:       %s", cfg.StorytellerTemperature)
 	log.Printf("  storyteller_system_prompt_file: %s", cfg.StorytellerSystemPromptFile)
 	log.Printf("  storyteller_ending_prompt_file: %s", cfg.StorytellerEndingPromptFile)
@@ -223,6 +228,7 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str("openai_model", &cfg.OpenAIModel)
 	str("openai_api_base", &cfg.OpenAIAPIBase)
 	str("openai_api_key", &cfg.OpenAIAPIKey)
+	str("storyteller_language", &cfg.StorytellerLanguage)
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
 	str("storyteller_system_prompt_file", &cfg.StorytellerSystemPromptFile)
 	str("storyteller_ending_prompt_file", &cfg.StorytellerEndingPromptFile)
@@ -252,6 +258,7 @@ type flagValues struct {
 	openaiModel                 *string
 	openaiAPIBase               *string
 	openaiAPIKey                *string
+	storytellerLanguage         *string
 	storytellerTemperature      *string
 	storytellerSystemPromptFile *string
 	storytellerEndingPromptFile *string
@@ -281,6 +288,7 @@ func registerFlags() flagValues {
 		openaiModel:                 flag.String("openai-model", "", "OpenAI model name"),
 		openaiAPIBase:               flag.String("openai-api-base", "", "OpenAI API base URL (default: https://api.openai.com/v1)"),
 		openaiAPIKey:                flag.String("openai-api-key", "", "OpenAI API key"),
+		storytellerLanguage:         flag.String("storyteller-language", "", `language for built-in prompts: "en" (default) or "de"`),
 		storytellerTemperature:      flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
 		storytellerSystemPromptFile: flag.String("storyteller-system-prompt-file", "", "path to file with system prompt (overrides default)"),
 		storytellerEndingPromptFile: flag.String("storyteller-ending-prompt-file", "", "path to file with ending prompt (overrides default)"),
@@ -324,6 +332,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.OpenAIAPIBase = *fv.openaiAPIBase
 		case "openai-api-key":
 			cfg.OpenAIAPIKey = *fv.openaiAPIKey
+		case "storyteller-language":
+			cfg.StorytellerLanguage = *fv.storytellerLanguage
 		case "storyteller-temperature":
 			cfg.StorytellerTemperature = *fv.storytellerTemperature
 		case "storyteller-system-prompt-file":
