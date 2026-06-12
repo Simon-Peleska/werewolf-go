@@ -4,10 +4,12 @@ import "fmt"
 
 // FinishedData holds all data needed to render the finished game screen
 type FinishedData struct {
-	Winners []Player
-	Losers  []Player
-	Winner  string // "villagers", "werewolves", or "lovers"
-	Lang    string
+	Winners     []Player
+	Losers      []Player
+	WinnerCards []PlayerCardData // pre-built cards for the victors
+	LoserCards  []PlayerCardData // pre-built cards for the fallen
+	Winner      string           // "villagers", "werewolves", or "lovers"
+	Lang        string
 }
 
 // transitionToNight moves the game to the next night phase

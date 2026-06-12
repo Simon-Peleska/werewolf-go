@@ -53,8 +53,8 @@ h1, h2, h3, h4, h5, h6 {
 
   /* ─ Palette ─ */
   --c-bg:           #07080d;
-  --c-surface:      #0d1018;
-  --c-surface-2:    #141820;
+  --c-surface:      rgba(13, 16, 24, 0.6);
+  --c-surface-2:    rgba(20, 24, 32, 0.8);
   --c-border:       #2a3040;
   --c-amber:        #9db5cc;   /* moonlight silver-blue — main text */
   --c-amber-bright: #c5d8ea;   /* full moon highlight */
@@ -77,6 +77,8 @@ h1, h2, h3, h4, h5, h6 {
   --c-card-active-ring:      rgba(200, 104,  32, 0.25);
   --c-card-active-shadow:    rgba(0,   0,   0,  0.5);
   --c-count-text-shadow:     rgba(197, 216, 234, 0.45);
+  --c-text-shadow:           0 1px 4px color-mix(in srgb, var(--c-bark) 80%, transparent),
+                             0 0 10px color-mix(in srgb, var(--c-bark) 55%, transparent);
   --c-vote-selected-bg:      rgba(13,  16,  32,  0.8);
   --c-vote-selected-ring:    rgba(160,  40,  24, 0.25);
   --c-death-bg:              rgba(160,  40,  24, 0.07);
@@ -166,8 +168,8 @@ h1, h2, h3, h4, h5, h6 {
 
   /* ─ Palette ─ */
   --c-bg:           #f2ead6;   /* sunlit limestone */
-  --c-surface:      #e9dfc8;   /* warm stone */
-  --c-surface-2:    #dfd3b5;   /* shadowed stone */
+  --c-surface:      rgba(233, 223, 200, 0.4);   /* warm stone */
+  --c-surface-2:    rgba(223, 211, 181, 0.6);   /* shadowed stone */
   --c-border:       #c4a870;   /* worn mortar */
   --c-amber:        #2c1c08;   /* dark timber — main text */
   --c-amber-bright: #4a2e10;   /* lighter timber */
@@ -190,6 +192,8 @@ h1, h2, h3, h4, h5, h6 {
   --c-card-active-ring:      rgba(58, 122,  58, 0.35);
   --c-card-active-shadow:    rgba(0,   0,   0,  0.07);
   --c-count-text-shadow:     rgba(44,  28,   8, 0.25);
+  --c-text-shadow:           0 0 8px color-mix(in srgb, var(--c-bark) 90%, transparent),
+                             0 1px 3px color-mix(in srgb, var(--c-bark) 75%, transparent);
   --c-vote-selected-bg:      rgba(58, 122,  58, 0.12);
   --c-vote-selected-ring:    rgba(58, 122,  58, 0.35);
   --c-death-bg:              rgba(152,  48,  24, 0.07);
@@ -273,6 +277,46 @@ h1, h2, h3, h4, h5, h6 {
     0 0 0 0.0625rem              rgba(44, 28, 8, 0.015);
 }
 
+/* ── Frosted glass — backdrop blur on key surface elements ─────────────── */
+.sidebar,
+.history-bar,
+.topbar,
+article,
+dialog,
+.toast,
+.status-bar,
+.player-card,
+input,
+select,
+textarea,
+button,
+[type=submit],
+[type=reset],
+[type=button],
+[role=button]
+{
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  will-change: backdrop-filter, opacity;
+  transform: translateZ(0);
+}
+
+/* Pico sets opacity:0.5 on disabled buttons (via :where, specificity 0).
+   We use the same :where pattern — our stylesheet loads after pico.css so
+   we win the cascade at equal specificity.
+   Override: keep opacity:1, make the button's background semi-transparent
+   so the backdrop-filter blur is visible through it. Pico uses
+   --pico-background-color / --pico-border-color / --pico-color as CSS
+   vars which background-color:var(...) picks up, so overriding the vars
+   is cleaner than !important on the property. */
+:where(button, [type=submit], [type=reset], [type=button], [role=button])[disabled],
+:where(fieldset[disabled]) :is(button, [type=submit], [type=button], [type=reset], [role=button]) {
+  opacity: 1;
+  --pico-background-color: color-mix(in srgb, var(--pico-primary-background) 35%, transparent);
+  --pico-border-color:     color-mix(in srgb, var(--pico-primary-border)     35%, transparent);
+  --pico-color:            color-mix(in srgb, var(--pico-primary-inverse)     60%, transparent);
+}
+
 /* ── OOB-swap elements rendered inline in .container on page load ───────── */
 /* These divs are meant for HTMX OOB swaps; hide them until WS moves them.  */
 .container > #topbar-phase,
@@ -284,7 +328,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Firefox only — @-moz-document prevents Chrome from seeing scrollbar-width,
    which would override the webkit rules below and re-enable arrow buttons.  */
 @-moz-document url-prefix() {
-  * { scrollbar-width: thin; scrollbar-color: var(--c-border) transparent; }
+  * { scrollbar-width: thin; scrollbar-color: var(--c-border) transparent;  }
 }
 /* Chromium / Safari / Edge */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -310,7 +354,7 @@ html::before {
   inset: 0;
   z-index: 0;
   /* gradient overlay, full image, then the inlined blur-up placeholder behind it */
-  background-image: linear-gradient(rgba(7, 8, 13, 0.7), rgba(7, 8, 13, 0.7)),
+  background-image: linear-gradient(rgba(7, 8, 13, 0.4), rgba(7, 8, 13, 0.7)),
                     url('/static/backgrounds/background_night.webp'),
                     var(--bg-night-lqip, none);
   background-size: cover;
@@ -325,7 +369,7 @@ html::after {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: linear-gradient(rgba(242, 234, 214, 0.7), rgba(242, 234, 214, 0.7)),
+  background-image: linear-gradient(rgba(242, 234, 214, 0.2), rgba(242, 234, 214, 0.5)),
                     url('/static/backgrounds/background_day.webp'),
                     var(--bg-day-lqip, none);
   background-size: cover;
@@ -340,7 +384,7 @@ html::after {
 
 /* Lovers win — replace the after layer with the lovers background */
 :root[data-winner=lovers]::after {
-  background-image: linear-gradient(rgba(20, 8, 16, 0.5), rgba(20, 8, 16, 0.5)),
+  background-image: linear-gradient(rgba(20, 8, 16, 0.3), rgba(20, 8, 16, 0.3)),
                     url('/static/backgrounds/background_lovers.webp'),
                     var(--bg-lovers-lqip, none);
   opacity: 1;
@@ -353,7 +397,10 @@ body {
   position: relative;
   z-index: 1;
   background-color: transparent;
+  text-shadow: var(--c-text-shadow);
 }
+
+input, textarea, select { text-shadow: none; }
 
 /* All elements get smooth color/surface transitions on theme change.        */
 /* Elements with explicit transition rules override this for their own props. */
@@ -376,6 +423,10 @@ button,
     color            var(--pico-transition),
     box-shadow       var(--pico-transition),
     opacity          var(--pico-transition);
+}
+/* ── hr ────────────────────────────────────────────────────────────────── */
+hr {
+border-top: 1px solid var(--c-muted);
 }
 
 /* ── Seal utilities ────────────────────────────────────────────────────── */
@@ -440,26 +491,32 @@ button,
   to { opacity: 0; transform: translateY(-10px); }
 }
 
-/* Any newly inserted element anywhere inside game-content gets a quick
-   fade-up (e.g. vote list appearing, survey section, story text).
-   Existing morphed elements already ran this animation and stay put. */
-#game-content * {
-  animation: gc-enter 0.25s ease backwards;
+/* Apply gc-enter only to specific elements — never to a container that has
+   backdrop-filter descendants. An animated ancestor creates a GPU compositor
+   layer that confines backdrop-filter sampling to that subtree, breaking blur. */
+
+/* Glass surface direct child in lobby. */
+#game-content .status-bar {
+  animation: gc-enter 0.38s ease 0.04s backwards;
 }
 
-/* Direct children (the <section>) get the longer staggered animation on
-   phase transitions. Comes after * so it wins for direct children. */
-#game-content > * {
-  animation: gc-enter 0.38s ease backwards;
+/* Text, dividers, and form controls — leaf elements, safe to self-animate. */
+#game-content h2,
+#game-content h3,
+#game-content h4,
+#game-content p,
+#game-content li,
+#game-content hr,
+#game-content button,
+#game-content [type=submit],
+#game-content [type=reset],
+#game-content [type=button],
+#game-content [role=button],
+#game-content input:not([type=hidden]),
+#game-content select,
+#game-content textarea {
+  animation: gc-enter 0.25s ease backwards;
 }
-#game-content > *:nth-child(1)  { animation-delay: 0.04s; }
-#game-content > *:nth-child(2)  { animation-delay: 0.10s; }
-#game-content > *:nth-child(3)  { animation-delay: 0.16s; }
-#game-content > *:nth-child(4)  { animation-delay: 0.22s; }
-#game-content > *:nth-child(5)  { animation-delay: 0.28s; }
-#game-content > *:nth-child(6)  { animation-delay: 0.34s; }
-#game-content > *:nth-child(7)  { animation-delay: 0.40s; }
-#game-content > *:nth-child(8)  { animation-delay: 0.46s; }
 
 /* JS sets inline opacity/transform to 0 before the swap, then removes them
    so this transition fires and smoothly reveals the new content. */
@@ -705,5 +762,359 @@ button,
 /* Section titles */
 .win-section-title        { color: var(--c-amber); margin-bottom: 0.75rem; }
 .win-section-title-fallen { color: var(--c-muted); }
+
+
+/* ── Player card ─────────────────────────────────────────────────────────── */
+/* Server-rendered by templates/player_card.html. Both the expanded (.pc-exp)
+   and collapsed (.pc-col) layers are always present; player-card.js swaps the
+   pc-active/pc-inactive classes to toggle. The card lives in the light DOM
+   (no shadow root) so its backdrop-filter blur composites correctly. */
+
+card-list, .card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--pico-spacing);
+  margin: var(--pico-spacing) 0;
+  place-items: center;
+}
+/* Forms inside a card-list are invisible to the grid layout. */
+card-list > form, .card-list > form { display: contents; }
+@media (max-width: 480px) {
+  card-list, .card-list,
+  card-list.win-list, .card-list.win-list { grid-template-columns: 1fr; }
+}
+
+.player-card {
+  position: relative;
+  width: 100%;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 1rem;
+  cursor: default;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s,
+              border-radius 360ms ease-in-out, filter 0.15s ease,
+              background-color 0.4s ease;
+}
+.player-card::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: calc(1rem - 4px);
+  border: 1px solid var(--c-card-inner-glow);
+  pointer-events: none;
+  z-index: 2;
+}
+.player-card:hover {
+  box-shadow: 0 10px 32px var(--c-card-hover-shadow), 0 0 0 1px var(--c-card-hover-ring);
+}
+@media (hover: hover) {
+  .player-card:hover { transform: translateY(-4px); }
+}
+.player-card.team-villager { border-color: var(--c-card-team-villager); }
+.player-card.team-werewolf { border-color: var(--c-card-team-werewolf); }
+.player-card.pc-active {
+  border-color: var(--c-flame);
+  box-shadow: 0 0 0 1px var(--c-card-active-ring), 0 4px 16px var(--c-card-active-shadow);
+}
+.player-card.pc-selectable { cursor: pointer; }
+.player-card.pc-selected {
+  border-color: var(--c-flame);
+  box-shadow: 0 0 0 2px var(--c-card-active-ring), 0 0 28px var(--c-card-active-shadow);
+}
+.player-card.alive-false { opacity: 0.55; filter: grayscale(50%); }
+.player-card.pc-loser { opacity: 0.42; filter: grayscale(35%); }
+.player-card.pc-winner.team-villager {
+  box-shadow: 0 0 0 1px var(--c-card-hover-ring), 0 4px 16px var(--c-card-hover-shadow);
+}
+.player-card.pc-winner.team-werewolf {
+  box-shadow: 0 0 0 1px var(--c-vote-selected-ring), 0 4px 16px var(--c-card-hover-shadow);
+}
+.player-card.pc-lover {
+  border-color: var(--c-lover-border);
+  box-shadow: 0 0 0 1px var(--c-lover-ring), 0 4px 16px var(--c-lover-shadow);
+}
+.player-card.pc-doppelganger {
+  border-color: var(--c-doppelganger-border);
+  box-shadow: 0 0 0 1px var(--c-doppelganger-ring), 0 4px 16px var(--c-doppelganger-shadow);
+}
+.player-card.pc-collapsed { border-radius: 0.75rem; }
+.player-card.pc-collapsed::before { display: none; }
+
+/* .player-card: glass surface, self-animates with blur intact. Stagger delays
+   use higher specificity to override the base rule below. */
+#game-content .card-list .player-card {
+  animation: gc-enter 0.25s ease backwards;
+}
+#game-content .card-list .player-card:nth-child(1)  { animation-delay: 0.05s; }
+#game-content .card-list .player-card:nth-child(2)  { animation-delay: 0.12s; }
+#game-content .card-list .player-card:nth-child(3)  { animation-delay: 0.19s; }
+#game-content .card-list .player-card:nth-child(4)  { animation-delay: 0.26s; }
+#game-content .card-list .player-card:nth-child(5)  { animation-delay: 0.33s; }
+#game-content .card-list .player-card:nth-child(6)  { animation-delay: 0.40s; }
+#game-content .card-list .player-card:nth-child(7)  { animation-delay: 0.47s; }
+#game-content .card-list .player-card:nth-child(8)  { animation-delay: 0.54s; }
+#game-content .card-list .player-card:nth-child(9)  { animation-delay: 0.61s; }
+#game-content .card-list .player-card:nth-child(10) { animation-delay: 0.68s; }
+#game-content .card-list .player-card:nth-child(11) { animation-delay: 0.75s; }
+#game-content .card-list .player-card:nth-child(12) { animation-delay: 0.82s; }
+
+/* ── Layers — both always in DOM, one visible, one hidden ──────────────────── */
+.pc-layer {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  transition: opacity 360ms ease;
+}
+.pc-active {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+}
+.pc-inactive {
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+}
+
+.pc-exp {
+  flex-direction: column;
+  padding: var(--pico-spacing) calc(var(--pico-spacing) * 0.75) calc(var(--pico-spacing) * 0.6);
+}
+.pc-col {
+  flex-direction: row;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+}
+
+/* ── Seal wrap ─────────────────────────────────────────────────────────────── */
+.pc-seal-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto calc(var(--pico-spacing) * 0.6);
+  flex-shrink: 0;
+}
+.pc-seal {
+  width: 100%; height: 100%;
+  transition: filter 0.15s;
+  object-fit: contain; display: block;
+}
+.pc-seal.lqip {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.pc-seal.seal-loaded { background-image: none !important; }
+.pc-seal.pc-seal-profile {
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+  height: auto;
+  border-radius: 50%;
+}
+.player-card.team-villager .pc-seal {
+  filter: drop-shadow(0 0 4px var(--c-seal-ring)) drop-shadow(0 0 8px var(--c-seal-ring)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+}
+.player-card.team-villager:hover .pc-seal {
+  filter: drop-shadow(0 0 5px var(--c-seal-ring-hover)) drop-shadow(0 0 10px var(--c-seal-ring-hover)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
+}
+.player-card.team-werewolf .pc-seal {
+  filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-danger)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+}
+.player-card.team-werewolf:hover .pc-seal {
+  filter: drop-shadow(0 0 6px var(--c-danger)) drop-shadow(0 0 12px var(--c-danger)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
+}
+
+/* ── Count badge — top-left of seal wrap, expanded only ────────────────────── */
+.pc-exp .pc-count-wrap { position: absolute; top: 0; left: 0; }
+.pc-count-wrap.pc-zero { opacity: 0.3; }
+.pc-count {
+  font-family: "Metal Mania", var(--pico-font-family-emoji);
+  font-size: 1.6rem; color: var(--c-amber-bright);
+  line-height: 1; text-shadow: 0 0 10px var(--c-count-text-shadow);
+  pointer-events: none; z-index: 1; text-align: center; align-content: center;
+}
+.pc-count.pc-zero { color: var(--c-muted); text-shadow: none; }
+
+/* ── ± buttons, count badge, heart badge, doppelganger badge — circular overlays */
+.pc-btn-wrap, .pc-count-wrap, .pc-heart-wrap, .pc-doppelganger-wrap {
+  --bsz: calc(var(--pico-spacing) * 2.2);
+  position: absolute; bottom: 0;
+  width: var(--bsz); height: var(--bsz);
+  border-radius: 50%; overflow: hidden;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, border-color 0.1s;
+}
+.pc-btn-minus { left: 0; }
+.pc-btn-plus  { right: 0; }
+.pc-btn-wrap:hover { background: var(--c-bark); border-color: var(--c-flame); }
+.pc-btn-wrap:has(button:disabled) { opacity: 0.3; pointer-events: none; }
+/* .pc-btn: position:absolute fills the circular wrapper exactly;
+   display:flex centers the glyph without relying on line-height or font metrics.
+   Also cancels glass-surface compositor properties (transform/will-change/
+   backdrop-filter) inherited from the button rule — the circular overflow:hidden
+   clip breaks when those create a nested compositor layer inside .player-card. */
+.pc-btn {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; margin: 0; border: none; background: transparent;
+  color: var(--c-amber); font-size: 1.2rem; line-height: 1;
+  cursor: pointer; border-radius: 50%;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  will-change: auto; transform: none;
+}
+/* Draw ± as CSS shapes — avoids font-glyph metric offsets entirely. */
+.pc-btn-plus .pc-btn,
+.pc-btn-minus .pc-btn { font-size: 0; }
+.pc-btn-plus .pc-btn::before,
+.pc-btn-plus .pc-btn::after,
+.pc-btn-minus .pc-btn::before {
+  content: '';
+  position: absolute; inset: 0; margin: auto;
+  background: var(--c-amber); border-radius: 1px;
+}
+.pc-btn-plus .pc-btn::before,
+.pc-btn-minus .pc-btn::before { width: 10px; height: 2px; }
+.pc-btn-plus .pc-btn::after   { width: 2px;  height: 10px; }
+
+/* .pc-count is a <span> — line-height centering works fine without flex. */
+.pc-count {
+  flex: 1; line-height: var(--bsz); text-align: center;
+  color: var(--c-amber); font-size: 1.2rem; border-radius: 50%;
+}
+
+/* ── Text ──────────────────────────────────────────────────────────────────── */
+.pc-name {
+  font-family: "Metal Mania", var(--pico-font-family-emoji);
+  font-size: 1rem; color: var(--c-amber-bright);
+  text-align: center; margin: calc(var(--pico-spacing) * 0.3) 0 0; line-height: 1.2;
+  width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pc-role { font-size: 1rem; color: var(--c-amber); text-align: center; margin: 0.1em 0 0; }
+.pc-desc {
+  font-size: 1rem; color: var(--c-muted); text-align: center;
+  line-height: 1.35;
+  margin: calc(var(--pico-spacing) * 0.3) 0 calc(var(--pico-spacing) * 0.4);
+  flex: 1;
+  min-height: calc(1rem * 1.35 * 3);
+  display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.pc-desc-unknown {
+  font-size: 3.5rem; line-height: 1; display: flex;
+  align-items: center; justify-content: center;
+}
+.pc-footer {
+  display: flex; justify-content: center; align-items: center; flex-wrap: nowrap;
+  width: 100%; border-top: 1px solid var(--c-muted);
+  padding-top: calc(var(--pico-spacing) * 0.4); margin-top: auto;
+  overflow: hidden;
+}
+.pc-team, .pc-alive, .pc-dead {
+  font-size: 1rem;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+.pc-team { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+.pc-alive, .pc-dead { flex-shrink: 0; }
+.pc-footer .pc-role {
+  font-size: 1rem;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1;
+}
+.player-card.team-villager .pc-team,
+.player-card.team-villager .pc-footer .pc-role { color: var(--c-team-villager-label); }
+.player-card.team-werewolf .pc-team,
+.player-card.team-werewolf .pc-footer .pc-role { color: var(--c-team-werewolf-label); }
+.player-card.team-villager .pc-col .pc-role { color: var(--c-team-villager-label); }
+.player-card.team-werewolf .pc-col .pc-role { color: var(--c-team-werewolf-label); }
+
+/* ── Collapse toggle button — absolute top-right of pc-seal-wrap ───────────── */
+.pc-btn-collapse { top: 0; right: 0; }
+.pc-uncollapse {
+  background: var(--c-surface-2); border: 1px solid var(--c-border); color: var(--c-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  padding: 0; margin: 0; font-size: 1rem; line-height: 1; z-index: 2;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  width: 26px; height: 26px; border-radius: 50%;
+}
+.pc-toggle:hover { background: var(--c-bark); border-color: var(--c-flame); color: var(--c-amber); }
+
+/* ── Profile image upload overlay (own-card) ───────────────────────────────── */
+.pc-file-input { display: none; }
+.pc-upload-overlay {
+  position: absolute; inset: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45);
+  opacity: 0; transition: opacity 0.2s;
+  cursor: pointer; font-size: 1.8rem; z-index: 3;
+  pointer-events: none;
+}
+.player-card.pc-own .pc-seal-wrap:hover .pc-upload-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+.pc-col .pc-upload-overlay { font-size: 1.1rem; }
+
+/* ── Lover styling ─────────────────────────────────────────────────────────── */
+.pc-heart-wrap { right: 0; }
+.pc-heart {
+  flex: 1; text-align: center; align-content: center;
+  font-size: 1.1rem; pointer-events: none; color: var(--c-lover-heart);
+}
+.player-card.pc-lover .pc-heart-wrap {
+  background: var(--c-lover-badge-bg);
+  border-color: var(--c-lover-border);
+}
+.pc-col .pc-heart-wrap { position: static; --bsz: 28px; flex-shrink: 0; }
+
+/* ── Doppelganger styling ──────────────────────────────────────────────────── */
+.pc-doppelganger-wrap { left: 0; }
+.pc-doppelganger-icon {
+  flex: 1; text-align: center; align-content: center;
+  font-size: 1.1rem; pointer-events: none; color: var(--c-doppelganger-icon);
+}
+.player-card.pc-doppelganger .pc-doppelganger-wrap {
+  background: var(--c-doppelganger-badge-bg);
+  border-color: var(--c-doppelganger-border);
+}
+.pc-col .pc-doppelganger-wrap { position: static; --bsz: 28px; flex-shrink: 0; }
+
+/* ── Collapsed layer descendant overrides ──────────────────────────────────── */
+.pc-col .pc-seal-wrap {
+  height: 44px !important; width: 44px !important;
+  aspect-ratio: auto; margin: 0; flex-shrink: 0;
+}
+.pc-col .pc-seal { width: 44px !important; height: 44px !important; flex-shrink: 0; }
+
+.player-card.pc-own .pc-col .pc-btn-wrap,
+.pc-col .pc-count-wrap {
+  position: static; --bsz: 28px; flex-shrink: 0;
+}
+.pc-col .pc-count { font-size: 1.1rem; text-shadow: none; }
+
+.pc-col .pc-info {
+  flex: 1; min-width: 0;
+  font-size: 1rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin: 0;
+}
+.pc-col .pc-info .pc-name { color: var(--c-amber); }
+.pc-col .pc-info .pc-sep  { color: var(--c-muted); }
+.pc-col .pc-info .pc-role { color: var(--c-amber); }
+.player-card.team-villager .pc-col .pc-info .pc-role { color: var(--c-team-villager-label); }
+.player-card.team-werewolf .pc-col .pc-info .pc-role { color: var(--c-team-werewolf-label); }
+.pc-col .pc-desc { display: none; }
+.pc-col .pc-footer { width: auto; border-top: none; padding-top: 0; margin-top: 0; flex-shrink: 0; }
+.pc-col .pc-status { display: none; }
+
 
 

@@ -35,7 +35,7 @@ func (tp *TestPlayer) canSeeCupidUI() bool {
 // The card is identified by the boolean "lover" attribute set in the sidebar template.
 // Returns "" if no lover card is visible.
 func (tp *TestPlayer) getLoverInfo() string {
-	found, el, _ := tp.p().Has("#player-list player-card[lover]")
+	found, el, _ := tp.p().Has("#player-list .player-card[lover]")
 	if !found {
 		return ""
 	}
@@ -48,7 +48,7 @@ func (tp *TestPlayer) getLoverInfo() string {
 
 // cupidPickLover clicks the cupid card to pick a lover
 func (tp *TestPlayer) cupidPickLover(targetName string) {
-	tp.clickAndWait("[id^='cupid-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='cupid-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML(fmt.Sprintf("after cupid pick: %s", targetName))
 }
 
@@ -71,7 +71,7 @@ func (tp *TestPlayer) isCupidLinkButtonEnabled() bool {
 // getCupidSelectedNames returns the names of players currently shown as selected in the Cupid UI.
 func (tp *TestPlayer) getCupidSelectedNames() []string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll("[id^='cupid-form-'] player-card[selected]");
+		const cards = document.querySelectorAll("[id^='cupid-form-'] .player-card[selected]");
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
 	}`)
 	if err != nil {

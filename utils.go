@@ -618,6 +618,9 @@ func newTestContext(t *testing.T) *TestContext {
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
+		"roleSealName": func(name string) string {
+			return strings.ReplaceAll(name, " ", "_")
+		},
 		"roleIcon": func(name string) string {
 			return "/static/icons/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
@@ -795,18 +798,14 @@ func (tp *TestPlayer) uploadProfileViaUI(pngBytes []byte) {
 	}
 	tmpFile.Close()
 
-	// Get the file input rendered inside the own-card's shadow DOM.
+	// Get the file input rendered inside the own card (light DOM now).
 	card, err := tp.p().Element("#sidebar-role-card")
 	if err != nil {
 		tp.t.Fatalf("uploadProfileViaUI: finding card element: %v", err)
 	}
-	shadowRoot, err := card.ShadowRoot()
+	fileInput, err := card.Element(".pc-file-input")
 	if err != nil {
-		tp.t.Fatalf("uploadProfileViaUI: getting shadow root: %v", err)
-	}
-	fileInput, err := shadowRoot.Element("#pc-file-input")
-	if err != nil {
-		tp.t.Fatalf("uploadProfileViaUI: finding file input in shadow DOM: %v", err)
+		tp.t.Fatalf("uploadProfileViaUI: finding file input: %v", err)
 	}
 
 	// SetFiles sets the file list on the input via CDP.
@@ -816,10 +815,10 @@ func (tp *TestPlayer) uploadProfileViaUI(pngBytes []byte) {
 	}
 
 	// CDP's setFileInputFiles does not reliably fire 'change' on display:none
-	// inputs in shadow DOM. Dispatch it manually.
+	// inputs. Dispatch it manually.
 	_, err = tp.p().Eval(`() => {
 		const card = document.querySelector('#sidebar-role-card');
-		const input = card && card.shadowRoot && card.shadowRoot.querySelector('#pc-file-input');
+		const input = card && card.querySelector('.pc-file-input');
 		if (input) input.dispatchEvent(new Event('change', {bubbles: true}));
 	}`)
 	if err != nil {
@@ -922,7 +921,7 @@ func (tb *TestBrowser) signupPlayerInGame(baseURL, name, gameName string) *TestP
 	// before signupPlayerInGame returns — preventing startGame from running before all players
 	// are in game_player.
 	player.waitUntilCondition(`() => {
-		const cards = document.querySelectorAll('#player-list player-card');
+		const cards = document.querySelectorAll('#player-list .player-card');
 		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+name+`');
 	}`, "player "+name+" appears in lobby list")
 
@@ -1228,10 +1227,10 @@ func (tp *TestPlayer) getSecretCode() string {
 }
 
 // getPlayerList returns the player names in the sidebar player list, newline-separated.
-// player-card uses shadow DOM so text content is not accessible; we read attributes via JS.
+// .player-card uses shadow DOM so text content is not accessible; we read attributes via JS.
 func (tp *TestPlayer) getPlayerList() string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll('#player-list player-card');
+		const cards = document.querySelectorAll('#player-list .player-card');
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').join('\n');
 	}`)
 	if err != nil {
@@ -1244,10 +1243,10 @@ func (tp *TestPlayer) getPlayerList() string {
 	return list
 }
 
-// isShownAsWerewolf returns true if the player-card with the given data-player-id is
+// isShownAsWerewolf returns true if the .player-card with the given data-player-id is
 // rendered with team="werewolf" in the viewer's sidebar.
 func (tp *TestPlayer) isShownAsWerewolf(playerID string) bool {
-	found, _, _ := tp.p().Has("player-card[data-player-id='" + playerID + "'][team=werewolf]")
+	found, _, _ := tp.p().Has(".player-card[data-player-id='" + playerID + "'][team=werewolf]")
 	return found
 }
 
@@ -1268,12 +1267,12 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 		tp.logger.LogWebSocket("OUT", tp.Name, fmt.Sprintf(`{"action":"update_role","role_id":"%s","delta":"1"}`, roleID))
 	}
 	// Use JS click to avoid scrollIntoView → CSS transition → layout shift → click miss.
-	// The plus button is inside a shadow DOM, so we click via the host element's shadowRoot.
+	// The plus button lives in the expanded layer of the role card (light DOM).
 	tp.doWithWSWait(func() {
 		_, err := tp.p().Eval(`(roleID) => {
-			const host = document.querySelector('#role-' + roleID);
-			if (!host || !host.shadowRoot) throw new Error('role element or shadow root not found: ' + roleID);
-			const btn = host.shadowRoot.querySelector('.pc-btn-plus .pc-btn');
+			const card = document.querySelector('#role-' + roleID);
+			if (!card) throw new Error('role card not found: ' + roleID);
+			const btn = card.querySelector('.pc-btn-plus .pc-btn');
 			if (!btn) throw new Error('plus button not found for role: ' + roleID);
 			btn.click();
 		}`, roleID)
@@ -1286,15 +1285,12 @@ func (tp *TestPlayer) addRoleByID(roleID string) {
 
 // getRoleCountByID returns the count for a specific role by ID
 func (tp *TestPlayer) getRoleCountByID(roleID string) string {
-	host, err := tp.p().Element("#role-" + roleID)
+	card, err := tp.p().Element("#role-" + roleID)
 	if err != nil {
 		tp.t.Fatalf("[%s] getRoleCountByID: #role-%s not found: %v", tp.Name, roleID, err)
 	}
-	shadow, err := host.ShadowRoot()
-	if err != nil {
-		tp.t.Fatalf("[%s] getRoleCountByID: shadow root not found: %v", tp.Name, err)
-	}
-	el, err := shadow.Element(".pc-count")
+	// The expanded layer's count badge holds the canonical count.
+	el, err := card.Element(".pc-exp .pc-count")
 	if err != nil {
 		tp.t.Fatalf("[%s] getRoleCountByID: .pc-count not found: %v", tp.Name, err)
 	}
@@ -1402,7 +1398,7 @@ func (tb *TestBrowser) loginPlayerInGame(baseURL, name, secretCode, gameName str
 
 	// Wait until this player appears in the player list (WS registration confirmed).
 	player.waitUntilCondition(`() => {
-		const cards = document.querySelectorAll('#player-list player-card');
+		const cards = document.querySelectorAll('#player-list .player-card');
 		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+name+`');
 	}`, "player "+name+" appears in lobby list after login")
 

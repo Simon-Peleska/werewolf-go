@@ -32,7 +32,7 @@ func (tp *TestPlayer) canSeeMasonList() bool {
 
 // canSeeMasonInList checks if a specific player appears as a card in the mason list
 func (tp *TestPlayer) canSeeMasonInList(name string) bool {
-	found, _, err := tp.p().Has("#mason-card-list player-card[player-name='" + name + "']")
+	found, _, err := tp.p().Has("#mason-card-list .player-card[player-name='" + name + "']")
 	return err == nil && found
 }
 

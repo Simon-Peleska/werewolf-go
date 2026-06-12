@@ -30,7 +30,7 @@ func (tp *TestPlayer) guardProtectPlayer(targetName string) {
 		tp.logger.Debug("[%s] Guard selecting target: %s", tp.Name, targetName)
 	}
 	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
-	tp.clickAndWait("[id^='guard-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='guard-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after guard select of " + targetName)
 	// Click Protect button to commit
 	tp.clickAndWait("#guard-protect-button")
@@ -52,7 +52,7 @@ func (tp *TestPlayer) getGuardResult() string {
 
 // canSeeGuardButtons checks if the guard protection cards are visible
 func (tp *TestPlayer) canSeeGuardButtons() bool {
-	found, _, err := tp.p().Has("[id^='guard-select-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='guard-select-form-'] .player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see guard buttons: %v", tp.Name, canSee)
@@ -63,7 +63,7 @@ func (tp *TestPlayer) canSeeGuardButtons() bool {
 // getGuardButtonNames returns the names shown on guard protection cards
 func (tp *TestPlayer) getGuardButtonNames() []string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll("[id^='guard-select-form-'] player-card");
+		const cards = document.querySelectorAll("[id^='guard-select-form-'] .player-card");
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
 	}`)
 	if err != nil {

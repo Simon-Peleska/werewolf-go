@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -435,14 +436,16 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	// Build sidebar HTML inline so the page is fully rendered before WebSocket connects.
 	seerInvestigated := getSeerInvestigated(app.db, game.ID, playerID)
 	visiblePlayers := applyCardVisibility(player, selfFirstPlayers(players, playerID), seerInvestigated)
+	isLobby := game.Status == "lobby"
 	sidebarData := SidebarData{
 		Player:         &player,
 		Players:        visiblePlayers,
 		Game:           game,
 		LoverPartnerID: getLoverPartner(app.db, game.ID, playerID),
-		IsLobby:        game.Status == "lobby",
+		IsLobby:        isLobby,
 		Lang:           lang,
 		AIAvailable:    hub.storyteller != nil || hub.narrator != nil,
+		PlayerCards:    buildSidebarCards(visiblePlayers, &player, isLobby, lang),
 	}
 	var sidebarBuf bytes.Buffer
 	app.templates.ExecuteTemplate(&sidebarBuf, "sidebar.html", sidebarData)
@@ -481,7 +484,121 @@ type SidebarData struct {
 	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 	IsLobby        bool  // true during lobby: hide history, show players as unknown role/team
 	Lang           string
-	AIAvailable    bool // true if a storyteller or narrator is configured: show the AI on/off switch
+	AIAvailable    bool             // true if a storyteller or narrator is configured: show the AI on/off switch
+	PlayerCards    []PlayerCardData // pre-built cards for the player list
+}
+
+// buildSidebarCards builds the sidebar player-list cards from the (visibility-applied)
+// player list. The viewer's own card is expanded with an upload overlay; all others
+// start collapsed. During the lobby every card shows an unknown role/team.
+func buildSidebarCards(players []Player, viewer *Player, isLobby bool, lang string) []PlayerCardData {
+	cards := make([]PlayerCardData, 0, len(players))
+	for _, p := range players {
+		card := makePlayerCard(p, lang)
+		if isLobby {
+			card.RoleName = "Unknown"
+			card.RoleDesc = ""
+			card.Team = "unknown"
+			card.AliveSet = false
+		}
+		isSelf := p.PlayerID == viewer.PlayerID
+		if isSelf {
+			card.HTMLID = "sidebar-role-card"
+			card.OwnCard = true
+		} else {
+			card.Collapsed = true
+		}
+		if p.Lover == viewer.ID {
+			card.Lover = true
+		}
+		cards = append(cards, card)
+	}
+	return cards
+}
+
+// PlayerCardData is everything the "player-card" template needs to render one card.
+// Build it with makePlayerCard (player cards) or makeLobbyCard (lobby role cards),
+// then set the state fields (Selected, Selectable, Collapsed, ...) the caller needs.
+type PlayerCardData struct {
+	HTMLID       string // id attribute on the outer div ("" = no id)
+	PlayerDBID   int64  // data-player-id attribute (game_player.rowid); 0 = omit
+	PlayerUID    int64  // data-player-uid + form value (player.rowid); 0 = omit
+	PlayerName   string
+	RoleName     string
+	RoleDesc     string
+	Team         string // "villager", "werewolf", "unknown", ""
+	Alive        bool
+	AliveSet     bool // whether to render the alive/dead indicator
+	ProfileImage string
+	Active       bool
+	Selected     bool
+	Selectable   bool
+	Winner       bool
+	Loser        bool
+	Lover        bool
+	Doppelganger bool
+	ShowRoleSeal bool // force the role seal even if a profile image exists
+	OwnCard      bool // show the profile-image upload overlay
+	Collapsed    bool // start collapsed
+	Collapsible  bool // show the collapse/expand toggle button
+
+	VoteCount     int  // vote tally shown in the count badge (day/werewolf voting)
+	ShowVoteCount bool // render the vote-count badge
+
+	IsLobby          bool   // lobby role card: show the ± buttons + count
+	RoleID           string // lobby: role ID passed to wsSend
+	LobbyCount       int    // lobby: count for this role
+	LobbyAddDisabled bool   // lobby: disable the + button
+	LobbyRemDisabled bool   // lobby: disable the − button
+
+	Lang string
+}
+
+// makePlayerCard builds a base PlayerCardData from a Player. The caller sets the
+// remaining state fields (Selected, Selectable, ShowVoteCount, Collapsed, ...).
+func makePlayerCard(p Player, lang string) PlayerCardData {
+	pc := PlayerCardData{
+		PlayerDBID:   p.ID,
+		PlayerUID:    p.PlayerID,
+		PlayerName:   p.Name,
+		RoleName:     p.RoleName,
+		RoleDesc:     p.RoleDescription,
+		Team:         p.Team,
+		Alive:        p.IsAlive,
+		AliveSet:     true,
+		Doppelganger: p.IsDoppelganger,
+		Lang:         lang,
+	}
+	if p.ProfileImageID != nil {
+		pc.ProfileImage = fmt.Sprintf("/player-image/%d", *p.ProfileImageID)
+	}
+	return pc
+}
+
+// makeLobbyCard builds a lobby role card (with ± buttons) from a role config row.
+func makeLobbyCard(rc RoleConfigDisplay, totalRoles, playerCount int, lang string) PlayerCardData {
+	roleID := strconv.FormatInt(rc.Role.ID, 10)
+	return PlayerCardData{
+		HTMLID:           "role-" + roleID,
+		RoleName:         rc.Role.Name,
+		RoleDesc:         rc.Role.Description,
+		Team:             rc.Role.Team,
+		Active:           rc.Count > 0,
+		Collapsible:      true,
+		IsLobby:          true,
+		LobbyCount:       rc.Count,
+		RoleID:           roleID,
+		LobbyAddDisabled: playerCount > 0 && totalRoles >= playerCount,
+		LobbyRemDisabled: rc.Count == 0,
+		Lang:             lang,
+	}
+}
+
+// isViewerLover reports whether target is the viewer's lover (i.e. target's Lover
+// field points back at the viewer's game_player rowid). Matches the old template
+// check `eq $.Player.ID .Lover`.
+func isViewerLover(target, viewer Player) bool {
+	return target.Lover != 0 && target.Lover == viewer.ID
 }
 
 // selfFirstPlayers returns players sorted so the player with selfPlayerID is first.
@@ -796,12 +913,19 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			})
 		}
 
+		playerCount := len(players)
+		roleCards := make([]PlayerCardData, 0, len(roleConfigDisplay))
+		for _, rc := range roleConfigDisplay {
+			roleCards = append(roleCards, makeLobbyCard(rc, totalRoles, playerCount, lang))
+		}
+
 		data := LobbyData{
 			Players:     players,
 			RoleConfigs: roleConfigDisplay,
+			RoleCards:   roleCards,
 			TotalRoles:  totalRoles,
-			PlayerCount: len(players),
-			CanStart:    totalRoles > 0 && totalRoles == len(players),
+			PlayerCount: playerCount,
+			CanStart:    totalRoles > 0 && totalRoles == playerCount,
 			GameID:      game.ID,
 			GameStatus:  game.Status,
 			Lang:        lang,
@@ -874,6 +998,8 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 				data.SurveySelectedSuspect = &suspectPlayer
 			}
 		}
+
+		buildNightCards(&data, player, lang)
 
 		if err := tmpl.ExecuteTemplate(&buf, "night_content.html", data); err != nil {
 			h.logError("getGameComponent: ExecuteTemplate night_content", err)
@@ -1025,6 +1151,42 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 		db.Get(&playerActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ? AND actor_player_id = ?`,
 			game.ID, game.Round, ActionDayVote, playerID)
 
+		// Night-victim cards: forced role seal, start collapsed.
+		var nightVictimCards []PlayerCardData
+		for _, v := range nightVictims {
+			card := makePlayerCard(v, lang)
+			card.ShowRoleSeal = true
+			card.Collapsed = true
+			card.Lover = v.Lover != 0
+			nightVictimCards = append(nightVictimCards, card)
+		}
+
+		// Hunter revenge target cards: selectable, mark the pending selection.
+		var hunterTargetCards []PlayerCardData
+		for _, t := range hunterTargets {
+			card := makePlayerCard(t, lang)
+			card.Selectable = true
+			card.Lover = isViewerLover(t, player)
+			if hunterSelectedPlayer != nil && hunterSelectedPlayer.PlayerID == t.PlayerID {
+				card.Selected = true
+			}
+			hunterTargetCards = append(hunterTargetCards, card)
+		}
+
+		// Day vote target cards: selectable, with vote-count badge and pending selection.
+		var voteTargetCards []PlayerCardData
+		for _, t := range aliveTargets {
+			card := makePlayerCard(t, lang)
+			card.Selectable = true
+			card.ShowVoteCount = true
+			card.VoteCount = dayVoteCounts[t.PlayerID]
+			card.Lover = isViewerLover(t, player)
+			if currentVotePlayer != nil && currentVotePlayer.PlayerID == t.PlayerID {
+				card.Selected = true
+			}
+			voteTargetCards = append(voteTargetCards, card)
+		}
+
 		data := DayData{
 			Player:               &player,
 			AliveTargets:         aliveTargets,
@@ -1042,6 +1204,9 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			AllActed:             totalDayActed >= len(aliveTargets),
 			HasVoted:             playerActed > 0,
 			Lang:                 lang,
+			NightVictimCards:     nightVictimCards,
+			HunterTargetCards:    hunterTargetCards,
+			VoteTargetCards:      voteTargetCards,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "day_content.html", data); err != nil {
@@ -1087,11 +1252,28 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			}
 		}
 
+		winnerCards := make([]PlayerCardData, 0, len(winners))
+		for _, p := range winners {
+			card := makePlayerCard(p, lang)
+			card.Winner = true
+			card.Lover = p.Lover != 0
+			winnerCards = append(winnerCards, card)
+		}
+		loserCards := make([]PlayerCardData, 0, len(losers))
+		for _, p := range losers {
+			card := makePlayerCard(p, lang)
+			card.Loser = true
+			card.Lover = p.Lover != 0
+			loserCards = append(loserCards, card)
+		}
+
 		data := FinishedData{
-			Winners: winners,
-			Losers:  losers,
-			Winner:  winner,
-			Lang:    lang,
+			Winners:     winners,
+			Losers:      losers,
+			WinnerCards: winnerCards,
+			LoserCards:  loserCards,
+			Winner:      winner,
+			Lang:        lang,
 		}
 
 		if err := tmpl.ExecuteTemplate(&buf, "finished_content.html", data); err != nil {
@@ -1184,6 +1366,10 @@ func main() {
 		// roleSeal maps a role name to its webp seal path, e.g. "Wolf Cub" → "/static/seals/Wolf_Cub.webp"
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		},
+		// roleSealName converts a role name to its underscore-joined seal/LQIP key, e.g. "Wolf Cub" → "Wolf_Cub"
+		"roleSealName": func(name string) string {
+			return strings.ReplaceAll(name, " ", "_")
 		},
 		"T": T,
 	})

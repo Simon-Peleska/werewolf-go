@@ -387,7 +387,7 @@ func TestUnauthenticatedGameRedirectAndSignup(t *testing.T) {
 
 	// Player should appear in the lobby list.
 	if err := player.waitUntilCondition(`() => {
-		const cards = document.querySelectorAll('#player-list player-card');
+		const cards = document.querySelectorAll('#player-list .player-card');
 		return Array.from(cards).some(c => c.getAttribute('player-name') === '`+playerName+`');
 	}`, "player appears in lobby list"); err != nil {
 		t.Fatalf("Player not found in lobby list: %v", err)
@@ -669,7 +669,8 @@ func TestProfileImageUploadAndDisplay(t *testing.T) {
 	// Wait for the uploader's own card to receive the updated profile-image attribute.
 	if err := uploader.waitUntilCondition(`() => {
 		const card = document.querySelector('#sidebar-role-card');
-		return card && card.getAttribute('profile-image') !== '';
+		const v = card && card.getAttribute('profile-image');
+		return v !== null && v !== '';
 	}`, "uploader's own card has profile-image attribute"); err != nil {
 		t.Fatalf("uploader's card did not get profile-image: %v\n%s", err, uploader.dumpElement("#player-list"))
 	}
@@ -693,11 +694,11 @@ func TestProfileImageUploadAndDisplay(t *testing.T) {
 
 	// Watcher's sidebar also shows the profile-image on the uploader's card.
 	if err := watcher.waitUntilCondition(`() => {
-		const cards = document.querySelectorAll('#player-list player-card');
-		return Array.from(cards).some(c =>
-			c.getAttribute('player-name') === 'ImgUploader' &&
-			c.getAttribute('profile-image') !== ''
-		);
+		const cards = document.querySelectorAll('#player-list .player-card');
+		return Array.from(cards).some(function(c) {
+			const v = c.getAttribute('profile-image');
+			return c.getAttribute('player-name') === 'ImgUploader' && v !== null && v !== '';
+		});
 	}`, "watcher sees uploader's profile-image"); err != nil {
 		t.Fatalf("watcher did not see uploader's profile-image: %v\n%s", err, watcher.dumpElement("#player-list"))
 	}
@@ -719,11 +720,11 @@ func TestProfileImageUploadAndDisplay(t *testing.T) {
 		t.Error("image body is empty")
 	}
 
-	// Shadow DOM: the seal img src inside the uploader's own card points to the profile image.
+	// The seal img src inside the uploader's own card points to the profile image.
 	sealSrcResult, err := uploader.p().Eval(`() => {
 		const card = document.querySelector('#sidebar-role-card');
-		if (!card || !card.shadowRoot) return '';
-		return card.shadowRoot.querySelector('.pc-seal')?.src ?? '';
+		if (!card) return '';
+		return card.querySelector('.pc-seal')?.src ?? '';
 	}`)
 	if err != nil {
 		t.Fatalf("eval seal src: %v", err)
@@ -775,7 +776,8 @@ func TestProfileImageCanBeChanged(t *testing.T) {
 	player.uploadProfileViaUI(redPNG)
 	if err := player.waitUntilCondition(`() => {
 		const card = document.querySelector('#sidebar-role-card');
-		return card && card.getAttribute('profile-image') !== '';
+		const v = card && card.getAttribute('profile-image');
+		return v !== null && v !== '';
 	}`, "card has profile-image after first upload"); err != nil {
 		t.Fatalf("first upload: %v", err)
 	}

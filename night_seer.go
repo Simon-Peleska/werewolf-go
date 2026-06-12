@@ -10,7 +10,9 @@ import (
 // SeerNightData holds night-phase display data for the Seer.
 type SeerNightData struct {
 	HasInvestigated    bool
-	SeerSelectedPlayer *Player // confirmed target (after investigate) or pending selection
+	SeerSelectedPlayer *Player          // confirmed target (after investigate) or pending selection
+	SeerResultCard     *PlayerCardData  // card shown after investigating
+	SeerTargetCards    []PlayerCardData // selectable target cards
 }
 
 func buildSeerNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) SeerNightData {

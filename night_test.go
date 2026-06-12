@@ -100,7 +100,7 @@ func (tp *TestPlayer) submitNightSurveyWithAnswers(suspect *TestPlayer, theory, 
 	}
 
 	if suspect != nil {
-		tp.clickAndWait(fmt.Sprintf("#survey-suspects player-card[player-name='%s']", suspect.Name))
+		tp.clickAndWait(fmt.Sprintf("#survey-suspects .player-card[player-name='%s']", suspect.Name))
 	}
 	if theory != "" {
 		el, err := tp.p().Element("input[name='death_theory']")
@@ -151,7 +151,7 @@ func (tp *TestPlayer) canSeeWerewolfPack() bool {
 // getVoteButtons returns the names of players that can be voted for
 func (tp *TestPlayer) getVoteButtons() []string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll("[id^='vote-form-'] player-card");
+		const cards = document.querySelectorAll("[id^='vote-form-'] .player-card");
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
 	}`)
 	if err != nil {
@@ -173,7 +173,7 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Voting for: %s", tp.Name, targetName)
 	}
-	tp.clickAndWait("[id^='vote-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='vote-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after voting for " + targetName)
 	// Auto-press End Vote if the button is present and enabled (all werewolves have voted)
 	if has, endVoteBtn, _ := tp.p().Has("#werewolf-end-vote-btn:not([disabled])"); has {
@@ -191,7 +191,7 @@ func (tp *TestPlayer) voteForPlayer(targetName string) {
 // getWerewolfVoteCount returns the vote count shown on a werewolf vote card for a given player
 func (tp *TestPlayer) getWerewolfVoteCount(targetName string) string {
 	result, err := tp.p().Eval(`() => {
-		const card = document.querySelector("[id^='vote-form-'] player-card[player-name='` + targetName + `']");
+		const card = document.querySelector("[id^='vote-form-'] .player-card[player-name='` + targetName + `']");
 		return card ? (card.getAttribute('count') || '0') : '0';
 	}`)
 	if err != nil {
@@ -206,7 +206,7 @@ func (tp *TestPlayer) getWerewolfVoteCount(targetName string) string {
 
 // getCurrentVoteTarget returns who this player has currently voted for (from UI)
 func (tp *TestPlayer) getCurrentVoteTarget() string {
-	found, el, err := tp.p().Has("[id^='vote-form-'] player-card[selected]")
+	found, el, err := tp.p().Has("[id^='vote-form-'] .player-card[selected]")
 	if err != nil || !found {
 		return ""
 	}
@@ -221,13 +221,13 @@ func (tp *TestPlayer) getCurrentVoteTarget() string {
 }
 
 // getDeathAnnouncement returns the death announcement text if any.
-// Reads player-name and role-name from player-card attributes (shadow DOM is not traversable via MustText).
+// Reads player-name and role-name from .player-card attributes (shadow DOM is not traversable via MustText).
 func (tp *TestPlayer) getDeathAnnouncement() string {
 	found, el, err := tp.p().Has(".death-announcement")
 	if err != nil || !found {
 		return ""
 	}
-	cards, _ := el.Elements("player-card")
+	cards, _ := el.Elements(".player-card")
 	var parts []string
 	for _, card := range cards {
 		name, _ := card.Attribute("player-name")
@@ -727,7 +727,7 @@ func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
 	const theory = "it was definitely the baker"
 	const notes = "suspicious bread crumbs near the body"
 
-	villager1.clickAndWait(fmt.Sprintf("#survey-suspects player-card[player-name='%s']", wolf.Name))
+	villager1.clickAndWait(fmt.Sprintf("#survey-suspects .player-card[player-name='%s']", wolf.Name))
 
 	el, err := villager1.p().Element("input[name='death_theory']")
 	if err != nil {
@@ -761,7 +761,7 @@ func TestNightSurveyFormNotResetByOtherPlayerSubmit(t *testing.T) {
 
 	// All three fields must survive the morph triggered by villager2's submit.
 	// The suspect is stored server-side; check that the card still has [selected].
-	suspectRes, err := villager1.p().Eval(`() => document.querySelector("#survey-suspects player-card[selected]")?.dataset.playerId ?? ""`)
+	suspectRes, err := villager1.p().Eval(`() => document.querySelector("#survey-suspects .player-card[selected]")?.dataset.playerId ?? ""`)
 	if err != nil {
 		t.Fatalf("read suspect value: %v", err)
 	}

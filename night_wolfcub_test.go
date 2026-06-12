@@ -121,12 +121,12 @@ func TestWolfCubNightKillTriggersDoubleKill(t *testing.T) {
 	werewolf.voteForPlayer(victim1.Name)
 
 	// Second kill vote — click vote2 card
-	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] .player-card")
 	if !found2 {
 		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.clickAndWait("[id^='vote2-form-'] .player-card[player-name='" + victim2.Name + "']")
 	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")
@@ -238,12 +238,12 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 
 	werewolf.voteForPlayer(victim1.Name)
 
-	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] .player-card")
 	if !found2 {
 		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.clickAndWait("[id^='vote2-form-'] .player-card[player-name='" + victim2.Name + "']")
 	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")
@@ -264,7 +264,7 @@ func TestWitchSavesSecondVictimInWolfCubDoubleKill(t *testing.T) {
 		ctx.logger.LogDB("FAIL: witch cannot see victim2 heal card")
 		t.Fatalf("Witch should see heal card for victim2 '%s'", victim2.Name)
 	}
-	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + victim2.Name + "']")
+	witch.clickAndWait("[id^='witch-select-heal-form-'] .player-card[player-name='" + victim2.Name + "']")
 
 	// Witch clicks Done to apply and end night
 	witch.waitUntilCondition(`() => !!document.querySelector('#witch-apply-button')`, "witch apply button visible")
@@ -357,12 +357,12 @@ func TestWolfCubDayEliminationTriggersDoubleKill(t *testing.T) {
 
 	werewolf.voteForPlayer(victim1.Name)
 
-	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] player-card")
+	found2, _, _ := werewolf.p().Has("[id^='vote2-form-'] .player-card")
 	if !found2 {
 		ctx.logger.LogDB("FAIL: no vote2 cards found")
 		t.Fatal("Should see vote2 buttons for second victim")
 	}
-	werewolf.clickAndWait("[id^='vote2-form-'] player-card[player-name='" + victim2.Name + "']")
+	werewolf.clickAndWait("[id^='vote2-form-'] .player-card[player-name='" + victim2.Name + "']")
 	werewolf.waitUntilCondition(`() => !!document.querySelector('#werewolf-end-vote2-btn:not([disabled])')`, "end vote2 button enabled")
 	if has, _, _ := werewolf.p().Has("#werewolf-end-vote2-btn:not([disabled])"); has {
 		werewolf.clickAndWait("#werewolf-end-vote2-btn")

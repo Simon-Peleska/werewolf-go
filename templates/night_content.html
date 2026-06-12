@@ -59,27 +59,15 @@
         <section id="night-survey-section" class="night-survey">
             <h3>{{T .Lang "storyteller_asking"}}</h3>
             <label>{{T .Lang "who_is_werewolf"}}</label>
-            <card-list id="survey-suspects">
-            {{range .SurveyTargets}}
-            <form ws-send id="survey-suspect-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+            <div class="card-list" id="survey-suspects">
+            {{range .SurveyTargetCards}}
+            <form ws-send id="survey-suspect-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
                 <input type="hidden" name="action" value="night_survey_suspect">
-                <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                <player-card
-                    data-player-id="{{.ID}}"
-                    player-id="{{.PlayerID}}"
-                    player-name="{{.Name}}"
-                    role-name="{{.RoleName}}"
-                    role-desc="{{.RoleDescription}}"
-                    team="{{.Team}}"
-                    alive="true"
-                    profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-                    selectable
-                    {{if and $.SurveySelectedSuspect (eq $.SurveySelectedSuspect.PlayerID .PlayerID)}}selected{{end}}
-                    {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-                ></player-card>
+                <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+                {{template "player-card" .}}
             </form>
             {{end}}
-            </card-list>
+            </div>
             <form ws-send id="night-survey-form">
                 <input type="hidden" name="action" value="night_survey">
                 <label>{{T .Lang "how_victim_died"}}

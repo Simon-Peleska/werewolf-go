@@ -9,7 +9,7 @@ import (
 // witchCanSeeVictim waits for the witch's heal targets section to contain the named player.
 // The victim only appears after werewolves press End Vote, so we poll until it shows up.
 func (tp *TestPlayer) witchCanSeeVictim(name string) bool {
-	checkJS := fmt.Sprintf(`(() => !!document.querySelector("#witch-heal-targets player-card[player-name='%s']"))`, name)
+	checkJS := fmt.Sprintf(`(() => !!document.querySelector("#witch-heal-targets .player-card[player-name='%s']"))`, name)
 	err := tp.waitUntilCondition(checkJS, "witch victim "+name)
 	return err == nil
 }
@@ -79,10 +79,10 @@ func TestWitchHealSavesVictim(t *testing.T) {
 	}
 
 	// Select heal target by clicking the victim's card in the heal section
-	witch.clickAndWait("[id^='witch-select-heal-form-'] player-card[player-name='" + targetVillager.Name + "']")
+	witch.clickAndWait("[id^='witch-select-heal-form-'] .player-card[player-name='" + targetVillager.Name + "']")
 	// Wait for server to confirm selection (card gains `selected` attribute)
 	witch.waitUntilCondition(
-		`() => !!document.querySelector('[id^="witch-select-heal-form-"] player-card[selected]')`,
+		`() => !!document.querySelector('[id^="witch-select-heal-form-"] .player-card[selected]')`,
 		"witch heal target selected",
 	)
 
@@ -190,10 +190,10 @@ func TestWitchPoisonKillsPlayer(t *testing.T) {
 	}
 
 	// Select poison target by clicking the player's card in the poison section
-	witch.clickAndWait("[id^='witch-select-poison-form-'] player-card[player-name='" + otherVillager.Name + "']")
+	witch.clickAndWait("[id^='witch-select-poison-form-'] .player-card[player-name='" + otherVillager.Name + "']")
 	// Wait for server to confirm selection (card gains `selected` attribute)
 	witch.waitUntilCondition(
-		`() => !!document.querySelector('[id^="witch-select-poison-form-"] player-card[selected]')`,
+		`() => !!document.querySelector('[id^="witch-select-poison-form-"] .player-card[selected]')`,
 		"witch poison target selected",
 	)
 

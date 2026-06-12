@@ -151,6 +151,7 @@ var translations = map[string]map[string]string{
 		"role_name_Mason":        "Mason",
 		"role_name_Wolf Cub":     "Wolf Cub",
 		"role_name_Doppelganger": "Doppelganger",
+		"role_name_Joker":        "Joker",
 		"role_desc_Villager":     "No special powers, relies on deduction and discussion.",
 		"role_desc_Werewolf":     "Knows other werewolves, votes to kill villagers at night.",
 		"role_desc_Seer":         "Can investigate one player per night to learn if they are a werewolf.",
@@ -162,6 +163,7 @@ var translations = map[string]map[string]string{
 		"role_desc_Mason":        "Knows other masons, providing confirmed villagers.",
 		"role_desc_Wolf Cub":     "If eliminated, werewolves kill two victims the next night.",
 		"role_desc_Doppelganger": "On night 1, secretly copies another player's role and becomes that role for the rest of the game.",
+		"role_desc_Joker":        "A mystery role — assigned randomly at game start.",
 
 		// Finished screen
 		"victors":            "Victors",
@@ -363,6 +365,7 @@ var translations = map[string]map[string]string{
 		"role_name_Mason":        "Freimaurer",
 		"role_name_Wolf Cub":     "Wolfsjunges",
 		"role_name_Doppelganger": "Doppelgänger",
+		"role_name_Joker":        "Joker",
 		"role_desc_Villager":     "Keine besonderen Fähigkeiten, setzt auf Schlussfolgerungen und Diskussionen.",
 		"role_desc_Werewolf":     "Kennt andere Werwölfe, stimmt nachts ab, um Dorfbewohner zu töten.",
 		"role_desc_Seer":         "Kann jede Nacht einen Spieler untersuchen, um herauszufinden, ob er ein Werwolf ist.",
@@ -374,6 +377,7 @@ var translations = map[string]map[string]string{
 		"role_desc_Mason":        "Kennt andere Freimaurer und weiß damit, wer unschuldig ist.",
 		"role_desc_Wolf Cub":     "Wenn das Wolfsjunge eliminiert wird, töten die Werwölfe in der nächsten Nacht zwei Opfer.",
 		"role_desc_Doppelganger": "In der ersten Nacht kopiert er heimlich die Rolle eines anderen Spielers und übernimmt diese für den Rest des Spiels.",
+		"role_desc_Joker":        "Eine Geheimrolle – wird zufällig zu Spielbeginn vergeben.",
 
 		// Finished screen
 		"victors":            "Sieger",

@@ -31,7 +31,7 @@ func (tp *TestPlayer) doctorProtectPlayer(targetName string) {
 		tp.logger.Debug("[%s] Doctor selecting target: %s", tp.Name, targetName)
 	}
 	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
-	tp.clickAndWait("[id^='doctor-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='doctor-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after doctor select of " + targetName)
 	// Click Protect button to commit
 	tp.clickAndWait("#doctor-protect-button")
@@ -53,7 +53,7 @@ func (tp *TestPlayer) getDoctorResult() string {
 
 // canSeeDoctorButtons checks if the doctor protection cards are visible
 func (tp *TestPlayer) canSeeDoctorButtons() bool {
-	found, _, err := tp.p().Has("[id^='doctor-select-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='doctor-select-form-'] .player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see doctor buttons: %v", tp.Name, canSee)

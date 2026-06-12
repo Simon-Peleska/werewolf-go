@@ -18,8 +18,10 @@ type WitchNightData struct {
 	WitchHealedThisNight      bool
 	WitchHealedPlayer         *Player // who was healed this night
 	WitchKilledThisNight      bool
-	WitchKilledPlayer         *Player // who was poisoned this night
-	WitchDoneThisNight        bool    // true after witch_apply submitted
+	WitchKilledPlayer         *Player          // who was poisoned this night
+	WitchDoneThisNight        bool             // true after witch_apply submitted
+	WitchHealCards            []PlayerCardData // selectable heal target cards (wolf victims)
+	WitchPoisonCards          []PlayerCardData // selectable poison target cards
 }
 
 func buildWitchNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) WitchNightData {

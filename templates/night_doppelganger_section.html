@@ -3,19 +3,7 @@
 {{if .DoppelgangerHasCopied}}
 {{if .DoppelgangerCopiedPlayer}}
 <p id="doppelganger-result"><em>{{T .Lang "doppelganger_became" .DoppelgangerCopiedPlayer.RoleName .DoppelgangerCopiedPlayer.Name}}</em></p>
-<card-list>
-    <player-card
-        data-player-id="{{.DoppelgangerCopiedPlayer.ID}}"
-        player-id="{{.DoppelgangerCopiedPlayer.PlayerID}}"
-        player-name="{{.DoppelgangerCopiedPlayer.Name}}"
-        role-name="{{.DoppelgangerCopiedPlayer.RoleName}}"
-        role-desc="{{.DoppelgangerCopiedPlayer.RoleDescription}}"
-        team="{{.DoppelgangerCopiedPlayer.Team}}"
-        alive="true"
-        show-role-seal
-        profile-image="{{if .DoppelgangerCopiedPlayer.ProfileImageID}}/player-image/{{.DoppelgangerCopiedPlayer.ProfileImageID}}{{end}}"
-    ></player-card>
-</card-list>
+{{if .DoppelgangerResultCard}}<div class="card-list">{{template "player-card" .DoppelgangerResultCard}}</div>{{end}}
 {{end}}
 {{else}}
 {{if .DoppelgangerSelectedPlayer}}
@@ -23,27 +11,15 @@
 {{else}}
 <p>{{T .Lang "doppelganger_choose"}}</p>
 {{end}}
-<card-list>
-{{range .DoppelgangerTargets}}
-<form ws-send id="doppelganger-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+<div class="card-list">
+{{range .DoppelgangerTargetCards}}
+<form ws-send id="doppelganger-select-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
     <input type="hidden" name="action" value="doppelganger_select">
-    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-    <player-card
-        data-player-id="{{.ID}}"
-        player-id="{{.PlayerID}}"
-        player-name="{{.Name}}"
-        role-name="{{.RoleName}}"
-        role-desc="{{.RoleDescription}}"
-        team="{{.Team}}"
-        alive="true"
-        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-        selectable
-        {{if and $.DoppelgangerSelectedPlayer (eq $.DoppelgangerSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
-        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-    ></player-card>
+    <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+    {{template "player-card" .}}
 </form>
 {{end}}
-</card-list>
+</div>
 <form ws-send id="doppelganger-copy-form" class="vote-form">
     <input type="hidden" name="action" value="doppelganger_copy">
     <button type="submit" id="doppelganger-copy-button" {{if not .DoppelgangerSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_doppelganger_become"}}</button>

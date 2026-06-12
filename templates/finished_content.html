@@ -17,22 +17,9 @@
     {{if .Winners}}
     <section id="victors-section">
         <h3 class="win-section-title">{{T .Lang "victors"}}</h3>
-        <card-list class="win-list">
-            {{range .Winners}}
-            <player-card
-                data-player-id="{{.ID}}"
-                player-id="{{.PlayerID}}"
-                role-name="{{.RoleName}}"
-                role-desc="{{.RoleDescription}}"
-                player-name="{{.Name}}"
-                team="{{.Team}}"
-                alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-                {{if ne .Lover 0}}lover{{end}}
-                {{if .IsDoppelganger}}doppelganger{{end}}
-                winner></player-card>
-            {{end}}
-        </card-list>
+        <div class="card-list win-list">
+            {{range .WinnerCards}}{{template "player-card" .}}{{end}}
+        </div>
     </section>
     {{end}}
 
@@ -40,23 +27,9 @@
     {{if .Losers}}
     <section id="losers-section">
         <h3 class="win-section-title win-section-title-fallen">{{T .Lang "the_fallen"}}</h3>
-        <card-list class="win-list">
-            {{range .Losers}}
-            <player-card
-                data-player-id="{{.ID}}"
-                player-id="{{.PlayerID}}"
-                player-name="{{.Name}}"
-                role-name="{{.RoleName}}"
-                role-desc="{{.RoleDescription}}"
-                team="{{.Team}}"
-                alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-                {{if ne .Lover 0}}lover{{end}}
-                {{if .IsDoppelganger}}doppelganger{{end}}
-                loser
-                ></player-card>
-            {{end}}
-        </card-list>
+        <div class="card-list win-list">
+            {{range .LoserCards}}{{template "player-card" .}}{{end}}
+        </div>
     </section>
     {{end}}
 

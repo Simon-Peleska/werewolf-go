@@ -43,23 +43,9 @@
 
   <section id="sidebar-players-section">
     <h3>{{T .Lang "sidebar_players"}}</h3>
-    <card-list id="player-list">
-      {{range .Players}}
-      <player-card
-        {{if eq .PlayerID $.Player.PlayerID}}id="sidebar-role-card"{{end}}
-        data-player-id="{{.ID}}"
-        player-id="{{.PlayerID}}"
-        player-name="{{.Name}}"
-        role-name="{{if $.IsLobby}}Unknown{{else}}{{.RoleName}}{{end}}"
-        role-desc="{{if not $.IsLobby}}{{.RoleDescription}}{{end}}"
-        team="{{if $.IsLobby}}unknown{{else}}{{.Team}}{{end}}"
-        alive="{{if .IsAlive}}true{{else}}false{{end}}"
-        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-        {{if eq .PlayerID $.Player.PlayerID}}own-card{{end}}
-        {{if eq .Lover $.Player.ID}}lover{{end}}
-        {{if not (eq .PlayerID $.Player.PlayerID)}}collapsed{{end}}></player-card>
-      {{end}}
-    </card-list>
+    <div class="card-list" id="player-list">
+      {{range .PlayerCards}}{{template "player-card" .}}{{end}}
+    </div>
   </section>
 
   <hr>

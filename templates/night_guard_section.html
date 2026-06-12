@@ -4,27 +4,15 @@
 {{if .GuardProtectingPlayer}}<p id="guard-result"><em>{{T .Lang "guard_protecting" .GuardProtectingPlayer.Name}}</em></p>{{end}}
 {{else}}
 <p>{{T .Lang "guard_choose"}}</p>
-<card-list>
-{{range .GuardTargets}}
-<form ws-send id="guard-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+<div class="card-list">
+{{range .GuardTargetCards}}
+<form ws-send id="guard-select-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
     <input type="hidden" name="action" value="guard_select">
-    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-    <player-card
-        data-player-id="{{.ID}}"
-        player-id="{{.PlayerID}}"
-        player-name="{{.Name}}"
-        role-name="{{.RoleName}}"
-        role-desc="{{.RoleDescription}}"
-        team="{{.Team}}"
-        alive="true"
-        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-        selectable
-        {{if and $.GuardSelectedPlayer (eq $.GuardSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
-        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-    ></player-card>
+    <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+    {{template "player-card" .}}
 </form>
 {{end}}
-</card-list>
+</div>
 <form ws-send id="guard-protect-form" class="vote-form">
     <input type="hidden" name="action" value="guard_protect">
     <button type="submit" id="guard-protect-button" {{if not .GuardSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_guard_protect"}}</button>

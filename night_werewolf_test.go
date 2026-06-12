@@ -390,11 +390,11 @@ func TestCorrectPlayerGetsKilled(t *testing.T) {
 		t.Errorf("Death announcement should mention %s, got: %s", target.Name, announcement)
 	}
 
-	// Check that the target shows as dead in the sidebar (alive="false" on the player-card)
+	// Check that the target shows as dead in the sidebar (alive="false" on the .player-card)
 	if targetID == "" {
 		t.Error("Could not determine target player ID")
 	} else {
-		deadSelector := "player-card[data-player-id='" + targetID + "'][alive=false]"
+		deadSelector := ".player-card[data-player-id='" + targetID + "'][alive=false]"
 		has, _, _ := werewolves[0].p().Has(deadSelector)
 		if !has {
 			ctx.logger.LogDB("FAIL: victim not marked as dead in sidebar")

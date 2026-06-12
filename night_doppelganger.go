@@ -13,6 +13,8 @@ type DoppelgangerNightData struct {
 	DoppelgangerSelectedPlayer *Player
 	DoppelgangerCopiedPlayer   *Player
 	DoppelgangerTargets        []Player
+	DoppelgangerResultCard     *PlayerCardData  // card shown after copying
+	DoppelgangerTargetCards    []PlayerCardData // selectable target cards
 }
 
 func buildDoppelgangerNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string, aliveTargets []Player) DoppelgangerNightData {

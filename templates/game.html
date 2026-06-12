@@ -256,7 +256,7 @@
       display: none;
       align-items: center;
       gap: 1rem;
-      padding: var(--pico-spacing);
+      padding: 0 var(--pico-spacing) ;
       border-bottom: var(--pico-border-width) solid var(--pico-muted-border-color);
       background: var(--pico-card-background-color);
     }
@@ -279,29 +279,35 @@
 
     /* Mobile behavior */
     @media (max-width: 1280px) {
+      :root { --topbar-height: 5rem; }
 
+      /* Container fills full viewport height; topbar floats over it */
       .layout {
-        grid-template-areas:
-          "topbar topbar topbar"
-          "container container contaner";
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr;
+        grid-template-areas: "container container container";
       }
 
       .topbar {
-        grid-area: topbar;
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        height: var(--topbar-height);
+        z-index: 100;
         display: grid;
         grid-template-columns: min-content 1fr min-content;
         grid-template-rows: 1fr;
-        gap: val(--pico-spacing);
+        gap: var(--pico-spacing);
         align-items: center;
         grid-template-areas: ". . .";
       }
 
-      .nav-toggle-button {
-        display: flex;
+      /* Push container content below the fixed topbar */
+      .container {
+        padding-top: var(--topbar-height);
       }
 
-      .layout {
-        grid-template-columns: 1fr;
+      .nav-toggle-button {
+        display: flex;
       }
 
       .leftbound {

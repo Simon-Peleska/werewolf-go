@@ -5,22 +5,9 @@
         <div class="phase-action-panel" id="phase-action-panel">
                 {{if .NightVictims}}
                 <div class="death-announcement" id="death-announcement">
-                    <card-list>
-                    {{range .NightVictims}}
-                    <player-card
-                        data-player-id="{{.ID}}"
-                        player-id="{{.PlayerID}}"
-                        player-name="{{.Name}}"
-                        role-name="{{.RoleName}}"
-                        role-desc="{{.RoleDescription}}"
-                        team="{{.Team}}"
-                        alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                        {{if not (eq .Lover 0)}}lover{{end}}
-                        show-role-seal
-                        collapsed
-                    ></player-card>
-                    {{end}}
-                    </card-list>
+                    <div class="card-list">
+                    {{range .NightVictimCards}}{{template "player-card" .}}{{end}}
+                    </div>
                 </div>
                 {{else}}
                 <p id="no-death-message">{{T .Lang "no_deaths_last_night"}}</p>
@@ -41,27 +28,15 @@
                         <h3 style="margin:0">{{T .Lang "hunter_last_shot"}}</h3>
                     </div>
                     <p>{{T .Lang "hunter_eliminated_desc"}}</p>
-                    <card-list>
-                    {{range .HunterTargets}}
-                    <form ws-send id="hunter-select-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+                    <div class="card-list">
+                    {{range .HunterTargetCards}}
+                    <form ws-send id="hunter-select-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
                         <input type="hidden" name="action" value="hunter_select">
-                        <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-                        <player-card
-                            data-player-id="{{.ID}}"
-                            player-id="{{.PlayerID}}"
-                            player-name="{{.Name}}"
-                            role-name="{{.RoleName}}"
-                            role-desc="{{.RoleDescription}}"
-                            team="{{.Team}}"
-                            alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                            profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-                            {{if eq $.Player.ID .Lover}}lover{{end}}
-                            selectable
-                            {{if and $.HunterSelectedPlayer (eq $.HunterSelectedPlayer.PlayerID .PlayerID)}}selected{{end}}
-                        ></player-card>
+                        <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+                        {{template "player-card" .}}
                     </form>
                     {{end}}
-                    </card-list>
+                    </div>
                     <form ws-send id="hunter-shoot-form" class="vote-form">
                         <input type="hidden" name="action" value="hunter_revenge">
                         <button type="submit" id="hunter-shoot-button" {{if not .HunterSelectedPlayer}}disabled{{end}}>{{T .Lang "btn_hunter_shoot"}}</button>
@@ -80,28 +55,15 @@
         {{if .Player.IsAlive}}
         <p>{{T .Lang "choose_to_eliminate"}}</p>
 
-        <card-list>
-        {{range .AliveTargets}}
-        <form ws-send id="day-vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+        <div class="card-list">
+        {{range .VoteTargetCards}}
+        <form ws-send id="day-vote-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
             <input type="hidden" name="action" value="day_vote">
-            <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-            <player-card
-                data-player-id="{{.ID}}"
-                player-id="{{.PlayerID}}"
-                player-name="{{.Name}}"
-                role-name="{{.RoleName}}"
-                role-desc="{{.RoleDescription}}"
-                team="{{.Team}}"
-                alive="{{if .IsAlive}}true{{else}}false{{end}}"
-                profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-                {{if eq $.Player.ID .Lover}}lover{{end}}
-                selectable
-                count="{{index $.DayVoteCounts .PlayerID}}"
-                {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
-            ></player-card>
+            <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+            {{template "player-card" .}}
         </form>
         {{end}}
-        </card-list>
+        </div>
         <form ws-send id="day-pass-form" class="vote-form">
             <input type="hidden" name="action" value="day_pass">
             <button type="submit" id="day-pass-btn" class="vote-button{{if and .HasVoted (not .CurrentVotePlayer)}} selected{{end}}">{{T .Lang "btn_pass"}}</button>

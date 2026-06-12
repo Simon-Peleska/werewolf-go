@@ -31,7 +31,7 @@ func (tp *TestPlayer) seerInvestigatePlayer(targetName string) {
 		tp.logger.Debug("[%s] Seer selecting target: %s", tp.Name, targetName)
 	}
 	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
-	tp.clickAndWait("[id^='seer-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='seer-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after seer select of " + targetName)
 	// Click Investigate button to commit
 	tp.clickAndWait("#seer-investigate-button")
@@ -39,10 +39,10 @@ func (tp *TestPlayer) seerInvestigatePlayer(targetName string) {
 }
 
 // getSeerResult returns a description of the seer's investigation result for the current night.
-// Reads from player-card attributes (shadow DOM text is not accessible via MustText).
+// Reads from .player-card attributes (shadow DOM text is not accessible via MustText).
 // Returns a string like "Alice is a Werewolf" or "Bob is Not a Werewolf".
 func (tp *TestPlayer) getSeerResult() string {
-	found, el, err := tp.p().Has("player-card#seer-result")
+	found, el, err := tp.p().Has(".player-card#seer-result")
 	if err != nil || !found {
 		return ""
 	}
@@ -65,7 +65,7 @@ func (tp *TestPlayer) getSeerResult() string {
 
 // canSeeSeerButtons checks if the seer investigation cards are visible
 func (tp *TestPlayer) canSeeSeerButtons() bool {
-	found, _, err := tp.p().Has("[id^='seer-select-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='seer-select-form-'] .player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see seer buttons: %v", tp.Name, canSee)

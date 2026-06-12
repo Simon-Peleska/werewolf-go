@@ -12,6 +12,9 @@ type CupidNightData struct {
 	CupidLinked        bool
 	CupidChosen1Player *Player
 	CupidChosen2Player *Player
+	CupidTargetCards   []PlayerCardData // selectable target cards (chosen ones marked selected)
+	CupidChosen1Card   *PlayerCardData  // first linked lover (shown in the linked state)
+	CupidChosen2Card   *PlayerCardData  // second linked lover (shown in the linked state)
 }
 
 func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) CupidNightData {

@@ -38,7 +38,7 @@ func (tp *TestPlayer) hunterShootPlayer(targetName string) {
 		tp.logger.Debug("[%s] Hunter selecting target: %s", tp.Name, targetName)
 	}
 	// Select the player — use JS click to avoid scroll-triggered CSS transition layout shifts
-	tp.clickAndWait("[id^='hunter-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='hunter-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after hunter select of " + targetName)
 	// Click Shoot button to commit
 	tp.clickAndWait("#hunter-shoot-button")
@@ -47,7 +47,7 @@ func (tp *TestPlayer) hunterShootPlayer(targetName string) {
 
 // canSeeHunterButtons checks if the hunter revenge cards are visible
 func (tp *TestPlayer) canSeeHunterButtons() bool {
-	found, _, err := tp.p().Has("[id^='hunter-select-form-'] player-card")
+	found, _, err := tp.p().Has("[id^='hunter-select-form-'] .player-card")
 	canSee := err == nil && found
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Can see hunter buttons: %v", tp.Name, canSee)

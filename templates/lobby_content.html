@@ -21,21 +21,9 @@
         <h2>{{T .Lang "roles_heading"}}</h2>
         <p>{{T .Lang "roles_desc"}}</p>
 
-        <card-list>
-        {{range .RoleConfigs}}
-        <player-card id="role-{{.Role.ID}}"
-            role-name="{{.Role.Name}}"
-            role-desc="{{.Role.Description}}"
-            team="{{.Role.Team}}"
-            count="{{.Count}}"
-            role-id="{{.Role.ID}}"
-            total-roles="{{$.TotalRoles}}"
-            player-count="{{$.PlayerCount}}"
-            lobby
-            {{if gt .Count 0}}active{{end}}
-            collapsible></player-card>
-        {{end}}
-        </card-list>
+        <div class="card-list">
+        {{range .RoleCards}}{{template "player-card" .}}{{end}}
+        </div>
     </section>
 
     <hr>

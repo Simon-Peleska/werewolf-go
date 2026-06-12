@@ -25,6 +25,8 @@ type WerewolfNightData struct {
 	AllWolvesActed2    bool
 	WolfEndVoted       bool
 	WolfEndVoted2      bool
+	WolfTargetCards    []PlayerCardData // selectable kill-vote target cards (with vote counts)
+	WolfTargetCards2   []PlayerCardData // selectable second-kill (Wolf Cub) target cards
 }
 
 func buildWerewolfNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string, aliveTargets []Player) WerewolfNightData {

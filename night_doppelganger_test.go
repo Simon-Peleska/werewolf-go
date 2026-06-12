@@ -12,7 +12,7 @@ import (
 
 // seerSelectTarget clicks a target player in the Seer selection list.
 func (tp *TestPlayer) seerSelectTarget(targetName string) {
-	tp.clickAndWait("[id^='seer-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='seer-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML(fmt.Sprintf("after seer select: %s", targetName))
 }
 
@@ -75,7 +75,7 @@ func (tp *TestPlayer) isDoppelgangerCopyButtonEnabled() bool {
 
 // doppelgangerSelectTarget clicks a target player in the Doppelganger selection list.
 func (tp *TestPlayer) doppelgangerSelectTarget(targetName string) {
-	tp.clickAndWait("[id^='doppelganger-select-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='doppelganger-select-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML(fmt.Sprintf("after doppelganger select: %s", targetName))
 }
 

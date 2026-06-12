@@ -14,7 +14,7 @@ func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
 	if tp.logger != nil {
 		tp.logger.Debug("[%s] Day voting for: %s", tp.Name, targetName)
 	}
-	tp.clickAndWait("[id^='day-vote-form-'] player-card[player-name='" + targetName + "']")
+	tp.clickAndWait("[id^='day-vote-form-'] .player-card[player-name='" + targetName + "']")
 	tp.logHTML("after day voting for " + targetName)
 	// Auto-press End Vote if the button is present and enabled (all players have voted)
 	if has, endVoteBtn, _ := tp.p().Has("#day-end-vote-btn:not([disabled])"); has {
@@ -25,7 +25,7 @@ func (tp *TestPlayer) dayVoteForPlayer(targetName string) {
 // getDayVoteButtons returns the names of players that can be voted for during day
 func (tp *TestPlayer) getDayVoteButtons() []string {
 	result, err := tp.p().Eval(`() => {
-		const cards = document.querySelectorAll("[id^='day-vote-form-'] player-card");
+		const cards = document.querySelectorAll("[id^='day-vote-form-'] .player-card");
 		return Array.from(cards).map(c => c.getAttribute('player-name') || '').filter(Boolean).join('\n');
 	}`)
 	if err != nil {
@@ -44,7 +44,7 @@ func (tp *TestPlayer) getDayVoteButtons() []string {
 
 // getCurrentDayVoteTarget returns the player name currently selected in the day vote UI
 func (tp *TestPlayer) getCurrentDayVoteTarget() string {
-	found, el, err := tp.p().Has("[id^='day-vote-form-'] player-card[selected]")
+	found, el, err := tp.p().Has("[id^='day-vote-form-'] .player-card[selected]")
 	if err != nil || !found {
 		return ""
 	}
@@ -58,7 +58,7 @@ func (tp *TestPlayer) getCurrentDayVoteTarget() string {
 // getDayVoteCount returns the vote count shown on a day vote card for a given player
 func (tp *TestPlayer) getDayVoteCount(targetName string) string {
 	result, err := tp.p().Eval(`() => {
-		const card = document.querySelector("[id^='day-vote-form-'] player-card[player-name='` + targetName + `']");
+		const card = document.querySelector("[id^='day-vote-form-'] .player-card[player-name='` + targetName + `']");
 		return card ? (card.getAttribute('count') || '0') : '0';
 	}`)
 	if err != nil {

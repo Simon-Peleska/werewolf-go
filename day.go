@@ -39,6 +39,10 @@ type DayData struct {
 	AllActed             bool     // all alive players have voted or passed this round
 	HasVoted             bool     // this player has a day_vote record (including pass)
 	Lang                 string
+
+	NightVictimCards  []PlayerCardData // cards for players killed last night
+	HunterTargetCards []PlayerCardData // selectable cards for the Hunter's revenge shot
+	VoteTargetCards   []PlayerCardData // selectable cards for the day elimination vote
 }
 
 // applyHeartbreaks checks if any of the given killed players have a living lover.

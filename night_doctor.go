@@ -10,8 +10,10 @@ import (
 // DoctorNightData holds night-phase display data for the Doctor.
 type DoctorNightData struct {
 	HasProtected           bool
-	DoctorSelectedPlayer   *Player // pending selection (nil = none)
-	DoctorProtectingPlayer *Player // confirmed protection target this night
+	DoctorSelectedPlayer   *Player          // pending selection (nil = none)
+	DoctorProtectingPlayer *Player          // confirmed protection target this night
+	DoctorResultCard       *PlayerCardData  // card shown after protecting
+	DoctorTargetCards      []PlayerCardData // selectable target cards
 }
 
 func buildDoctorNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) DoctorNightData {

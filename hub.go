@@ -345,14 +345,17 @@ func (h *Hub) broadcastGameUpdate() {
 
 		seerInvestigated := getSeerInvestigated(h.db, game.ID, p.PlayerID)
 		visiblePlayers := applyCardVisibility(p, selfFirstPlayers(players, p.PlayerID), seerInvestigated)
+		viewer := p
+		isLobby := game.Status == "lobby"
 		data := SidebarData{
-			Player:         &p,
+			Player:         &viewer,
 			Players:        visiblePlayers,
 			Game:           game,
 			LoverPartnerID: p.Lover,
-			IsLobby:        game.Status == "lobby",
+			IsLobby:        isLobby,
 			Lang:           lang,
 			AIAvailable:    h.storyteller != nil || h.narrator != nil,
+			PlayerCards:    buildSidebarCards(visiblePlayers, &viewer, isLobby, lang),
 		}
 		h.templates.ExecuteTemplate(&combined, "sidebar.html", data)
 

@@ -1,0 +1,107 @@
+{{define "player-card"}}
+{{$d := .}}
+<div class="player-card{{if $d.Team}} team-{{$d.Team}}{{end}}{{if $d.Active}} pc-active{{end}}{{if $d.Selected}} pc-selected{{end}}{{if $d.Selectable}} pc-selectable{{end}}{{if and $d.AliveSet (not $d.Alive)}} alive-false{{end}}{{if $d.Winner}} pc-winner{{end}}{{if $d.Loser}} pc-loser{{end}}{{if $d.Lover}} pc-lover{{end}}{{if $d.Doppelganger}} pc-doppelganger{{end}}{{if $d.OwnCard}} pc-own{{end}}{{if $d.Collapsed}} pc-collapsed{{end}}"
+  {{if $d.HTMLID}}id="{{$d.HTMLID}}"{{end}}
+  {{if $d.PlayerDBID}}data-player-id="{{$d.PlayerDBID}}"{{end}}
+  {{if $d.PlayerUID}}data-player-uid="{{$d.PlayerUID}}"{{end}}
+  {{if $d.PlayerName}}player-name="{{$d.PlayerName}}"{{end}}
+  {{if $d.RoleName}}role-name="{{$d.RoleName}}"{{end}}
+  {{if $d.ProfileImage}}profile-image="{{$d.ProfileImage}}"{{end}}
+  {{if $d.Team}}team="{{$d.Team}}"{{end}}
+  {{if and $d.AliveSet (not $d.Alive)}}alive="false"{{else if $d.AliveSet}}alive="true"{{end}}
+  {{if $d.Selected}}selected{{end}}
+  {{if $d.Lover}}lover{{end}}
+  {{if $d.ShowVoteCount}}count="{{$d.VoteCount}}"{{else if $d.IsLobby}}count="{{$d.LobbyCount}}"{{end}}>
+
+  <!-- EXPANDED layer -->
+  <div class="pc-layer pc-exp{{if $d.Collapsed}} pc-inactive{{else}} pc-active{{end}}">
+    <div class="pc-seal-wrap">
+      {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
+      <img class="pc-seal pc-seal-profile" src="{{$d.ProfileImage}}"
+           onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
+           alt="{{$d.RoleName}}">
+      {{else}}
+      <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
+           src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
+           alt="{{$d.RoleName}}">
+      {{end}}
+      {{if $d.OwnCard}}<div class="pc-upload-overlay" onclick="event.stopPropagation();pcUploadClick(this)">📷</div>{{end}}
+      {{if $d.IsLobby}}
+        <div class="pc-btn-wrap pc-btn-minus">
+          <button class="pc-btn" {{if $d.LobbyRemDisabled}}disabled{{end}} onclick="window.wsSend({action:'update_role',role_id:'{{$d.RoleID}}',delta:'-1'})">−</button>
+        </div>
+        <div class="pc-count-wrap{{if eq $d.LobbyCount 0}} pc-zero{{end}}">
+          <span class="pc-count{{if eq $d.LobbyCount 0}} pc-zero{{end}}">{{$d.LobbyCount}}</span>
+        </div>
+        <div class="pc-btn-wrap pc-btn-plus">
+          <button class="pc-btn" {{if $d.LobbyAddDisabled}}disabled{{end}} onclick="window.wsSend({action:'update_role',role_id:'{{$d.RoleID}}',delta:'1'})">+</button>
+        </div>
+      {{else if $d.ShowVoteCount}}
+        <div class="pc-count-wrap{{if eq $d.VoteCount 0}} pc-zero{{end}}">
+          <span class="pc-count{{if eq $d.VoteCount 0}} pc-zero{{end}}">{{$d.VoteCount}}</span>
+        </div>
+      {{end}}
+      {{if $d.Lover}}<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>{{end}}
+      {{if $d.Doppelganger}}<div class="pc-doppelganger-wrap"><span class="pc-doppelganger-icon">🎭</span></div>{{end}}
+      {{if $d.Collapsible}}
+      <div class="pc-btn-wrap pc-btn-collapse">
+        <button class="pc-collapse pc-btn" onclick="event.stopPropagation();pcToggle(this)" aria-label="Collapse">▲</button>
+      </div>
+      {{end}}
+    </div>
+    {{if $d.PlayerName}}<span class="pc-name">{{$d.PlayerName}}</span>{{end}}
+    {{if eq $d.Team "unknown"}}<p class="pc-desc pc-desc-unknown">???</p>
+    {{else}}<p class="pc-desc">{{T $d.Lang (printf "role_desc_%s" $d.RoleName)}}</p>{{end}}
+    <div class="pc-footer">
+      {{if and $d.RoleName (ne $d.Team "unknown")}}
+        <span class="pc-role">{{T $d.Lang (printf "role_name_%s" $d.RoleName)}}</span>
+      {{else}}
+        <span class="pc-team">{{T $d.Lang "card_unknown"}}</span>
+      {{end}}
+      {{if and $d.AliveSet (not $d.Alive)}}
+        <span class="pc-dead">&nbsp;| {{T $d.Lang "card_dead"}}</span>
+      {{end}}
+    </div>
+  </div>
+
+  <!-- COLLAPSED layer -->
+  <div class="pc-layer pc-col{{if $d.Collapsed}} pc-active{{else}} pc-inactive{{end}}"
+       {{if not $d.Selectable}}onclick="pcToggle(this)"{{end}}>
+    <div class="pc-seal-wrap">
+      {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
+      <img class="pc-seal pc-seal-profile" src="{{$d.ProfileImage}}"
+           onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
+           alt="{{$d.RoleName}}">
+      {{else}}
+      <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
+           src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
+           alt="{{$d.RoleName}}">
+      {{end}}
+    </div>
+    <span class="pc-info">
+      {{if $d.PlayerName}}<span class="pc-name">{{$d.PlayerName}}</span>{{end}}
+      {{if and $d.RoleName (ne $d.Team "unknown")}}
+        {{if $d.PlayerName}}<span class="pc-sep"> | </span>{{end}}
+        <span class="pc-role">{{T $d.Lang (printf "role_name_%s" $d.RoleName)}}</span>
+      {{end}}
+      {{if and $d.AliveSet (not $d.Alive)}}
+        <span class="pc-sep"> | </span><span class="pc-dead">{{T $d.Lang "card_dead"}}</span>
+      {{end}}
+    </span>
+    {{if $d.IsLobby}}
+      <div class="pc-count-wrap{{if eq $d.LobbyCount 0}} pc-zero{{end}}">
+        <span class="pc-count{{if eq $d.LobbyCount 0}} pc-zero{{end}}">{{$d.LobbyCount}}</span>
+      </div>
+    {{else if $d.ShowVoteCount}}
+      <div class="pc-count-wrap{{if eq $d.VoteCount 0}} pc-zero{{end}}">
+        <span class="pc-count{{if eq $d.VoteCount 0}} pc-zero{{end}}">{{$d.VoteCount}}</span>
+      </div>
+    {{end}}
+    {{if $d.Lover}}<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>{{end}}
+    {{if $d.Doppelganger}}<div class="pc-doppelganger-wrap"><span class="pc-doppelganger-icon">🎭</span></div>{{end}}
+    <button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();pcToggle(this)" aria-label="Expand">▼</button>
+  </div>
+
+  {{if $d.OwnCard}}<input class="pc-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange="pcUploadChange(this)">{{end}}
+</div>
+{{end}}

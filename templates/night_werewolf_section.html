@@ -5,29 +5,15 @@
 <p id="wolf-end-voted-msg"><em>{{T .Lang "vote_locked_waiting"}}</em></p>
 {{else}}
 <p>{{T .Lang "werewolf_select_desc"}}</p>
-<card-list>
-{{range .AliveTargets}}
-{{$wvCount := index $.WerewolfVoteCounts .PlayerID}}
-<form ws-send id="vote-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+<div class="card-list">
+{{range .WolfTargetCards}}
+<form ws-send id="vote-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
     <input type="hidden" name="action" value="werewolf_vote">
-    <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-    <player-card
-        data-player-id="{{.ID}}"
-        player-id="{{.PlayerID}}"
-        player-name="{{.Name}}"
-        role-name="{{.RoleName}}"
-        role-desc="{{.RoleDescription}}"
-        team="{{.Team}}"
-        alive="true"
-        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-        selectable
-        count="{{$wvCount}}"
-        {{if and $.CurrentVotePlayer (eq $.CurrentVotePlayer.PlayerID .PlayerID)}}selected{{end}}
-        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-    ></player-card>
+    <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+    {{template "player-card" .}}
 </form>
 {{end}}
-</card-list>
+</div>
 <form ws-send id="werewolf-pass-form" class="vote-form">
     <input type="hidden" name="action" value="werewolf_pass">
     <button type="submit" id="werewolf-pass-btn" class="vote-button">{{T .Lang "btn_pass"}}</button>
@@ -58,27 +44,15 @@
     <p id="wolf-end-voted2-msg"><em>{{T .Lang "vote2_locked"}}</em></p>
     {{else}}
     <p>{{T .Lang "wolf_cub_desc"}}</p>
-    <card-list>
-    {{range .AliveTargets}}
-    <form ws-send id="vote2-form-{{.PlayerID}}" class="vote-form" onclick="this.requestSubmit()">
+    <div class="card-list">
+    {{range .WolfTargetCards2}}
+    <form ws-send id="vote2-form-{{.PlayerUID}}" class="vote-form" onclick="this.requestSubmit()">
         <input type="hidden" name="action" value="werewolf_vote_2">
-        <input type="hidden" name="target_player_id" value="{{.PlayerID}}">
-        <player-card
-            data-player-id="{{.ID}}"
-            player-id="{{.PlayerID}}"
-            player-name="{{.Name}}"
-            role-name="{{.RoleName}}"
-            role-desc="{{.RoleDescription}}"
-            team="{{.Team}}"
-            alive="true"
-            profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-            selectable
-            {{if and $.CurrentVotePlayer2 (eq $.CurrentVotePlayer2.PlayerID .PlayerID)}}selected{{end}}
-            {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-        ></player-card>
+        <input type="hidden" name="target_player_id" value="{{.PlayerUID}}">
+        {{template "player-card" .}}
     </form>
     {{end}}
-    </card-list>
+    </div>
     <form ws-send id="werewolf-pass2-form" class="vote-form">
         <input type="hidden" name="action" value="werewolf_pass_2">
         <button type="submit" id="werewolf-pass2-btn" class="vote-button">{{T .Lang "btn_pass"}}</button>

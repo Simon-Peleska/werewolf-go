@@ -10,9 +10,11 @@ import (
 // GuardNightData holds night-phase display data for the Guard.
 type GuardNightData struct {
 	GuardHasProtected     bool
-	GuardSelectedPlayer   *Player  // pending selection (nil = none)
-	GuardProtectingPlayer *Player  // confirmed protection target this night
-	GuardTargets          []Player // alive players excluding self and last night's target
+	GuardSelectedPlayer   *Player          // pending selection (nil = none)
+	GuardProtectingPlayer *Player          // confirmed protection target this night
+	GuardTargets          []Player         // alive players excluding self and last night's target
+	GuardResultCard       *PlayerCardData  // card shown after protecting
+	GuardTargetCards      []PlayerCardData // selectable target cards
 }
 
 func buildGuardNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string, aliveTargets []Player) GuardNightData {

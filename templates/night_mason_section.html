@@ -2,21 +2,9 @@
 <h3>{{T .Lang "mason_title"}}</h3>
 {{if .Masons}}
 <p>{{T .Lang "mason_know_these"}}</p>
-<card-list id="mason-card-list">
-    {{range .Masons}}
-    <player-card
-        data-player-id="{{.ID}}"
-        player-id="{{.PlayerID}}"
-        player-name="{{.Name}}"
-        role-name="{{.RoleName}}"
-        role-desc="{{.RoleDescription}}"
-        team="{{.Team}}"
-        alive="true"
-        profile-image="{{if .ProfileImageID}}/player-image/{{.ProfileImageID}}{{end}}"
-        {{if and (ne .Lover 0) (eq $.Player.PlayerID .Lover)}}lover{{end}}
-    ></player-card>
-    {{end}}
-</card-list>
+<div class="card-list" id="mason-card-list">
+    {{range .MasonCards}}{{template "player-card" .}}{{end}}
+</div>
 {{else}}
 <p><em>{{T .Lang "mason_alone"}}</em></p>
 {{end}}

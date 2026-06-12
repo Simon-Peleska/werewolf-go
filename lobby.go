@@ -11,6 +11,7 @@ import (
 type LobbyData struct {
 	Players     []Player
 	RoleConfigs []RoleConfigDisplay
+	RoleCards   []PlayerCardData // pre-built role cards (with ± buttons)
 	TotalRoles  int
 	PlayerCount int
 	CanStart    bool

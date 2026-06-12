@@ -23,6 +23,7 @@ type NightData struct {
 	AliveCount            int
 	SurveyTargets         []Player
 	SurveySelectedSuspect *Player
+	SurveyTargetCards     []PlayerCardData // selectable suspect cards for the night survey
 
 	WerewolfNightData
 	SeerNightData
@@ -32,6 +33,177 @@ type NightData struct {
 	MasonNightData
 	CupidNightData
 	DoppelgangerNightData
+}
+
+// isNightLover reports whether target is the viewer's lover in night templates,
+// which compare the target's Lover field (a player.rowid) to the viewer's PlayerID.
+func isNightLover(target, viewer Player) bool {
+	return target.Lover != 0 && target.Lover == viewer.PlayerID
+}
+
+// nightTargetCard builds a selectable night target card with the lover flag applied.
+func nightTargetCard(target, viewer Player, lang string) PlayerCardData {
+	card := makePlayerCard(target, lang)
+	card.Selectable = true
+	card.Lover = isNightLover(target, viewer)
+	return card
+}
+
+// nightResultCard builds a (non-selectable) result card shown after a role acts.
+// It forces the role seal when showRoleSeal is set (so the revealed role shows).
+func nightResultCard(target, viewer Player, lang string, showRoleSeal bool) PlayerCardData {
+	card := makePlayerCard(target, lang)
+	card.ShowRoleSeal = showRoleSeal
+	card.Lover = isNightLover(target, viewer)
+	return card
+}
+
+// buildNightCards fills the pre-built []PlayerCardData fields on NightData from the
+// already-populated *Player / []Player fields. Keeps the template free of card markup.
+func buildNightCards(data *NightData, viewer Player, lang string) {
+	// Survey suspects
+	for _, t := range data.SurveyTargets {
+		data.SurveyTargetCards = append(data.SurveyTargetCards, surveySuspectCard(t, viewer, lang, data.SurveySelectedSuspect))
+	}
+
+	// Werewolf kill votes
+	for _, t := range data.AliveTargets {
+		card := nightTargetCard(t, viewer, lang)
+		card.ShowVoteCount = true
+		card.VoteCount = data.WerewolfVoteCounts[t.PlayerID]
+		if data.CurrentVotePlayer != nil && data.CurrentVotePlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.WolfTargetCards = append(data.WolfTargetCards, card)
+	}
+	// Wolf Cub second kill votes
+	if data.WolfCubDoubleKill {
+		for _, t := range data.AliveTargets {
+			card := nightTargetCard(t, viewer, lang)
+			if data.CurrentVotePlayer2 != nil && data.CurrentVotePlayer2.PlayerID == t.PlayerID {
+				card.Selected = true
+			}
+			data.WolfTargetCards2 = append(data.WolfTargetCards2, card)
+		}
+	}
+
+	// Seer
+	if data.SeerResultPlayerCard() {
+		card := nightResultCard(*data.SeerSelectedPlayer, viewer, lang, true)
+		card.HTMLID = "seer-result"
+		data.SeerResultCard = &card
+	}
+	for _, t := range data.AliveTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if data.SeerSelectedPlayer != nil && data.SeerSelectedPlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.SeerTargetCards = append(data.SeerTargetCards, card)
+	}
+
+	// Doctor
+	if data.HasProtected && data.DoctorProtectingPlayer != nil {
+		card := nightResultCard(*data.DoctorProtectingPlayer, viewer, lang, false)
+		data.DoctorResultCard = &card
+	}
+	for _, t := range data.AliveTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if data.DoctorSelectedPlayer != nil && data.DoctorSelectedPlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.DoctorTargetCards = append(data.DoctorTargetCards, card)
+	}
+
+	// Guard
+	if data.GuardHasProtected && data.GuardProtectingPlayer != nil {
+		card := nightResultCard(*data.GuardProtectingPlayer, viewer, lang, false)
+		data.GuardResultCard = &card
+	}
+	for _, t := range data.GuardTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if data.GuardSelectedPlayer != nil && data.GuardSelectedPlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.GuardTargetCards = append(data.GuardTargetCards, card)
+	}
+
+	// Witch heal (wolf victim and optional Wolf Cub second victim)
+	if data.WitchVictimPlayer != nil {
+		card := nightTargetCard(*data.WitchVictimPlayer, viewer, lang)
+		if data.WitchSelectedHealPlayer != nil && data.WitchSelectedHealPlayer.PlayerID == data.WitchVictimPlayer.PlayerID {
+			card.Selected = true
+		}
+		data.WitchHealCards = append(data.WitchHealCards, card)
+	}
+	if data.WitchVictimPlayer2 != nil {
+		card := nightTargetCard(*data.WitchVictimPlayer2, viewer, lang)
+		if data.WitchSelectedHealPlayer != nil && data.WitchSelectedHealPlayer.PlayerID == data.WitchVictimPlayer2.PlayerID {
+			card.Selected = true
+		}
+		data.WitchHealCards = append(data.WitchHealCards, card)
+	}
+	// Witch poison
+	for _, t := range data.AliveTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if data.WitchSelectedPoisonPlayer != nil && data.WitchSelectedPoisonPlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.WitchPoisonCards = append(data.WitchPoisonCards, card)
+	}
+
+	// Mason fellow masons (not selectable)
+	for _, t := range data.Masons {
+		card := makePlayerCard(t, lang)
+		card.Lover = isNightLover(t, viewer)
+		data.MasonCards = append(data.MasonCards, card)
+	}
+
+	// Cupid targets (chosen ones marked selected)
+	for _, t := range data.AliveTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if (data.CupidChosen1Player != nil && data.CupidChosen1Player.PlayerID == t.PlayerID) ||
+			(data.CupidChosen2Player != nil && data.CupidChosen2Player.PlayerID == t.PlayerID) {
+			card.Selected = true
+		}
+		data.CupidTargetCards = append(data.CupidTargetCards, card)
+	}
+	// Cupid linked-state lover cards (display only, but kept selectable for styling)
+	if data.CupidChosen1Player != nil {
+		card := nightTargetCard(*data.CupidChosen1Player, viewer, lang)
+		data.CupidChosen1Card = &card
+	}
+	if data.CupidChosen2Player != nil {
+		card := nightTargetCard(*data.CupidChosen2Player, viewer, lang)
+		data.CupidChosen2Card = &card
+	}
+
+	// Doppelganger (result card never shows a lover heart, matching the old markup)
+	if data.DoppelgangerHasCopied && data.DoppelgangerCopiedPlayer != nil {
+		card := nightResultCard(*data.DoppelgangerCopiedPlayer, viewer, lang, true)
+		card.Lover = false
+		data.DoppelgangerResultCard = &card
+	}
+	for _, t := range data.DoppelgangerTargets {
+		card := nightTargetCard(t, viewer, lang)
+		if data.DoppelgangerSelectedPlayer != nil && data.DoppelgangerSelectedPlayer.PlayerID == t.PlayerID {
+			card.Selected = true
+		}
+		data.DoppelgangerTargetCards = append(data.DoppelgangerTargetCards, card)
+	}
+}
+
+// surveySuspectCard builds a selectable survey-suspect card (always shown alive).
+func surveySuspectCard(target, viewer Player, lang string, selected *Player) PlayerCardData {
+	card := nightTargetCard(target, viewer, lang)
+	if selected != nil && selected.PlayerID == target.PlayerID {
+		card.Selected = true
+	}
+	return card
+}
+
+// SeerResultPlayerCard reports whether the seer result card should be built.
+func (d *NightData) SeerResultPlayerCard() bool {
+	return d.HasInvestigated && d.SeerSelectedPlayer != nil
 }
 
 // playerDoneWithNightAction returns true if the given player has completed their night role action
