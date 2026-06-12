@@ -565,7 +565,7 @@ border-top: 1px solid var(--c-muted);
   gap: calc(var(--pico-spacing) * 2);
   text-align: center;
 }
-.night-sleeping p { margin: 0; color: var(--c-muted); }
+.night-sleeping p { margin: 0; }
 
 @keyframes night-pulse {
   0%, 100% { opacity: 0.6; transform: scale(1); }
