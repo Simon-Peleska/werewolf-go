@@ -30,7 +30,15 @@ var staticFS embed.FS
 
 var devMode bool
 
-var buildVersion = readBuildVersion()
+// buildVersion is set by -ldflags "-X main.buildVersion=..." at build time.
+// Must be a plain var with no initializer for -X to take effect.
+var buildVersion string
+
+func init() {
+	if buildVersion == "" {
+		buildVersion = readBuildVersion()
+	}
+}
 
 func readBuildVersion() string {
 	info, ok := debug.ReadBuildInfo()
