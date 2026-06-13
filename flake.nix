@@ -78,6 +78,9 @@
 
           # vendor/ directory is committed — set null to use it directly.
           vendorHash = null;
+
+          # Inject the git revision; self.shortRev is only set on a clean tree.
+          ldflags = [ "-X main.buildVersion=${self.shortRev or "dirty"}" ];
         };
 
         # `nix build .#docker && docker load < result`
