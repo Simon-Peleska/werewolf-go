@@ -830,7 +830,7 @@ card-list > form, .card-list > form { display: contents; }
   box-shadow: 0 0 0 2px var(--c-card-active-ring), 0 0 28px var(--c-card-active-shadow);
 }
 .player-card.alive-false { filter: grayscale(50%); }
-.player-card.pc-loser { opacity: 0.42; filter: grayscale(35%); }
+.player-card.pc-loser { filter: grayscale(80%); }
 .player-card.pc-winner.team-villager {
   box-shadow: 0 0 0 1px var(--c-card-hover-ring), 0 4px 16px var(--c-card-hover-shadow);
 }
