@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -28,6 +29,24 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 var devMode bool
+
+var buildVersion = readBuildVersion()
+
+func readBuildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" {
+			if len(s.Value) > 7 {
+				return s.Value[:7]
+			}
+			return s.Value
+		}
+	}
+	return "dev"
+}
 
 // App holds per-server resources to enable full isolation between tests.
 type App struct {
@@ -259,13 +278,14 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	lang := getLangFromCookie(r)
 	app.templates.ExecuteTemplate(w, "index.html", struct {
-		LoggedIn   bool
-		GameName   string
-		PlayerName string
-		StyleTag   template.HTML
-		ScriptTag  template.HTML
-		Lang       string
-	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag, lang})
+		LoggedIn     bool
+		GameName     string
+		PlayerName   string
+		StyleTag     template.HTML
+		ScriptTag    template.HTML
+		Lang         string
+		BuildVersion string
+	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag, lang, buildVersion})
 }
 
 func (app *App) handleSetLang(w http.ResponseWriter, r *http.Request) {
@@ -1443,6 +1463,7 @@ func main() {
 	}
 	http.Handle("/static/", staticHandler)
 
+	log.Printf("Build version: %s", buildVersion)
 	log.Printf("Server starting on %s", cfg.Addr)
 	log.Fatal(http.ListenAndServe(cfg.Addr, nil))
 }

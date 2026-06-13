@@ -171,8 +171,8 @@
     <main class="container">
         <div class="page-header">
             <div class="header-brand">
-                <img src="/static/seals/Werewolf.webp" alt="Werewolf" class="header-logo">
-                <h1>Werewolf</h1>
+                <img src="/static/seals/Werewolf.webp" alt="Werewolf" class="header-logo" title="{{.BuildVersion}}">
+                <h1 title="{{.BuildVersion}}">Werewolf</h1>
             </div>
             <div class="lang-switcher">
                 <a href="/set-lang?lang=en" {{if eq .Lang "en"}}class="active"{{end}}>EN</a>
