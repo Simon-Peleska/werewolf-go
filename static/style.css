@@ -829,7 +829,7 @@ card-list > form, .card-list > form { display: contents; }
   border-color: var(--c-flame);
   box-shadow: 0 0 0 2px var(--c-card-active-ring), 0 0 28px var(--c-card-active-shadow);
 }
-.player-card.alive-false { opacity: 0.55; filter: grayscale(50%); }
+.player-card.alive-false { filter: grayscale(50%); }
 .player-card.pc-loser { opacity: 0.42; filter: grayscale(35%); }
 .player-card.pc-winner.team-villager {
   box-shadow: 0 0 0 1px var(--c-card-hover-ring), 0 4px 16px var(--c-card-hover-shadow);
