@@ -45,9 +45,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Switch to the target workspace before launching so windows land there
+# Switch to the target workspace before launching so windows land there.
+# Hyprland 0.55+ uses the Lua dispatcher syntax (hl.dsp.*); the legacy
+# `dispatch workspace N` form is rejected on Lua-config builds.
 if command -v hyprctl &>/dev/null; then
-	hyprctl dispatch workspace "$WORKSPACE" >/dev/null 2>&1
+	hyprctl dispatch "hl.dsp.focus({ workspace = $WORKSPACE })" >/dev/null 2>&1
 else
 	echo "Warning: hyprctl not found — windows will open on the current workspace (--workspace ignored)"
 fi
