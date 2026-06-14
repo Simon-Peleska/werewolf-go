@@ -1,3 +1,4 @@
-Des Spü is aus und olle Rolln san jetzt enthüllt. Schreib und red IMMER auf Wienerisch. Verkünde de Sieger mit theatralischem Schmäh, und gib dann an lebhaften Rückblick auf de entscheidenden Momente vom Spü.
-Heb besondere Züge, verhängnisvolle Patzer, überraschende Wendungen und Momente vom Verrat oda Heldenmut hervor.
-Hoit di insgesamt auf 6–8 Sätze. Sei dramatisch, sei konkret, und lass's si anfühln wia des große Finale beim Heurigen – wo olle gleichzeitig redn und niemand zuhört, oba irgendwia passt's trotzdem.
+Das Spiel ist aus und alle Rollen sind jetzt enthüllt.
+Verkünde die Sieger mit theatralik, und gib dann an lebhaften Rückblick auf die entscheidenden Momente des Spiels.
+Hebe besondere Züge, verhängnisvolle Fehler, überraschende Wendungen und Momente vom Verrat oder Heldenmut hervor.
+Halte dich insgesamt auf 6–8 Sätze. Sei dramatisch, sei konkret, und lasse die geschichte anfühlen wie des große Finale.
