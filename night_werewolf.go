@@ -477,7 +477,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 	if html != "" {
 		h.broadcast <- []byte(html)
 	}
-	h.maybeSpeakStory(game.ID, "The werewolves have made their choice. Silence falls over the village.")
+	h.maybeSpeakStory(game.ID, T(h.storytellerLang, "tts_wolves_chosen"))
 	h.resolveWerewolfVotes(game)
 }
 

@@ -67,14 +67,15 @@ type Hub struct {
 	wg             sync.WaitGroup
 	clientWg       sync.WaitGroup // tracks active WebSocket reader goroutines
 
-	playerLang   map[int64]string // last-known language per player
-	db           *sqlx.DB
-	templates    *template.Template
-	storyteller  Storyteller
-	narrator     Narrator
-	endingPrompt string // custom ending prompt; empty = use default
-	gameName     string
-	logf         func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
+	playerLang      map[int64]string // last-known language per player
+	db              *sqlx.DB
+	templates       *template.Template
+	storyteller     Storyteller
+	narrator        Narrator
+	endingPrompt    string // custom ending prompt; empty = use default
+	storytellerLang string // storyteller language for fixed TTS announcements ("en"/"de"); empty = "en"
+	gameName        string
+	logf            func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
 }
 
 func newHub(db *sqlx.DB, templates *template.Template, storyteller Storyteller, narrator Narrator, gameName string) *Hub {

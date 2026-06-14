@@ -470,9 +470,9 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 			return
 		}
 		if len(nightKillNames) == 0 {
-			h.maybeSpeakStory(game.ID, "Dawn breaks. The village survived the night unscathed.")
+			h.maybeSpeakStory(game.ID, T(h.storytellerLang, "tts_dawn_unscathed"))
 		} else {
-			h.maybeSpeakStory(game.ID, fmt.Sprintf("Dawn breaks. The village awakens to find %s dead.", strings.Join(nightKillNames, " and ")))
+			h.maybeSpeakStory(game.ID, T(h.storytellerLang, "tts_dawn_deaths", strings.Join(nightKillNames, T(h.storytellerLang, "tts_join_and"))))
 		}
 		if len(nightKills) > 0 {
 			h.maybeGenerateStory(game.ID, game.Round, "night", nightKills[0])

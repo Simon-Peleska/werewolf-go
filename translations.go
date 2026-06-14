@@ -220,6 +220,17 @@ var translations = map[string]map[string]string{
 		"hist_day_pass":         "Day %s: %s passed",
 		"hist_eliminated":       "Day %s: %s (%s) was eliminated by the village",
 		"hist_hunter_shot":      "Day %s: Hunter %s shot %s",
+
+		// TTS narrator announcements (fixed game events)
+		"tts_game_begins":    "The game begins. Night falls upon the village.",
+		"tts_night_falls":    "Night %d falls upon the village.",
+		"tts_wolves_chosen":  "The werewolves have made their choice. Silence falls over the village.",
+		"tts_dawn_unscathed": "Dawn breaks. The village survived the night unscathed.",
+		"tts_dawn_deaths":    "Dawn breaks. The village awakens to find %s dead.",
+		"tts_join_and":       " and ",
+		"tts_villagers_win":  "The villagers have triumphed! All werewolves have been eliminated.",
+		"tts_werewolves_win": "The werewolves have won! They now rule the village.",
+		"tts_lovers_win":     "The lovers have won. They are the last ones standing, bound together forever.",
 	},
 	"de": {
 		"lang_name": "Deutsch",
@@ -434,6 +445,17 @@ var translations = map[string]map[string]string{
 		"hist_day_pass":         "Tag %s: %s hat gepasst",
 		"hist_eliminated":       "Tag %s: %s (%s) wurde vom Dorf eliminiert",
 		"hist_hunter_shot":      "Tag %s: Jäger %s erschoss %s",
+
+		// TTS narrator announcements (fixed game events)
+		"tts_game_begins":    "Das Spiel beginnt. Die Nacht legt sich über das Dorf.",
+		"tts_night_falls":    "Nacht %d legt sich über das Dorf.",
+		"tts_wolves_chosen":  "Die Werwölfe haben ihre Wahl getroffen. Stille legt sich über das Dorf.",
+		"tts_dawn_unscathed": "Der Morgen graut. Das Dorf hat die Nacht unversehrt überstanden.",
+		"tts_dawn_deaths":    "Der Morgen graut. Das Dorf erwacht und findet %s tot vor.",
+		"tts_join_and":       " und ",
+		"tts_villagers_win":  "Die Dorfbewohner haben triumphiert! Alle Werwölfe wurden ausgelöscht.",
+		"tts_werewolves_win": "Die Werwölfe haben gewonnen! Sie beherrschen nun das Dorf.",
+		"tts_lovers_win":     "Die Liebenden haben gewonnen. Sie sind die Letzten, für immer miteinander verbunden.",
 	},
 }
 

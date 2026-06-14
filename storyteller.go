@@ -184,11 +184,11 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 	if h.storyteller == nil {
 		switch winner {
 		case "villagers":
-			h.maybeSpeakStory(gameID, "The villagers have triumphed! All werewolves have been eliminated.")
+			h.maybeSpeakStory(gameID, T(h.storytellerLang, "tts_villagers_win"))
 		case "werewolves":
-			h.maybeSpeakStory(gameID, "The werewolves have won! They now rule the village.")
+			h.maybeSpeakStory(gameID, T(h.storytellerLang, "tts_werewolves_win"))
 		case "lovers":
-			h.maybeSpeakStory(gameID, "The lovers have won. They are the last ones standing, bound together forever.")
+			h.maybeSpeakStory(gameID, T(h.storytellerLang, "tts_lovers_win"))
 		}
 		return
 	}
