@@ -364,9 +364,8 @@ Bool env vars accept `1`, `true`, or `yes`.
 | OpenAI model | `OPENAI_MODEL` | `openai_model` | `-openai-model` | — | Model name |
 | OpenAI API base | `OPENAI_API_BASE` | `openai_api_base` | `-openai-api-base` | — | Base URL (default: `https://api.openai.com/v1`) |
 | OpenAI API key | `OPENAI_API_KEY` | `openai_api_key` | `-openai-api-key` | — | API key |
+| Language | `STORYTELLER_LANGUAGE` | `storyteller_language` | `-storyteller-language` | `en` | Prompt language: `en` or `de` |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
-| System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides default) |
-| Ending prompt file | `STORYTELLER_ENDING_PROMPT_FILE` | `storyteller_ending_prompt_file` | `-storyteller-ending-prompt-file` | — | Path to file with ending prompt (overrides default `ending_prompt.md`) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
@@ -385,6 +384,7 @@ The `tools/` directory contains bash scripts for common development tasks. These
 | `/run-server` | `./tools/run_server.sh` | Start the dev server with auto-cleanup |
 | `/run-tests` | `./tools/run_tests.sh` | Run tests with extensive logging options |
 | `/start-chromium` | `./tools/start_chromium.sh` | Open multiple Chromium instances for manual testing |
+| `/gen-seals` | `./tools/gen_seals.sh` | Re-encode seal images from originals + regenerate blur-up placeholders |
 
 Use `--help` with any script for full usage details.
 
@@ -460,12 +460,16 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./originals/seals/` | High-resolution original seal images (*.orig.webp) — kept outside `static/` so they are NOT embedded in the binary |
 | `./sgconfig.yml` | ast-grep configuration (language globs, rule directories) |
 | `./rules/` | ast-grep lint rules for Go code |
+| `./tools/gen_seals.sh` | Re-encodes `originals/seals/` → `static/seals/<Name>.webp` (600px) + regenerates the blur-up placeholders `static/seal_lqip.json` and `static/bg_lqip.json`. Full background images are read-only here (hand-tuned — never re-encoded). Run after changing any seal/background. |
+| `./static/seal_lqip.json` | Generated map of seal name → tiny base64 WebP data URI (blur-up placeholder shown until the full seal loads). **Do not hand-edit — run `/gen-seals`.** |
+| `./static/bg_lqip.json` | Generated map of background name → tiny base64 WebP data URI. Injected by `bgLQIPCSS()` as `--bg-<x>-lqip` CSS vars, used as the bottom background layer behind the full phase image. **Do not hand-edit — run `/gen-seals`.** |
 
 ### Code Files (Backend Implementation)
 
 | Path | Purpose |
 |------|---------|
 | `./config.go` | AppConfig struct, loadConfig (env→JSON→CLI priority), registerFlags, flagValues |
+| `./translations.go` | Translation table (EN/DE), `T(lang, key, args...)` lookup function, `getLangFromCookie(r)` |
 | `./main.go` | Entry point, HTTP route handlers, GameData struct, game component dispatcher |
 | `./database.go` | Database models (Game, Player, Role, GameAction), all queries, schema initialization |
 | `./auth.go` | Session management, signup/login/logout handlers, player authentication |
@@ -483,6 +487,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./night_doppelganger.go` | `DoppelgangerNightData`, `buildDoppelgangerNightData`, doppelganger select/copy handlers |
 | `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
 | `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
+| `./prompt.go` | Storyteller prompt module — owns ALL prompt text (no static `.md` files). Static base prose (EN/DE persona, task, style, running jokes) + ending prose as Go consts. `buildGameSystemPrompt(gameID)` assembles the per-call system prompt: static base + role-specific paranoia (only roles in play) + live player roster, and auto-appends the closing-narration prose when the game status is `finished`. Also holds the per-event user-prompt builders (`buildUserPrompt`, `buildEndingUserPrompt`) |
 | `./storyteller.go` | AI storyteller: `Storyteller` interface, OpenAI-compatible + Claude HTTP backends, sentence-streamed TTS pipeline |
 | `./tts.go` | AI narrator (TTS): `Narrator` interface, OpenAI/ElevenLabs PCM streaming, `maybeSpeakStory` |
 | `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
@@ -494,10 +499,20 @@ Test files are organized by feature and contain all tests and helpers for that f
 | Path | Purpose |
 |------|---------|
 | `./lobby_test.go` | Tests for lobby player management and game start (role assignment, player count) |
-| `./night_test.go` | Tests for night phase: werewolf voting, seer investigation, doctor/guard protection |
-| `./day_test.go` | Tests for day phase: voting, elimination, hunter revenge mechanics (largest test file) |
+| `./night_test.go` | Night phase shared helpers + AI Storyteller + Night Survey tests |
+| `./night_werewolf_test.go` | Werewolf voting tests |
+| `./night_witch_test.go` | Witch potion tests |
+| `./night_mason_test.go` | Mason tests |
+| `./night_wolfcub_test.go` | Wolf Cub double-kill tests |
+| `./night_cupid_test.go` | Cupid + lovers tests |
+| `./night_doppelganger_test.go` | Doppelganger + Seer helper + Seer notification tests |
+| `./night_seer_test.go` | Seer investigation tests |
+| `./night_doctor_test.go` | Doctor protection tests |
+| `./night_guard_test.go` | Guard protection tests |
+| `./hunter_test.go` | Hunter death-shot tests (triggers in both day and night) |
+| `./day_test.go` | Day phase: voting, win conditions, dead-player rules |
 | `./auth_test.go` | Tests for authentication and session management |
-| `./hub_test.go` | Tests for WebSocket connection and message handling |
+| `./hub_test.go` | Tests for WebSocket connection and message handling; also contains `TestMain` which launches the shared Chromium browser |
 
 ### Template Files
 
@@ -525,7 +540,8 @@ Test files are organized by feature and contain all tests and helpers for that f
 ## AI Storyteller & Narrator
 
 ### Storyteller (`storyteller.go`)
-- `Storyteller` interface: `Tell(ctx, history []string, onChunk func(string)) (string, error)`
+- `Storyteller` interface: `Tell(ctx, systemPrompt, userPrompt string, onChunk func(string)) (string, error)`
+- System prompt is **built per-call** in `prompt.go` (`buildGameSystemPrompt`): static base prose + dynamic sections for roles in play + the live player roster. A `finished` game automatically gets the closing-narration prose appended — callers just request a system prompt and never deal with a separate ending prompt.
 - OpenAI-compatible provider (direct HTTP, no library): POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
 - `maybeGenerateStory(gameID, round, phase, actorPlayerID)` — called after night kills, day eliminations, hunter revenge
 - Tokens streamed into `game_action.description` via 300ms DB flush ticker, so history updates progressively in the UI
@@ -651,6 +667,8 @@ You are a senior developer with many years of hard-won experience. You think lik
   - Waiting steps shoud be stopped event driven
 
 ### go-rod (browser automation) patterns
+- **i18n gotcha**: Chromium is launched with `--lang=en-US --accept-lang=en-US` in `TestMain` (`hub_test.go`). **Never remove these flags** — without them the browser sends a German `Accept-Language` header, the server renders all strings in German, and tests that check phase labels or history text time out silently at ~230s.
+- **Phase detection**: Use `data-phase="day"/"night"` on `#topbar-phase-label` (set in `templates/topbar.html`), never check translated text. Any new phase-dependent test selector must use a `data-*` attribute or CSS class, not a translated string.
 - Always select by ID (`#my-id`) for unique elements; use attribute selectors (`[name='...']`) only for form fields without IDs
 - Select dropdown by visible option text: `MustElement("select[name='...']").MustSelect(optionText)`
 - Type into textarea: `MustElement("textarea[name='...']").MustInput(text)`

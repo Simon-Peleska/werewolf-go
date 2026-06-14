@@ -64,7 +64,6 @@ type App struct {
 	hubsMu             sync.RWMutex
 	storyteller        Storyteller
 	narrator           Narrator
-	endingPrompt       string
 	storytellerLang    string
 	logf               func(format string, args ...any) // log.Printf in prod, t.Logf in tests
 	pageStyleTag       template.HTML
@@ -85,7 +84,6 @@ func (app *App) getOrCreateHub(gameName string) *Hub {
 		return h
 	}
 	h = newHub(app.db, app.templates, app.storyteller, app.narrator, gameName)
-	h.endingPrompt = app.endingPrompt
 	h.storytellerLang = app.storytellerLang
 	go h.run()
 	app.hubs[gameName] = h
@@ -1419,7 +1417,6 @@ func main() {
 		hubs:               make(map[string]*Hub),
 		storyteller:        storyteller,
 		narrator:           narrator,
-		endingPrompt:       loadEndingPrompt(cfg),
 		storytellerLang:    cfg.StorytellerLanguage,
 		logf:               log.Printf,
 		pageStyleTag:       pageStyleTag,

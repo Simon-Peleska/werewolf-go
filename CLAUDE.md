@@ -366,8 +366,6 @@ Bool env vars accept `1`, `true`, or `yes`.
 | OpenAI API key | `OPENAI_API_KEY` | `openai_api_key` | `-openai-api-key` | — | API key |
 | Language | `STORYTELLER_LANGUAGE` | `storyteller_language` | `-storyteller-language` | `en` | Prompt language: `en` or `de` |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
-| System prompt file | `STORYTELLER_SYSTEM_PROMPT_FILE` | `storyteller_system_prompt_file` | `-storyteller-system-prompt-file` | — | Path to file with system prompt (overrides default) |
-| Ending prompt file | `STORYTELLER_ENDING_PROMPT_FILE` | `storyteller_ending_prompt_file` | `-storyteller-ending-prompt-file` | — | Path to file with ending prompt (overrides default `ending_prompt.md`) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
@@ -460,10 +458,6 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./README.md` | Project overview, game description, roles, build/run instructions, dev tools — **update if build steps, dependencies, or core game rules change** |
 | `./flake.nix` | Nix flake: binary build (`packages.default`), Docker image (`packages.docker`), dev shell — **update `vendorHash` after changing Go deps** |
 | `./originals/seals/` | High-resolution original seal images (*.orig.webp) — kept outside `static/` so they are NOT embedded in the binary |
-| `./prompt.md` | Default (English) AI storyteller system prompt |
-| `./prompt_de.md` | German AI storyteller system prompt |
-| `./ending_prompt.md` | Default (English) AI storyteller game-ending prompt |
-| `./ending_prompt_de.md` | German AI storyteller game-ending prompt |
 | `./sgconfig.yml` | ast-grep configuration (language globs, rule directories) |
 | `./rules/` | ast-grep lint rules for Go code |
 | `./tools/gen_seals.sh` | Re-encodes `originals/seals/` → `static/seals/<Name>.webp` (600px) + regenerates the blur-up placeholders `static/seal_lqip.json` and `static/bg_lqip.json`. Full background images are read-only here (hand-tuned — never re-encoded). Run after changing any seal/background. |
@@ -493,6 +487,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./night_doppelganger.go` | `DoppelgangerNightData`, `buildDoppelgangerNightData`, doppelganger select/copy handlers |
 | `./day.go` | Day phase: voting, player elimination, hunter revenge shots, vote resolution |
 | `./game_flow.go` | Game transitions between phases, win condition checks, game ending |
+| `./prompt.go` | Storyteller prompt module — owns ALL prompt text (no static `.md` files). Static base prose (EN/DE persona, task, style, running jokes) + ending prose as Go consts. `buildGameSystemPrompt(gameID)` assembles the per-call system prompt: static base + role-specific paranoia (only roles in play) + live player roster, and auto-appends the closing-narration prose when the game status is `finished`. Also holds the per-event user-prompt builders (`buildUserPrompt`, `buildEndingUserPrompt`) |
 | `./storyteller.go` | AI storyteller: `Storyteller` interface, OpenAI-compatible + Claude HTTP backends, sentence-streamed TTS pipeline |
 | `./tts.go` | AI narrator (TTS): `Narrator` interface, OpenAI/ElevenLabs PCM streaming, `maybeSpeakStory` |
 | `./utils.go` | Test infrastructure: logger, test database setup, browser automation helpers |
@@ -545,7 +540,8 @@ Test files are organized by feature and contain all tests and helpers for that f
 ## AI Storyteller & Narrator
 
 ### Storyteller (`storyteller.go`)
-- `Storyteller` interface: `Tell(ctx, history []string, onChunk func(string)) (string, error)`
+- `Storyteller` interface: `Tell(ctx, systemPrompt, userPrompt string, onChunk func(string)) (string, error)`
+- System prompt is **built per-call** in `prompt.go` (`buildGameSystemPrompt`): static base prose + dynamic sections for roles in play + the live player roster. A `finished` game automatically gets the closing-narration prose appended — callers just request a system prompt and never deal with a separate ending prompt.
 - OpenAI-compatible provider (direct HTTP, no library): POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
 - `maybeGenerateStory(gameID, round, phase, actorPlayerID)` — called after night kills, day eliminations, hunter revenge
 - Tokens streamed into `game_action.description` via 300ms DB flush ticker, so history updates progressively in the UI

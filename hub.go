@@ -72,8 +72,7 @@ type Hub struct {
 	templates       *template.Template
 	storyteller     Storyteller
 	narrator        Narrator
-	endingPrompt    string // custom ending prompt; empty = use default
-	storytellerLang string // storyteller language for fixed TTS announcements ("en"/"de"); empty = "en"
+	storytellerLang string // storyteller language ("en"/"de"); empty = "en"
 	gameName        string
 	logf            func(format string, args ...any) // routes to log.Printf in prod, t.Logf in tests
 }
