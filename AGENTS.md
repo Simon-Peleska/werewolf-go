@@ -369,8 +369,8 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
-| Narrator API key | `NARRATOR_API_KEY` | `narrator_api_key` | `-narrator-api-key` | — | API key for TTS provider |
-| Narrator URL | `NARRATOR_URL` | `narrator_url` | `-narrator-url` | — | Base URL for openai-compatible TTS |
+| Narrator API key | `NARRATOR_API_KEY` | `narrator_api_key` | `-narrator-api-key` | — | API key for TTS provider (openai-compatible falls back to `OPENAI_API_KEY` if unset) |
+| Narrator URL | `NARRATOR_URL` | `narrator_url` | `-narrator-url` | — | Base URL for openai-compatible TTS (falls back to `OPENAI_API_BASE` if unset) |
 | Narrator sample rate | `NARRATOR_SAMPLE_RATE` | `narrator_sample_rate` | `-narrator-sample-rate` | `24000` | PCM sample rate in Hz |
 
 ## Tools & Claude Skills

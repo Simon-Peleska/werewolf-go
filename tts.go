@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 // Narrator streams TTS audio as raw PCM chunks (16-bit mono little-endian).
@@ -170,9 +171,20 @@ func initNarrator(cfg AppConfig) Narrator {
 		}
 
 	case "openai-compatible":
-		if cfg.NarratorURL == "" {
-			log.Printf("Narrator: NARRATOR_URL required for openai-compatible provider")
+		// Fall back to the storyteller's endpoint/key when the narrator ones
+		// are unset — handy when both point at the same OpenAI-compatible server.
+		url := cfg.NarratorURL
+		if url == "" {
+			url = cfg.OpenAIAPIBase
+		}
+		if url == "" {
+			log.Printf("Narrator: NARRATOR_URL or OPENAI_API_BASE required for openai-compatible provider")
 			return nil
+		}
+		url = strings.TrimRight(url, "/")
+		apiKey := cfg.NarratorAPIKey
+		if apiKey == "" {
+			apiKey = cfg.OpenAIAPIKey
 		}
 		model := cfg.NarratorModel
 		if model == "" {
@@ -182,10 +194,10 @@ func initNarrator(cfg AppConfig) Narrator {
 		if voice == "" {
 			voice = "default"
 		}
-		log.Printf("Narrator: openai-compatible TTS url=%s model=%s voice=%s sampleRate=%d", cfg.NarratorURL, model, voice, sr)
+		log.Printf("Narrator: openai-compatible TTS url=%s model=%s voice=%s sampleRate=%d", url, model, voice, sr)
 		return &openaiNarrator{
-			apiKey:     cfg.NarratorAPIKey,
-			baseURL:    cfg.NarratorURL,
+			apiKey:     apiKey,
+			baseURL:    url,
 			model:      model,
 			voice:      voice,
 			sampleRate: sr,
