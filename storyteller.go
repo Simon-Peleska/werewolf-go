@@ -175,6 +175,7 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 		go func() {
 			for sentence := range sentenceCh {
 				ttsCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				sentence = "[Österreichisches Hochdeutsch] " + sentence
 				err := h.narrator.Speak(ttsCtx, sentence, func(chunk []byte) {
 					h.broadcastAudio(chunk)
 				})
