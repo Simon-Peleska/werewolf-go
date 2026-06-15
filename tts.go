@@ -32,6 +32,12 @@ type openaiNarrator struct {
 func (n *openaiNarrator) SampleRate() int { return n.sampleRate }
 
 func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]byte)) error {
+	// Gemini's TTS preview honours an inline style tag; ask it for Austrian
+	// High German. Other models would just read the tag aloud, so gate on it.
+	if n.model == "google/gemini-3.1-flash-tts-preview" {
+		text = "[Österreichisches Hochdeutsch] " + text
+	}
+
 	body, _ := json.Marshal(map[string]any{
 		"model":           n.model,
 		"input":           text,
