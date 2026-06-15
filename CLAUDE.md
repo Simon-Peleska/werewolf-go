@@ -519,6 +519,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 | Path | Purpose |
 |------|---------|
 | `templates/index.html` | Login/signup page (standard HTTP, no WebSocket) |
+| `templates/check_game.html` | Join-form fragment returned by `/check-game`: error + (en/dis)abled Join button when the typed game is already running |
 | `templates/game.html` | Main game shell (includes sidebar + content area) |
 | `templates/sidebar.html` | Player list, history, role display |
 | `templates/lobby_content.html` | Role card grid, player list, start button |

@@ -662,16 +662,7 @@ func newTestContext(t *testing.T) *TestContext {
 		}
 	}
 
-	wrapHandler("/", app.handleIndex)
-	wrapHandler("/signup", app.handleSignup)
-	wrapHandler("/login", app.handleLogin)
-	wrapHandler("/game/{name}", app.handleGame)
-	wrapHandler("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
-		gameName := r.PathValue("name")
-		hub := app.getOrCreateHub(gameName)
-		handleWebSocket(hub, w, r)
-	})
-	wrapHandler("/player/upload-image", app.handleUploadPlayerImage)
+	app.registerAppRoutes(wrapHandler)
 	mux.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 

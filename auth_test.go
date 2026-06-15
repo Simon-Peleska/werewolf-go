@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-rod/rod/lib/proto"
 )
@@ -800,4 +801,53 @@ func TestProfileImageCanBeChanged(t *testing.T) {
 	}
 
 	ctx.logger.Debug("=== TestProfileImageCanBeChanged passed ===")
+}
+
+// TestCannotJoinRunningGame verifies that a logged-in player who is not part of an
+// already-running game cannot enter it: navigating to the game redirects back to the
+// login page, where the Join form shows an error and disables the Join button.
+// Regression test for the "game flashes on screen then redirects to login" bug.
+func TestCannotJoinRunningGame(t *testing.T) {
+	t.Parallel()
+	ctx := newTestContext(t)
+	defer ctx.cleanup()
+
+	browser, browserCleanup := newTestBrowserWithLogger(t, ctx.logger)
+	defer browserCleanup()
+
+	// A running game named "test-game" (setupNightPhaseGame starts it into the night phase).
+	setupNightPhaseGame(ctx, browser, 2, 1)
+
+	// A logged-in player who is NOT part of test-game (signed into a different game).
+	outsider := browser.signupPlayerInGame(ctx.baseURL, "Outsider", "other-game")
+
+	// Navigating directly to the running game must NOT show the game — it redirects
+	// back to the login page.
+	outsider.p().MustNavigate(ctx.baseURL + "/game/test-game").MustWaitLoad()
+	if outsider.isOnGamePage() {
+		ctx.logger.LogDB("FAIL: outsider reached running game page")
+		t.Fatalf("Outsider should be redirected away from a running game, not shown the game")
+	}
+
+	// The Join form (game name prefilled) shows an error and disables the Join button.
+	p := outsider.p().Timeout(10 * time.Second)
+	if _, err := p.Element("#btn-join[disabled]"); err != nil {
+		ctx.logger.LogDB("FAIL: join button not disabled for running game")
+		t.Fatalf("Join button should be disabled for a running game: %v", err)
+	}
+	if _, err := p.Element(".join-error"); err != nil {
+		t.Fatalf("An error message should be shown for a running game: %v", err)
+	}
+
+	// Changing the name to a fresh (non-existent) game re-enables joining.
+	outsider.p().MustEval(`() => {
+		const i = document.querySelector('#join-game-name');
+		i.value = 'brand-new-game';
+		i.dispatchEvent(new Event('input', {bubbles: true}));
+	}`)
+	if _, err := p.Element("#btn-join:not([disabled])"); err != nil {
+		t.Fatalf("Join button should re-enable for a fresh game name: %v", err)
+	}
+
+	ctx.logger.Debug("=== TestCannotJoinRunningGame passed ===")
 }

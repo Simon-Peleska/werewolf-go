@@ -17,6 +17,7 @@ import (
 	"log"
 	_ "modernc.org/sqlite"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -315,6 +316,36 @@ func (app *App) handleSetLang(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, returnURL, http.StatusSeeOther)
 }
 
+// handleCheckGame is polled by the Join form on the login page as the user types a
+// game name. If the named game is already running and the logged-in player is not
+// part of it, it returns the Join button disabled with an inline error (swapped into
+// #join-game-control) so they can't join a game in progress; otherwise it re-enables
+// the button.
+func (app *App) handleCheckGame(w http.ResponseWriter, r *http.Request) {
+	lang := getLangFromCookie(r)
+	gameName := strings.TrimSpace(r.URL.Query().Get("game_name"))
+
+	canJoin := true
+	if gameName != "" {
+		var game Game
+		err := app.db.Get(&game, "SELECT rowid as id, status FROM game WHERE name = ?", gameName)
+		// Only existing, already-running games block joining; a brand-new name or a
+		// game still in the lobby is joinable.
+		if err == nil && game.Status != "lobby" {
+			playerID, _ := getPlayerIdFromSession(app.db, r)
+			canJoin = isPlayerInGame(app.db, game.ID, playerID)
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := app.templates.ExecuteTemplate(w, "check_game.html", struct {
+		CanJoin bool
+		Lang    string
+	}{canJoin, lang}); err != nil {
+		app.logf("handleCheckGame: ExecuteTemplate: %v", err)
+	}
+}
+
 func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	gameName := r.PathValue("name")
 
@@ -415,6 +446,17 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	}
 	player.PlayerID = playerID
 	DebugLog("handleGame", "Player '%s' (ID: %d) accessing game page, game %d status: '%s'", player.Name, playerID, game.ID, game.Status)
+
+	// A logged-in player who is not part of an already-running game can't view or
+	// play it (roles are assigned). Send them back to the login page with the game
+	// name prefilled, where the Join form shows an inline error and disables the
+	// Join button — instead of rendering the game and letting the WebSocket bounce
+	// them, which looked like the game flashing then redirecting to login.
+	if game.Status != "lobby" && !isPlayerInGame(app.db, game.ID, playerID) {
+		DebugLog("handleGame", "Player '%s' (ID: %d) not in running game %d, redirecting to login", player.Name, playerID, game.ID)
+		http.Redirect(w, r, "/?game="+url.QueryEscape(gameName), http.StatusSeeOther)
+		return
+	}
 
 	// In lobby: add this player to the game now so the inline sidebar includes them immediately,
 	// without waiting for the WebSocket to register. Trigger a broadcast so already-connected
@@ -1343,6 +1385,26 @@ func withGzip(next http.Handler) http.Handler {
 	})
 }
 
+// registerAppRoutes wires every application route through wrap, which each caller
+// supplies with its own middleware. Shared by main() and the test server so the two
+// route tables can't drift. Routes needing special handling (static files, player
+// images, healthz) are registered by the caller.
+func (app *App) registerAppRoutes(wrap func(string, http.HandlerFunc)) {
+	wrap("/", app.handleIndex)
+	wrap("/signup", app.handleSignup)
+	wrap("/login", app.handleLogin)
+	wrap("/logout", app.handleLogout)
+	wrap("/set-lang", app.handleSetLang)
+	wrap("/check-game", app.handleCheckGame)
+	wrap("/game/{name}", app.handleGame)
+	wrap("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
+		gameName := r.PathValue("name")
+		hub := app.getOrCreateHub(gameName)
+		handleWebSocket(hub, w, r)
+	})
+	wrap("/player/upload-image", app.handleUploadPlayerImage)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	fv := registerFlags()
@@ -1436,18 +1498,7 @@ func main() {
 		}
 	}
 
-	wrapHandler("/", app.handleIndex)
-	wrapHandler("/signup", app.handleSignup)
-	wrapHandler("/login", app.handleLogin)
-	wrapHandler("/logout", app.handleLogout)
-	wrapHandler("/set-lang", app.handleSetLang)
-	wrapHandler("/game/{name}", app.handleGame)
-	wrapHandler("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
-		gameName := r.PathValue("name")
-		hub := app.getOrCreateHub(gameName)
-		handleWebSocket(hub, w, r)
-	})
-	wrapHandler("/player/upload-image", app.handleUploadPlayerImage)
+	app.registerAppRoutes(wrapHandler)
 	// Image endpoint: register directly (not via wrapHandler) to allow browser caching
 	http.HandleFunc("/player-image/{imageID}", app.handlePlayerImage)
 

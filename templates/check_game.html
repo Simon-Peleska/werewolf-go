@@ -1,0 +1,2 @@
+{{if not .CanJoin}}<p class="join-error" role="alert">{{T .Lang "err_game_in_progress"}}</p>{{end}}
+<button type="submit" id="btn-join"{{if not .CanJoin}} disabled{{end}}>{{T .Lang "btn_join"}}</button>

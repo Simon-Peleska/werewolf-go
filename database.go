@@ -441,3 +441,11 @@ func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	err := db.Get(&game, "SELECT rowid as id, name, status, round, ai_enabled FROM game WHERE name = ?", name)
 	return &game, err
 }
+
+// isPlayerInGame reports whether the player is a participant (including observers)
+// in the given game.
+func isPlayerInGame(db *sqlx.DB, gameID, playerID int64) bool {
+	var count int
+	db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", gameID, playerID)
+	return count > 0
+}

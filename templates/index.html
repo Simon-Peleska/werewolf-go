@@ -35,6 +35,10 @@
     <link rel="prefetch" href="/static/seals/lovers_win.webp" as="image">
     {{.ScriptTag}}
     <style>
+        .join-error {
+            color: var(--pico-del-color);
+            margin: 0.25rem 0 0.75rem;
+        }
         #toast-container {
             position: fixed;
             top: 1rem;
@@ -187,15 +191,20 @@
                     <form id="join-game-form" onsubmit="return joinGame(event)">
                         <label for="join-game-name">
                             {{T .Lang "game_name_label"}}
-                            <input type="text" id="join-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
+                            <input type="text" id="join-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required
+                                   hx-get="/check-game" hx-trigger="input changed delay:300ms, load"
+                                   hx-target="#join-game-control" hx-swap="innerHTML">
                         </label>
-                        <button type="submit" id="btn-join">{{T .Lang "btn_join"}}</button>
+                        <div id="join-game-control">
+                            <button type="submit" id="btn-join">{{T .Lang "btn_join"}}</button>
+                        </div>
                     </form>
                     <a href="/logout" role="button" class="secondary">{{T .Lang "btn_logout"}}</a>
                 </section>
                 <script>
                 function joinGame(e) {
                     e.preventDefault();
+                    if (document.getElementById('btn-join').disabled) return false;
                     var name = document.getElementById('join-game-name').value.trim();
                     if (name) window.location.href = '/game/' + encodeURIComponent(name);
                     return false;

@@ -468,15 +468,11 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	// Check if the player still exists in the current game.
 	// On reconnect after a disconnect, the player may have been removed.
 	game, err := hub.getGame()
-	if err == nil && game.Status != "lobby" {
-		var count int
-		hub.db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", game.ID, playerID)
-		if count == 0 {
-			DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
-			conn.WriteMessage(websocket.TextMessage, []byte(`<div id="game-content" hx-swap-oob="innerHTML" hx-on::load="window.location.href='/'"></div>`))
-			conn.Close()
-			return
-		}
+	if err == nil && game.Status != "lobby" && !isPlayerInGame(hub.db, game.ID, playerID) {
+		DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
+		conn.WriteMessage(websocket.TextMessage, []byte(`<div id="game-content" hx-swap-oob="innerHTML" hx-on::load="window.location.href='/'"></div>`))
+		conn.Close()
+		return
 	}
 
 	client := &Client{conn: conn, playerID: playerID, hub: currentHub, send: make(chan hubMsg, clientSendBuf), lang: getLangFromCookie(r)}
