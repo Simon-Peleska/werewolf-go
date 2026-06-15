@@ -149,8 +149,14 @@ func initNarrator(cfg AppConfig) Narrator {
 
 	switch cfg.NarratorProvider {
 	case "openai":
-		if cfg.NarratorAPIKey == "" {
-			log.Printf("Narrator: NARRATOR_API_KEY required for openai provider")
+		// Fall back to the storyteller's key when the narrator one is unset —
+		// handy when both point at the same OpenAI account.
+		apiKey := cfg.NarratorAPIKey
+		if apiKey == "" {
+			apiKey = cfg.OpenAIAPIKey
+		}
+		if apiKey == "" {
+			log.Printf("Narrator: NARRATOR_API_KEY or OPENAI_API_KEY required for openai provider")
 			return nil
 		}
 		model := cfg.NarratorModel
@@ -163,7 +169,7 @@ func initNarrator(cfg AppConfig) Narrator {
 		}
 		log.Printf("Narrator: OpenAI TTS model=%s voice=%s sampleRate=%d", model, voice, sr)
 		return &openaiNarrator{
-			apiKey:     cfg.NarratorAPIKey,
+			apiKey:     apiKey,
 			baseURL:    "https://api.openai.com/v1",
 			model:      model,
 			voice:      voice,
