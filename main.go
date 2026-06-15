@@ -12,10 +12,10 @@ import (
 	"sync"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
 	"html/template"
 	"io"
 	"log"
+	_ "modernc.org/sqlite"
 	"net/http"
 	"os"
 	"strconv"
@@ -1374,7 +1374,7 @@ func main() {
 		log.Println("Extended logging enabled")
 	}
 
-	db, err := sqlx.Connect("sqlite3", cfg.DB)
+	db, err := sqlx.Connect("sqlite", cfg.DB)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}

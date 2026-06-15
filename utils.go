@@ -597,8 +597,8 @@ func newTestContext(t *testing.T) *TestContext {
 		port,
 		time.Now().UnixNano())
 
-	testDB, dbErr := sqlx.Connect("sqlite3",
-		fmt.Sprintf("file:%s?_busy_timeout=5000&_synchronous=NORMAL&_txlock=deferred", dbPath))
+	testDB, dbErr := sqlx.Connect("sqlite",
+		fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=deferred", dbPath))
 	if dbErr != nil {
 		t.Fatalf("Failed to connect to test database: %v", dbErr)
 	}

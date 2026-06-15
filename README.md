@@ -35,7 +35,7 @@ Im still learning the technology so a lot of is not built ideally, but it is a l
 
 ### Without Nix
 
-**Dependencies:** Go 1.21+, GCC, pkg-config, libsqlite3-dev (CGO is required for go-sqlite3)
+**Dependencies:** Go 1.21+
 
 ```bash
 # Build
@@ -127,7 +127,7 @@ Opens multiple Chromium windows pointed at the local server — useful for testi
 
 ## Tech Stack
 
-- **Backend**: Go, SQLite (CGO via go-sqlite3), gorilla/websocket
+- **Backend**: Go, SQLite (modernc.org/sqlite), gorilla/websocket
 - **Frontend**: HTMX over WebSocket, Pico.css — no JavaScript framework
 - **Tests**: go-rod browser automation (integration tests against a real server)
 - **Packaging**: Nix flake (binary build + Docker image)

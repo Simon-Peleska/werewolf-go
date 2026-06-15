@@ -32,13 +32,6 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # CGO is required for go-sqlite3
-        cgoBuildInputs = with pkgs; [ sqlite ];
-        cgoNativeBuildInputs = with pkgs; [
-          gcc
-          pkg-config
-        ];
-
         # mcp-dap-server: official Delve MCP server (go-delve/mcp-dap-server)
         # After `nix flake update`, run `nix develop` — it will fail with the correct
         # vendorHash; replace the placeholder below with the "got:" hash from the error.
@@ -72,9 +65,8 @@
           version = "0.0.1";
           src = ./.;
 
-          env.CGO_ENABLED = "1";
-          nativeBuildInputs = cgoNativeBuildInputs;
-          buildInputs = cgoBuildInputs;
+          # Pure-Go sqlite driver (modernc.org/sqlite) — no CGO, static binary.
+          env.CGO_ENABLED = "0";
 
           # vendor/ directory is committed — set null to use it directly.
           vendorHash = null;
@@ -89,8 +81,6 @@
           tag = "latest";
           contents = with pkgs; [
             self.packages.${system}.default
-            sqlite
-            glibc
             cacert # for outbound HTTPS (e.g. AI storyteller providers)
           ];
           config = {
@@ -109,11 +99,8 @@
         # `nix develop`
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            # Go toolchain + CGO deps
             go
-            gcc
-            pkg-config
-            sqlite
+            sqlite # CLI for inspecting test/dev *.db files
 
             # Tool script deps
             inotify-tools # run_server.sh --watch
@@ -139,8 +126,7 @@
             tools-completions
           ];
 
-          # CGO flags so `go build` / `go test` work inside the shell
-          CGO_ENABLED = "1";
+          CGO_ENABLED = "0";
 
           shellHook = ''
             # Make tools/*.sh scripts callable without the path prefix

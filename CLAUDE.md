@@ -285,7 +285,7 @@ The project uses a Nix flake (`flake.nix`) for reproducible builds and Docker im
 
 | Output | Command | Description |
 |--------|---------|-------------|
-| `packages.default` | `nix build` | Go binary via `buildGoModule` (CGO enabled) |
+| `packages.default` | `nix build` | Go binary via `buildGoModule` (static) |
 | `packages.docker` | `nix build .#docker` | Docker image via `dockerTools.buildLayeredImage` |
 | `apps.default` | `nix run` | Run the binary directly |
 | `devShells.default` | `nix develop` | Dev shell with all tooling |
@@ -299,14 +299,14 @@ nix build .#docker
 docker load < result
 docker run -p 8080:8080 werewolf
 
-# Enter dev shell (Go, GCC, pkg-config, sqlite, inotify-tools, chromium)
+# Enter dev shell (Go, sqlite, inotify-tools, chromium)
 nix develop
 ```
 
 ### Nix gotchas
-- CGO is required for go-sqlite3 — `env.CGO_ENABLED = "1"` must be set inside `env {}` (not top-level) in newer nixpkgs
+- vendor/ is committed and the flake builds from the **git tree** — after `go mod vendor`, run `git add -A` (new vendor files are untracked otherwise) or `nix build` fails with `import lookup disabled by -mod=vendor`.
 - After updating Go dependencies, recompute `vendorHash` by setting `pkgs.lib.fakeHash`, running `nix build`, and replacing with the hash from the error output
-- Docker image includes: binary, `sqlite`, `glibc`, `cacert` (for outbound HTTPS to AI providers)
+- Docker image includes: binary, `cacert` (for outbound HTTPS to AI providers)
 
 ## Licensing
 
@@ -573,7 +573,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 - all frontend dependencies should be minified and locally served
   - backend
     - packages in the go standard library
-    - sqlite github.com/mattn/go-sqlite3
+    - sqlite modernc.org/sqlite
     - sqlx https://github.com/launchbadge/sqlx
     - gorilla websockets https://github.com/gorilla/websocket
   - frontend
@@ -588,9 +588,7 @@ Test files are organized by feature and contain all tests and helpers for that f
   - packaging / dev tooling (via flake.nix)
     - nix (with nix flakes)
     - go (Go toolchain)
-    - gcc + pkg-config (CGO build deps)
-    - sqlite (runtime lib for CGO and Docker image)
-    - glibc (Docker image runtime)
+    - sqlite (CLI for inspecting dev/test *.db files)
     - cacert (Docker image, for outbound HTTPS)
     - inotify-tools (run_server.sh --watch)
     - chromium (start_chromium.sh manual testing)
