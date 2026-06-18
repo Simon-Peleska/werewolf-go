@@ -88,21 +88,6 @@
     input.value = '';
   }
 
-  // On narrow screens, collapse cards that carry a collapse toggle (lobby role
-  // cards) so the grid stays compact — matching the old web component, which
-  // started collapsed when innerWidth < 576. Runs once on load and after each
-  // WS render. We mark cards we've already auto-collapsed so re-renders don't
-  // fight a user who manually re-expanded one.
-  function pcAutoCollapseMobile() {
-    if (window.innerWidth >= 576) return;
-    document.querySelectorAll('.player-card .pc-btn-collapse').forEach(function (btn) {
-      const card = btn.closest('.player-card');
-      if (!card || card._pcAutoCollapsed) return;
-      card._pcAutoCollapsed = true;
-      if (!card.classList.contains('pc-collapsed')) pcToggle(btn);
-    });
-  }
-
   // For cached images onload never fires — check .complete on every render.
   function pcFixSealLqip() {
     document.querySelectorAll('img.lqip').forEach(function (img) {
@@ -111,9 +96,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    pcAutoCollapseMobile();
     pcFixSealLqip();
-    document.body.addEventListener('htmx:wsAfterMessage', pcAutoCollapseMobile);
     document.body.addEventListener('htmx:wsAfterMessage', pcFixSealLqip);
   });
 

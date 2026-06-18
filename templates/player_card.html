@@ -66,7 +66,7 @@
 
   <!-- COLLAPSED layer -->
   <div class="pc-layer pc-col{{if $d.Collapsed}} pc-active{{else}} pc-inactive{{end}}"
-       {{if not $d.Selectable}}onclick="pcToggle(this)"{{end}}>
+       {{if and $d.Collapsible (not $d.Selectable)}}onclick="pcToggle(this)"{{end}}>
     <div class="pc-seal-wrap">
       {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
       <img class="pc-seal pc-seal-profile" src="{{$d.ProfileImage}}"
@@ -99,7 +99,7 @@
     {{end}}
     {{if $d.Lover}}<div class="pc-heart-wrap"><span class="pc-heart">💞</span></div>{{end}}
     {{if $d.Doppelganger}}<div class="pc-doppelganger-wrap"><span class="pc-doppelganger-icon">🎭</span></div>{{end}}
-    <button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();pcToggle(this)" aria-label="Expand">▼</button>
+    {{if $d.Collapsible}}<button class="pc-toggle pc-uncollapse" onclick="event.stopPropagation();pcToggle(this)" aria-label="Expand">▼</button>{{end}}
   </div>
 
   {{if $d.OwnCard}}<input class="pc-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange="pcUploadChange(this)">{{end}}

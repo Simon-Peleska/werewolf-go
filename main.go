@@ -565,6 +565,7 @@ func buildSidebarCards(players []Player, viewer *Player, isLobby bool, lang stri
 	cards := make([]PlayerCardData, 0, len(players))
 	for _, p := range players {
 		card := makePlayerCard(p, lang)
+		card.Collapsible = true
 		if isLobby {
 			card.RoleName = "Unknown"
 			card.RoleDesc = ""
@@ -610,7 +611,7 @@ type PlayerCardData struct {
 	ShowRoleSeal bool // force the role seal even if a profile image exists
 	OwnCard      bool // show the profile-image upload overlay
 	Collapsed    bool // start collapsed
-	Collapsible  bool // show the collapse/expand toggle button
+	Collapsible  bool // show the collapse/expand toggle (sidebar cards only)
 
 	VoteCount     int  // vote tally shown in the count badge (day/werewolf voting)
 	ShowVoteCount bool // render the vote-count badge
@@ -654,7 +655,6 @@ func makeLobbyCard(rc RoleConfigDisplay, totalRoles, playerCount int, lang strin
 		RoleDesc:         rc.Role.Description,
 		Team:             rc.Role.Team,
 		Active:           rc.Count > 0,
-		Collapsible:      true,
 		IsLobby:          true,
 		LobbyCount:       rc.Count,
 		RoleID:           roleID,

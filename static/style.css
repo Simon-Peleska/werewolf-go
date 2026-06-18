@@ -591,7 +591,7 @@ border-top: 1px solid var(--c-muted);
   }
 }
 
-/* Mobile: phase layout stacks, card collapses via JS on load */
+/* Mobile: phase layout stacks */
 @media (max-width: 768px) {
   .phase-action-layout {
     grid-template-columns: 1fr;
@@ -785,10 +785,13 @@ card-list, .card-list {
 }
 /* Forms inside a card-list are invisible to the grid layout. */
 card-list > form, .card-list > form { display: contents; }
-@media (max-width: 480px) {
+@media (max-width: 576px) {
   card-list, .card-list,
-  card-list.win-list, .card-list.win-list { grid-template-columns: 1fr; }
+  card-list.win-list, .card-list.win-list { grid-template-columns: repeat(2, 1fr); }
 }
+/* Sidebar player list: collapsed rows are full-width, not square cards — always
+   one per row, regardless of viewport (id specificity wins over the rule above). */
+#player-list { grid-template-columns: 1fr; }
 
 .player-card {
   position: relative;
