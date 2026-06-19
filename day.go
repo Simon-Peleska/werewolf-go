@@ -6,12 +6,6 @@ import (
 	"strconv"
 )
 
-// DayVote represents a player's vote during the day
-type DayVote struct {
-	VoterName  string
-	TargetName string
-}
-
 // NightVictim represents a player killed during the night
 type NightVictim struct {
 	Name string `db:"name"`
@@ -26,9 +20,8 @@ type DayData struct {
 	NightNumber          int
 	HasHistory           bool
 	NightVictims         []Player // all players killed last night
-	Votes                []DayVote
-	DayVoteCounts        map[int64]int // vote count per target player ID
-	CurrentVotePlayer    *Player       // this player's current vote (nil = no vote / pass)
+	PassVoters           []string // names of players who passed this round
+	CurrentVotePlayer    *Player  // this player's current vote (nil = no vote / pass)
 	IsAlive              bool
 	HunterRevengeNeeded  bool     // a dead Hunter hasn't shot yet
 	HunterRevengeDone    bool     // Hunter has taken their shot

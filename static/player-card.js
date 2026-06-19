@@ -95,9 +95,31 @@
     });
   }
 
+  // Voter-chip list only fades the edge it can actually scroll towards —
+  // top fade once you've scrolled past the first row, bottom fade only
+  // while more chips are still hidden below.
+  function pcUpdateVoterFade(el) {
+    el.classList.toggle('pc-voters-fade-top', el.scrollTop > 0);
+    el.classList.toggle('pc-voters-fade-bottom', el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }
+
+  function pcInitVoterScroll() {
+    document.querySelectorAll('.pc-voters').forEach(function (el) {
+      if (!el.dataset.scrollBound) {
+        el.dataset.scrollBound = '1';
+        el.addEventListener('scroll', function () { pcUpdateVoterFade(el); }, { passive: true });
+      }
+      pcUpdateVoterFade(el);
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     pcFixSealLqip();
-    document.body.addEventListener('htmx:wsAfterMessage', pcFixSealLqip);
+    pcInitVoterScroll();
+    document.body.addEventListener('htmx:wsAfterMessage', function () {
+      pcFixSealLqip();
+      pcInitVoterScroll();
+    });
   });
 
   window.pcToggle = pcToggle;

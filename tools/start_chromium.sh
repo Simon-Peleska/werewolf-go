@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# start_chromium.sh - Open multiple Chromium instances for manual testing
+# start_chromium.sh - Open one Chromium window with N isolated tabs for manual testing
+#
+# Each tab gets its own CDP browser context (separate cookies/storage), so they
+# behave as separate players without opening N separate windows.
 #
 # Usage: ./tools/start_chromium.sh [OPTIONS]
 #
 # Options:
 #   -u, --url URL         Target URL (default: http://localhost:8080)
-#   -n, --instances N     Number of Chromium windows to open (default: 5)
+#   -n, --instances N     Number of isolated tabs to open (default: 5)
 #   -b, --bin BIN         Chromium binary name (default: chromium)
-#   -w, --workspace N     Hyprland workspace to open windows on (default: 5)
+#   -w, --workspace N     Hyprland workspace to open the window on (default: 5)
 
 URL="http://localhost:8080"
 INSTANCES=5
@@ -38,36 +41,10 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-TMP_ROOT="$(mktemp -d)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-cleanup() {
-	rm -rf "$TMP_ROOT"
-}
-trap cleanup EXIT
-
-# Switch to the target workspace before launching so windows land there.
-# Hyprland 0.55+ uses the Lua dispatcher syntax (hl.dsp.*); the legacy
-# `dispatch workspace N` form is rejected on Lua-config builds.
-if command -v hyprctl &>/dev/null; then
-	hyprctl dispatch "hl.dsp.focus({ workspace = $WORKSPACE })" >/dev/null 2>&1
-else
-	echo "Warning: hyprctl not found — windows will open on the current workspace (--workspace ignored)"
-fi
-
-for i in $(seq 1 "$INSTANCES"); do
-	PROFILE_DIR="$TMP_ROOT/profile_$i"
-	mkdir -p "$PROFILE_DIR"
-
-	"$CHROMIUM_BIN" \
-		--user-data-dir="$PROFILE_DIR" \
-		--incognito \
-		--no-first-run \
-		--no-default-browser-check \
-		--disable-sync \
-		"$URL" \
-		>/dev/null 2>&1 &
-
-	sleep 0.3
-done
-
-wait
+exec go run "$SCRIPT_DIR/start_chromium" \
+	-url "$URL" \
+	-instances "$INSTANCES" \
+	-bin "$CHROMIUM_BIN" \
+	-workspace "$WORKSPACE"

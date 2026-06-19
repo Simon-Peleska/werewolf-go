@@ -50,8 +50,9 @@
       {{end}}
     </div>
     {{if $d.PlayerName}}<span class="pc-name">{{$d.PlayerName}}</span>{{end}}
-    {{if eq $d.Team "unknown"}}<p class="pc-desc pc-desc-unknown">???</p>
+    <div class="pc-info-area">{{if eq $d.Team "unknown"}}<p class="pc-desc pc-desc-unknown">???</p>
     {{else}}<p class="pc-desc">{{T $d.Lang (printf "role_desc_%s" $d.RoleName)}}</p>{{end}}
+    <div class="pc-voters" id="pc-voters-{{$d.PlayerUID}}">{{range $d.Voters}}<span class="pc-voter-chip" id="pc-voter-{{$d.PlayerUID}}-{{.PlayerUID}}">{{.Name}}</span>{{end}}</div></div>
     <div class="pc-footer">
       {{if and $d.RoleName (ne $d.Team "unknown")}}
         <span class="pc-role">{{T $d.Lang (printf "role_name_%s" $d.RoleName)}}</span>

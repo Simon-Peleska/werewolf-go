@@ -8,17 +8,12 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// WerewolfVote represents a werewolf's vote during the night.
-type WerewolfVote struct {
-	VoterName  string
-	TargetName string
-}
-
 // WerewolfNightData holds night-phase display data for werewolf-team players.
 type WerewolfNightData struct {
-	Votes              []WerewolfVote
 	WerewolfVoteCounts map[int64]int
-	CurrentVotePlayer  *Player // this wolf's current vote target (nil = none/pass)
+	VotersByTarget     map[int64][]VoterChip // who voted for each target — rendered as name chips
+	PassVoters         []string              // names of werewolves who passed this round
+	CurrentVotePlayer  *Player               // this wolf's current vote target (nil = none/pass)
 	WolfCubDoubleKill  bool
 	CurrentVotePlayer2 *Player // this wolf's second-kill vote (nil = none)
 	AllWolvesActed     bool
@@ -56,18 +51,20 @@ FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfKill)
 
-	var votes []WerewolfVote
+	votersByTarget := map[int64][]VoterChip{}
+	var passVoters []string
 	var currentVotePlayer *Player
 	for _, action := range actions {
-		var voterName, targetName string
+		var voterName string
 		db.Get(&voterName, "SELECT name FROM player WHERE rowid = ?", action.ActorPlayerID)
 		if action.TargetPlayerID != nil {
-			db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+			votersByTarget[*action.TargetPlayerID] = append(votersByTarget[*action.TargetPlayerID], VoterChip{Name: voterName, PlayerUID: action.ActorPlayerID})
 			if action.ActorPlayerID == playerID {
 				currentVotePlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, player, seerInvestigated)
 			}
+		} else {
+			passVoters = append(passVoters, voterName)
 		}
-		votes = append(votes, WerewolfVote{VoterName: voterName, TargetName: targetName})
 	}
 
 	wolfCubDoubleKill := false
@@ -125,8 +122,9 @@ WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 	}
 
 	return WerewolfNightData{
-		Votes:              votes,
 		WerewolfVoteCounts: werewolfVoteCounts,
+		VotersByTarget:     votersByTarget,
+		PassVoters:         passVoters,
 		CurrentVotePlayer:  currentVotePlayer,
 		WolfCubDoubleKill:  wolfCubDoubleKill,
 		CurrentVotePlayer2: currentVotePlayer2,

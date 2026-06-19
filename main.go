@@ -600,6 +600,13 @@ func buildSidebarCards(players []Player, viewer *Player, isLobby bool, lang stri
 	return cards
 }
 
+// VoterChip is one "name tag" rendered on a player card, showing a single player
+// who voted for that card's target (day elimination or werewolf kill vote).
+type VoterChip struct {
+	Name      string
+	PlayerUID int64
+}
+
 // PlayerCardData is everything the "player-card" template needs to render one card.
 // Build it with makePlayerCard (player cards) or makeLobbyCard (lobby role cards),
 // then set the state fields (Selected, Selectable, Collapsed, ...) the caller needs.
@@ -626,8 +633,9 @@ type PlayerCardData struct {
 	Collapsed    bool // start collapsed
 	Collapsible  bool // show the collapse/expand toggle (sidebar cards only)
 
-	VoteCount     int  // vote tally shown in the count badge (day/werewolf voting)
-	ShowVoteCount bool // render the vote-count badge
+	VoteCount     int         // vote tally shown in the count badge (day/werewolf voting)
+	ShowVoteCount bool        // render the vote-count badge
+	Voters        []VoterChip // who voted for this target — rendered as name chips
 
 	IsLobby          bool   // lobby role card: show the ± buttons + count
 	RoleID           string // lobby: role ID passed to wsSend
@@ -1189,8 +1197,9 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 		}
 
 		// Get current votes for this day
-		var votes []DayVote
 		dayVoteCounts := map[int64]int{}
+		votersByTarget := map[int64][]VoterChip{}
+		var passVoters []string
 		var currentVotePlayer *Player
 
 		type voteCountRow struct {
@@ -1215,15 +1224,16 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			game.ID, game.Round, ActionDayVote)
 
 		for _, action := range actions {
-			var voterName, targetName string
+			var voterName string
 			db.Get(&voterName, "SELECT name FROM player WHERE rowid = ?", action.ActorPlayerID)
 			if action.TargetPlayerID != nil {
-				db.Get(&targetName, "SELECT name FROM player WHERE rowid = ?", *action.TargetPlayerID)
+				votersByTarget[*action.TargetPlayerID] = append(votersByTarget[*action.TargetPlayerID], VoterChip{Name: voterName, PlayerUID: action.ActorPlayerID})
 				if action.ActorPlayerID == playerID {
 					currentVotePlayer = getVisiblePlayer(db, game.ID, *action.TargetPlayerID, player, seerInvestigated)
 				}
+			} else {
+				passVoters = append(passVoters, voterName)
 			}
-			votes = append(votes, DayVote{VoterName: voterName, TargetName: targetName})
 		}
 
 		// All-acted and has-voted checks for End Vote button
@@ -1263,6 +1273,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			card.Selectable = true
 			card.ShowVoteCount = true
 			card.VoteCount = dayVoteCounts[t.PlayerID]
+			card.Voters = votersByTarget[t.PlayerID]
 			card.Lover = isViewerLover(t, player)
 			if currentVotePlayer != nil && currentVotePlayer.PlayerID == t.PlayerID {
 				card.Selected = true
@@ -1275,8 +1286,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			AliveTargets:         aliveTargets,
 			NightNumber:          game.Round,
 			NightVictims:         nightVictims,
-			Votes:                votes,
-			DayVoteCounts:        dayVoteCounts,
+			PassVoters:           passVoters,
 			CurrentVotePlayer:    currentVotePlayer,
 			HunterRevengeNeeded:  hunterRevengeNeeded,
 			HunterRevengeDone:    hunterRevengeDone,

@@ -71,6 +71,7 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 		card := nightTargetCard(t, viewer, lang)
 		card.ShowVoteCount = true
 		card.VoteCount = data.WerewolfVoteCounts[t.PlayerID]
+		card.Voters = data.VotersByTarget[t.PlayerID]
 		if data.CurrentVotePlayer != nil && data.CurrentVotePlayer.PlayerID == t.PlayerID {
 			card.Selected = true
 		}

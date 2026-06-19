@@ -704,14 +704,23 @@ border-top: 1px solid var(--c-muted);
 .seer-werewolf { color: var(--c-danger); font-weight: bold; }
 .seer-safe     { color: var(--c-success); }
 
-/* ── Vote list (tally) ─────────────────────────────────────────────────── */
-.vote-list { list-style: none; padding: 0; }
-.vote-list li {
-  padding: 0.3rem 0.5rem;
-  background: var(--c-surface);
-  margin-bottom: 0.2rem;
-  border-radius: 0.3rem;
+/* ── Voter chips (who voted for this card / who passed) ───────────────── */
+.pc-voters {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem;
+  margin: 0 0 calc(var(--pico-spacing) * 0.4);
 }
+.pc-voters:empty { display: none; margin: 0; }
+.pc-voter-chip {
+  font-size: 1rem; line-height: 1.2; color: var(--c-amber);
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-radius: 999px; padding: 0.15rem 0.6rem;
+  animation: gc-enter 0.2s ease backwards;
+}
+.pc-voters-pass {
+  justify-content: flex-start; align-items: center; gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+.pc-voters-pass em { color: var(--c-muted); font-style: normal; font-size: 1rem; }
 
 /* ── Death announcement ────────────────────────────────────────────────── */
 .death-announcement {
@@ -1013,12 +1022,44 @@ card-list > form, .card-list > form { display: contents; }
   width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pc-role { font-size: 1rem; color: var(--c-amber); text-align: center; margin: 0.1em 0 0; }
-.pc-desc {
-  font-size: 1rem; color: var(--c-muted); text-align: center;
-  line-height: 1.35;
-  margin: calc(var(--pico-spacing) * 0.3) 0 calc(var(--pico-spacing) * 0.4);
+
+/* Fixed-height swap area: shows the role description, or — once someone has
+   voted for this player — the voter chips instead. Pinning the height here
+   (rather than letting the chips add height below the description) keeps
+   every card the same size regardless of vote count; overflow scrolls
+   instead of growing the card for players with many voters / long names. */
+.pc-info-area {
   flex: 1;
   min-height: calc(1rem * 1.35 * 3);
+  max-height: calc(1rem * 1.35 * 3);
+  overflow: hidden;
+  margin: calc(var(--pico-spacing) * 0.3) 0 calc(var(--pico-spacing) * 0.4);
+}
+.pc-info-area:has(.pc-voters:not(:empty)) .pc-desc { display: none; }
+.pc-info-area .pc-voters {
+  margin: 0; max-height: calc(1rem * 1.35 * 3); align-content: flex-start; overflow-y: auto;
+}
+/* gc-enter's translateY inflates this container's scrollHeight permanently (Chromium
+   includes transformed-child position in scrollable overflow) — disable it here so
+   scroll-fade detection below isn't fooled into thinking there's always overflow. */
+.pc-info-area .pc-voters .pc-voter-chip { animation: none; }
+/* Fade only the edge that actually has more chips hidden past it — classes are
+   toggled by pcUpdateVoterFade() in player-card.js based on scroll position. */
+.pc-info-area .pc-voters.pc-voters-fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 1rem);
+  mask-image: linear-gradient(to bottom, transparent 0, black 1rem);
+}
+.pc-info-area .pc-voters.pc-voters-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent 100%);
+}
+.pc-info-area .pc-voters.pc-voters-fade-top.pc-voters-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+}
+.pc-desc {
+  font-size: 1rem; color: var(--c-muted); text-align: center;
+  line-height: 1.35; height: 100%;
   display: -webkit-box; -webkit-line-clamp: 3;
   -webkit-box-orient: vertical; overflow: hidden;
 }

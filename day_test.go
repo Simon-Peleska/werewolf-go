@@ -156,11 +156,15 @@ func TestDayVoteByAlivePlayer(t *testing.T) {
 	// Vote for the werewolf
 	villagers[1].dayVoteForPlayer(werewolves[0].Name)
 
-	// Verify vote was recorded (check page shows vote list with arrow format "VoterName → TargetName")
-	content := villagers[1].getGameContent()
-	if !strings.Contains(content, "→") {
+	// Verify vote was recorded (check the werewolf's card shows a vote count and a voter chip with the voter's name)
+	if count := villagers[1].getDayVoteCount(werewolves[0].Name); count != "1" {
 		ctx.logger.LogDB("FAIL: vote not shown")
-		t.Error("Vote should be visible in the vote list")
+		t.Errorf("Vote should be visible on the target's card, got count=%s", count)
+	}
+	content := villagers[1].getGameContent()
+	if !strings.Contains(content, villagers[1].Name) {
+		ctx.logger.LogDB("FAIL: voter chip not shown")
+		t.Error("Voter's name should be visible as a chip on the target's card")
 	}
 
 	// History: day votes are public — all alive players see them
