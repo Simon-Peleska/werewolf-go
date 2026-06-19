@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"math/rand"
+	"time"
 )
 
 // Narrator streams TTS audio as raw PCM chunks (16-bit mono little-endian).
@@ -35,10 +37,22 @@ type openaiNarrator struct {
 func (n *openaiNarrator) SampleRate() int { return n.sampleRate }
 
 func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]byte)) error {
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	accents := []string{
+		"[Österreichisch] ",
+		"[Russian Accent] ",
+		"[Very Fast] ",
+		"[Backwards] ",
+		"[asdfwae3weewwef] ",
+		"[Stoned] ",
+		"[Loud] ",
+	}
+	rn := rand.Int() % len(accents)
+
 	// Gemini's TTS preview honours an inline style tag; ask it for Austrian
 	// High German. Other models would just read the tag aloud, so gate on it.
 	if n.model == geminiTTSModel {
-		text = "[Österreichisches Hochdeutsch] " + text
+		text = accents[rn] + text
 	}
 
 	body, _ := json.Marshal(map[string]any{
