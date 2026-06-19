@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
-	// "math/rand"
+	"math/rand"
 	"net/http"
 	"strings"
-	// "time"
+	"time"
 )
 
 // Narrator streams TTS audio as raw PCM chunks (16-bit mono little-endian).
@@ -39,19 +39,19 @@ func (n *openaiNarrator) SampleRate() int { return n.sampleRate }
 func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]byte)) error {
 	// Gemini's TTS preview honours an inline style tag; ask it for Austrian
 	// High German. Other models would just read the tag aloud, so gate on it.
-	// if n.model == geminiTTSModel {
-	// 	rand.New(rand.NewSource(time.Now().UnixNano()))
-	// 	accents := []string{
-	// 		"[Österreichisch] ",
-	// 		"[русский] ",
-	// 		"[dansk] ",
-	// 		"[ᐃᓄᒃᑎᑐᑦ] ",
-	// 		"[日本語] ",
-	// 	}
-	// 	rn := rand.Int() % len(accents)
-	//
-	// 	text = accents[rn] + text
-	// }
+	if n.model == geminiTTSModel {
+		rand.New(rand.NewSource(time.Now().UnixNano()))
+		accents := []string{
+			"[Österreichisch] ",
+			// "[русский] ",
+			// "[dansk] ",
+			// "[ᐃᓄᒃᑎᑐᑦ] ",
+			// "[日本語] ",
+		}
+		rn := rand.Int() % len(accents)
+
+		text = accents[rn] + text
+	}
 
 	body, _ := json.Marshal(map[string]any{
 		"model":           n.model,
