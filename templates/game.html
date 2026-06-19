@@ -283,11 +283,23 @@
     @media (max-width: 1280px) {
       :root { --topbar-height: 5rem; }
 
-      /* Container fills full viewport height; topbar floats over it */
+      /* The page itself (not an inner div) scrolls on mobile, so the browser's
+         address bar / tab bar can auto-hide as the user scrolls. Fixed-height
+         + overflow:auto here would trap all scrolling inside .container and
+         the chrome would never collapse. */
+      body {
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+
       .layout {
         grid-template-columns: 1fr;
         grid-template-rows: 1fr;
         grid-template-areas: "container container container";
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
       }
 
       .topbar {
@@ -306,6 +318,7 @@
       /* Push container content below the fixed topbar */
       .container {
         padding-top: var(--topbar-height);
+        overflow: visible;
       }
 
       .nav-toggle-button {
