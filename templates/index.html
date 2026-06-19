@@ -217,7 +217,7 @@
                     <form id="join-game-form" onsubmit="return joinGame(event)">
                         <label for="join-game-name">
                             {{T .Lang "game_name_label"}}
-                            <input type="text" id="join-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required
+                            <input type="text" id="join-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required autofocus
                                    hx-get="/check-game" hx-trigger="input changed delay:300ms, load"
                                    hx-target="#join-game-control" hx-swap="innerHTML">
                         </label>
