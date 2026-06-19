@@ -19,6 +19,9 @@ type Narrator interface {
 	SampleRate() int
 }
 
+// geminiTTSModel honours inline bracketed style tags like "[happy]".
+const geminiTTSModel = "google/gemini-3.1-flash-tts-preview"
+
 // openaiNarrator streams PCM from the OpenAI TTS API (or any openai-compatible endpoint).
 // OpenAI's PCM output is 24kHz, 16-bit, mono, little-endian.
 type openaiNarrator struct {
@@ -34,7 +37,7 @@ func (n *openaiNarrator) SampleRate() int { return n.sampleRate }
 func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]byte)) error {
 	// Gemini's TTS preview honours an inline style tag; ask it for Austrian
 	// High German. Other models would just read the tag aloud, so gate on it.
-	if n.model == "google/gemini-3.1-flash-tts-preview" {
+	if n.model == geminiTTSModel {
 		text = "[Österreichisches Hochdeutsch] " + text
 	}
 

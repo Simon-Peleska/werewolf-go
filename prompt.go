@@ -320,6 +320,45 @@ Behalte deiner Persönlichkeit über Antworten hinweg.
 
 Die laufenden Witze sollen im Laufe der Zeit absurder werden.`
 
+// ── Voice direction (Gemini TTS only — see geminiTTSModel in tts.go) ─────────
+//
+// streamStory (storyteller.go) splits the streamed text into sentences via
+// nextSentence() and sends each one to the narrator in its own Speak() call.
+// A feeling tag only colours the sentence it travels in, so it must sit at
+// the START of a sentence (the same chunk as the text it should affect) —
+// a tag glued to the END of the previous sentence rides along with that
+// sentence instead and has no effect on the one that follows.
+
+const feelingTagsPromptEN = `--------------------------------------------------
+VOICE DIRECTION
+--------------------------------------------------
+
+Your narration is read aloud one sentence at a time. You can colour a
+sentence's delivery with a feeling tag in square brackets placed right at
+the START of that sentence, e.g. "[terrified] The wolf lunged from the
+shadows." or "[laughs] Of course it was him, it's always him."
+
+- Always put the tag at the very beginning of the sentence it should affect
+- Never put a tag at the end of a sentence — it has no effect there
+- Use them often, but not on every single sentence
+- Pick from feelings like terrified, laughs, whispers, furious, sobbing, excited — or invent your own
+- Never explain what the tag means — just use it`
+
+const feelingTagsPromptDE = `--------------------------------------------------
+STIMMREGIE
+--------------------------------------------------
+
+Deine Erzählung wird Satz für Satz vorgelesen. Du kannst den Vortrag eines
+Satzes mit einem Gefühls-Tag in eckigen Klammern direkt am ANFANG dieses
+Satzes einfärben, z. B. "[entsetzt] Der Wolf sprang aus dem Schatten."
+oder "[lacht] Klar war's der, der ist es doch immer."
+
+- Setze das Tag immer ganz an den Anfang des Satzes, den es färben soll
+- Setze niemals ein Tag ans Satzende — dort hat es keine Wirkung
+- Verwende sie häufig, aber nicht in jedem einzelnen Satz
+- Wähle aus Gefühlen wie entsetzt, lacht, flüstert, wütend, schluchzend, aufgeregt — oder erfinde eigene
+- Erkläre niemals, was das Tag bedeutet — benutze es einfach`
+
 // ── User prompt (the per-event message sent to the model) ────────────────────
 
 // buildUserPrompt builds the per-event message for the storyteller. An empty
@@ -471,6 +510,15 @@ These are the only people who exist. Pick your favourite, your victim and your s
 		b.WriteString(systemPromptTailDE)
 	} else {
 		b.WriteString(systemPromptTailEN)
+	}
+
+	if on, ok := h.narrator.(*openaiNarrator); ok && on.model == geminiTTSModel {
+		b.WriteString("\n\n")
+		if lang == "de" {
+			b.WriteString(feelingTagsPromptDE)
+		} else {
+			b.WriteString(feelingTagsPromptEN)
+		}
 	}
 
 	// A read failure leaves status "" → we fall back to mid-game narration.
