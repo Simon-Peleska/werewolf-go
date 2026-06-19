@@ -130,44 +130,70 @@
             border-radius: 0.75rem;
             overflow: hidden;
         }
-        .auth-divider {
-            border: none;
-            border-top: 1px solid var(--pico-card-border-color);
-            margin: var(--pico-block-spacing-vertical) 0;
+        .your-games-heading {
+            --pico-font-size: 1.25rem;
+            margin-top: var(--pico-block-spacing-vertical);
         }
-        .login-inline-row {
+        .your-games {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+            margin: 0 0 var(--pico-block-spacing-vertical);
+        }
+        @media (min-width: 480px) {
+            .your-games { grid-template-columns: 1fr 1fr; }
+        }
+        .game-card {
             display: flex;
-            gap: 1rem;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 0;
+            padding: 0.75rem;
+            border: 1px solid var(--pico-card-border-color);
+            border-radius: 1rem;
+            background: var(--pico-card-background-color);
+            text-decoration: none;
+            color: var(--pico-color);
+            transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .login-inline-row label {
-            flex: 1;
-            margin: 0;
+        .game-card:hover {
+            border-color: var(--pico-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
         }
-        @media (min-width: 768px) {
-            .auth-columns {
-                display: flex;
-                align-items: flex-start;
-                gap: 0;
-            }
-            .auth-columns > section {
-                flex: 1;
-                padding: 0 1.5rem;
-            }
-            .auth-columns > section:first-child {
-                padding-left: 0;
-            }
-            .auth-columns > section:last-child {
-                padding-right: 0;
-            }
-            .auth-divider {
-                width: 1px;
-                align-self: stretch;
-                background: var(--pico-card-border-color);
-                border: none;
-                margin: 0;
-                flex-shrink: 0;
-            }
+        .game-card-won { border-color: var(--pico-ins-color); }
+        .game-card-lost { border-color: var(--pico-del-color); }
+        .game-card-seal {
+            width: 4.5rem;
+            height: 4.5rem;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
         }
+        .game-card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            min-width: 0;
+        }
+        .game-card-name {
+            font-weight: bold;
+            font-size: 1.15rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .game-status {
+            font-size: 1rem;
+            color: var(--pico-muted-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .game-status-night, .game-status-day { color: var(--pico-primary); }
+        .game-status-won { color: var(--pico-ins-color); font-weight: bold; }
+        .game-status-lost { color: var(--pico-del-color); }
+        .game-status-dead { color: var(--pico-del-color); }
     </style>
 </head>
 <body>
@@ -199,6 +225,32 @@
                             <button type="submit" id="btn-join">{{T .Lang "btn_join"}}</button>
                         </div>
                     </form>
+                    {{if .Games}}
+                    <h2 class="your-games-heading">{{T .Lang "your_games_heading"}}</h2>
+                    <div class="your-games">
+                        {{range .Games}}
+                        <a class="game-card{{if eq .Status "finished"}}{{if .Won}} game-card-won{{else}} game-card-lost{{end}}{{end}}" href="/game/{{.Name}}">
+                            <img class="game-card-seal" alt=""
+                                 src="/static/seals/{{if eq .Status "night"}}Night{{else if eq .Status "day"}}Day{{else if eq .Status "finished"}}{{if eq .Winner "villagers"}}Villagers_win{{else if eq .Winner "werewolves"}}Werewolves_win{{else}}lovers_win{{end}}{{else}}Unknown{{end}}.webp">
+                            <span class="game-card-body">
+                                <span class="game-card-name">{{.Name}}</span>
+                                <span class="game-status game-status-{{.Status}}">
+                                    {{if eq .Status "lobby"}}{{T $.Lang "game_status_lobby"}}
+                                    {{else if eq .Status "night"}}{{T $.Lang "night_round" .Round}}
+                                    {{else if eq .Status "day"}}{{T $.Lang "day_round" .Round}}
+                                    {{else if eq .Status "finished"}}{{T $.Lang (printf "%s_win_alt" .Winner)}}
+                                    {{end}}
+                                </span>
+                                {{if eq .Status "finished"}}
+                                <span class="game-status {{if .Won}}game-status-won{{else}}game-status-lost{{end}}">{{if .Won}}{{T $.Lang "you_won"}}{{else}}{{T $.Lang "you_lost"}}{{end}}</span>
+                                {{else if or (eq .Status "night") (eq .Status "day")}}
+                                <span class="game-status {{if not .PlayerAlive}}game-status-dead{{end}}">{{if .PlayerAlive}}{{T $.Lang "card_alive"}}{{else}}{{T $.Lang "card_dead"}}{{end}}</span>
+                                {{end}}
+                            </span>
+                        </a>
+                        {{end}}
+                    </div>
+                    {{end}}
                     <a href="/logout" role="button" class="secondary">{{T .Lang "btn_logout"}}</a>
                 </section>
                 <script>
@@ -211,46 +263,20 @@
                 }
                 </script>
                 {{else}}
-                <div class="auth-columns">
                 <section>
-                    <h2>{{T .Lang "new_player_heading"}}</h2>
-                    <form hx-post="/signup" hx-target="#auth-container" hx-swap="innerHTML">
-                        <label for="signup-game-name">
-                            {{T .Lang "game_name_label"}}
-                            <input type="text" id="signup-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
+                    <h2>{{T .Lang "signin_heading"}}</h2>
+                    <form hx-post="/signin" hx-target="#auth-container" hx-swap="innerHTML">
+                        <input type="hidden" name="game_name" value="{{.GameName}}">
+                        <label for="auth-name">
+                            {{T .Lang "name_label"}}
+                            <input type="text" id="auth-name" name="name" placeholder="{{T .Lang "name_placeholder"}}" value="{{.PlayerName}}" required autofocus
+                                   hx-get="/check-name" hx-trigger="input changed delay:300ms" hx-target="#auth-control" hx-swap="innerHTML">
                         </label>
-                        <label for="signup-name">
-                            {{T .Lang "choose_name_label"}}
-                            <input type="text" id="signup-name" name="name" placeholder="{{T .Lang "name_placeholder"}}" value="{{.PlayerName}}" required>
-                        </label>
-                        <button type="submit" id="btn-signup">{{T .Lang "btn_join"}}</button>
-                    </form>
-                </section>
-
-                <div class="auth-divider"></div>
-
-                <section>
-                    <h2>{{T .Lang "returning_player_heading"}}</h2>
-                    <p>{{T .Lang "returning_player_desc"}}</p>
-                    <form hx-post="/login" hx-target="#auth-container" hx-swap="innerHTML">
-                        <label for="login-game-name">
-                            {{T .Lang "game_name_label"}}
-                            <input type="text" id="login-game-name" name="game_name" placeholder="{{T .Lang "game_name_placeholder"}}" value="{{.GameName}}" required>
-                        </label>
-                        <div class="login-inline-row">
-                            <label for="login-name">
-                                {{T .Lang "name_label"}}
-                                <input type="text" id="login-name" name="name" placeholder="{{T .Lang "your_name_placeholder"}}" value="{{.PlayerName}}" required>
-                            </label>
-                            <label for="secret-code">
-                                {{T .Lang "secret_code_label"}}
-                                <input type="text" id="secret-code" name="secret_code" placeholder="{{T .Lang "secret_code_placeholder"}}" required>
-                            </label>
+                        <div id="auth-control">
+                            {{template "auth-control" .}}
                         </div>
-                        <button type="submit" id="btn-login">{{T .Lang "btn_login"}}</button>
                     </form>
                 </section>
-                </div>
                 {{end}}
             </div>
         </article>

@@ -285,7 +285,7 @@ The project uses a Nix flake (`flake.nix`) for reproducible builds and Docker im
 
 | Output | Command | Description |
 |--------|---------|-------------|
-| `packages.default` | `nix build` | Go binary via `buildGoModule` (CGO enabled) |
+| `packages.default` | `nix build` | Go binary via `buildGoModule` (static) |
 | `packages.docker` | `nix build .#docker` | Docker image via `dockerTools.buildLayeredImage` |
 | `apps.default` | `nix run` | Run the binary directly |
 | `devShells.default` | `nix develop` | Dev shell with all tooling |
@@ -299,14 +299,14 @@ nix build .#docker
 docker load < result
 docker run -p 8080:8080 werewolf
 
-# Enter dev shell (Go, GCC, pkg-config, sqlite, inotify-tools, chromium)
+# Enter dev shell (Go, sqlite, inotify-tools, chromium)
 nix develop
 ```
 
 ### Nix gotchas
-- CGO is required for go-sqlite3 — `env.CGO_ENABLED = "1"` must be set inside `env {}` (not top-level) in newer nixpkgs
+- vendor/ is committed and the flake builds from the **git tree** — after `go mod vendor`, run `git add -A` (new vendor files are untracked otherwise) or `nix build` fails with `import lookup disabled by -mod=vendor`.
 - After updating Go dependencies, recompute `vendorHash` by setting `pkgs.lib.fakeHash`, running `nix build`, and replacing with the hash from the error output
-- Docker image includes: binary, `sqlite`, `glibc`, `cacert` (for outbound HTTPS to AI providers)
+- Docker image includes: binary, `cacert` (for outbound HTTPS to AI providers)
 
 ## Licensing
 
@@ -472,7 +472,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./translations.go` | Translation table (EN/DE), `T(lang, key, args...)` lookup function, `getLangFromCookie(r)` |
 | `./main.go` | Entry point, HTTP route handlers, GameData struct, game component dispatcher |
 | `./database.go` | Database models (Game, Player, Role, GameAction), all queries, schema initialization |
-| `./auth.go` | Session management, signup/login/logout handlers, player authentication |
+| `./auth.go` | Session management, unified sign-in (`handleSignin` creates or logs in depending on whether the name exists)/logout handlers, player authentication |
 | `./hub.go` | WebSocket hub, Client connection management, message broadcasting to players |
 | `./toast.go` | Toast notification struct and rendering utilities for user feedback |
 | `./lobby.go` | Lobby display, player management, role configuration, game start initiation |
@@ -518,7 +518,9 @@ Test files are organized by feature and contain all tests and helpers for that f
 
 | Path | Purpose |
 |------|---------|
-| `templates/index.html` | Login/signup page (standard HTTP, no WebSocket) |
+| `templates/index.html` | Single sign-in page (standard HTTP, no WebSocket): one name field, then either the post-auth join-game/your-games screen (`LoggedIn`) or the sign-in form |
+| `templates/check_name.html` | Defines `"auth-control"`, the shared sign-in submit fragment (returned by `/check-name` and included from `index.html`): plain "Continue" button for a new name, or a secret-code field + "Login" button once the name is recognized as an existing account |
+| `templates/check_game.html` | Join-form fragment returned by `/check-game`: error + (en/dis)abled Join button when the typed game is already running |
 | `templates/game.html` | Main game shell (includes sidebar + content area) |
 | `templates/sidebar.html` | Player list, history, role display |
 | `templates/lobby_content.html` | Role card grid, player list, start button |
@@ -556,7 +558,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 
 ## Architecture
 - Go backend, SQLite database, HTMX frontend
-- Signup/login page uses standard HTTP (no WebSockets)
+- Sign-in page uses standard HTTP (no WebSockets)
 - After joining a game, all communication is over WebSockets (one persistent connection per player)
 - Single page app: the game view is one HTML shell updated via HTMX OOB swaps over the WebSocket
 
@@ -573,7 +575,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 - all frontend dependencies should be minified and locally served
   - backend
     - packages in the go standard library
-    - sqlite github.com/mattn/go-sqlite3
+    - sqlite modernc.org/sqlite
     - sqlx https://github.com/launchbadge/sqlx
     - gorilla websockets https://github.com/gorilla/websocket
   - frontend
@@ -588,9 +590,7 @@ Test files are organized by feature and contain all tests and helpers for that f
   - packaging / dev tooling (via flake.nix)
     - nix (with nix flakes)
     - go (Go toolchain)
-    - gcc + pkg-config (CGO build deps)
-    - sqlite (runtime lib for CGO and Docker image)
-    - glibc (Docker image runtime)
+    - sqlite (CLI for inspecting dev/test *.db files)
     - cacert (Docker image, for outbound HTTPS)
     - inotify-tools (run_server.sh --watch)
     - chromium (start_chromium.sh manual testing)

@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -69,7 +70,33 @@ func getPlayerIdFromSession(db *sqlx.DB, r *http.Request) (int64, error) {
 	return playerID, nil
 }
 
-func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
+// handleCheckName is polled by the sign-in form as the user types their name. It
+// reports whether an account with that name already exists, so the form can reveal
+// the secret-code field (returning player) or stay a one-field signup (new player).
+func (app *App) handleCheckName(w http.ResponseWriter, r *http.Request) {
+	lang := getLangFromCookie(r)
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+
+	nameExists := false
+	if name != "" {
+		_, err := getPlayerByName(app.db, name)
+		nameExists = err == nil
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := app.templates.ExecuteTemplate(w, "auth-control", struct {
+		NameExists bool
+		Lang       string
+	}{nameExists, lang}); err != nil {
+		app.logf("handleCheckName: ExecuteTemplate: %v", err)
+	}
+}
+
+// handleSignin is the single endpoint behind the unified sign-in form: it creates a
+// new account if the name doesn't exist yet, or verifies the secret code if it does.
+// Deciding signup-vs-login here (not on the client) means a race between the live
+// /check-name lookup and the actual submit can't create a duplicate or bad login.
+func (app *App) handleSignin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -81,101 +108,63 @@ func (app *App) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gameName := r.FormValue("game_name")
-	if gameName == "" {
-		toast("err_game_name_required")
-		return
-	}
-
 	name := r.FormValue("name")
 	if name == "" {
 		toast("err_name_required")
 		return
 	}
-
-	var existing Player
-	err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
-	if err == nil {
-		toast("err_name_taken")
-		return
-	}
-	if err != sql.ErrNoRows {
-		app.logf("ERROR [handleSignup: db.Get player]: %v", err)
-		toast("err_something_wrong")
-		return
-	}
-
-	secretCode, err := generateSecretCode()
-	if err != nil {
-		app.logf("ERROR [handleSignup: generateSecretCode]: %v", err)
-		toast("err_something_wrong")
-		return
-	}
-
-	result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, secretCode)
-	if err != nil {
-		app.logf("ERROR [handleSignup: db.Exec insert player]: %v", err)
-		toast("err_something_wrong")
-		return
-	}
-
-	playerID, _ := result.LastInsertId()
-	app.logf("New player created: name='%s', id=%d", name, playerID)
-	DebugLog("handleSignup", "Player '%s' signed up with ID %d", name, playerID)
-	LogDBState(app.db, "after signup: "+name)
-
-	if err := setSessionCookie(app.db, w, playerID); err != nil {
-		app.logf("ERROR [handleSignup: setSessionCookie]: %v", err)
-		toast("err_something_wrong")
-		return
-	}
-	w.Header().Set("HX-Redirect", "/game/"+gameName)
-}
-
-func (app *App) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	lang := getLangFromCookie(r)
-	toast := func(key string) {
-		w.Header().Set("HX-Reswap", "none")
-		w.Write([]byte(renderToast(app.templates, app.logf, "error", T(lang, key))))
-	}
-
-	gameName := r.FormValue("game_name")
-	if gameName == "" {
-		toast("err_game_name_required")
-		return
-	}
-
-	name := r.FormValue("name")
 	secretCode := r.FormValue("secret_code")
 
-	if name == "" || secretCode == "" {
-		toast("err_name_code_required")
+	existing, lookupErr := getPlayerByName(app.db, name)
+
+	var playerID int64
+	switch {
+	case lookupErr == sql.ErrNoRows:
+		newSecret, err := generateSecretCode()
+		if err != nil {
+			app.logf("ERROR [handleSignin: generateSecretCode]: %v", err)
+			toast("err_something_wrong")
+			return
+		}
+		result, err := app.db.Exec("INSERT INTO player (name, secret_code) VALUES (?, ?)", name, newSecret)
+		if err != nil {
+			app.logf("ERROR [handleSignin: db.Exec insert player]: %v", err)
+			toast("err_something_wrong")
+			return
+		}
+		playerID, _ = result.LastInsertId()
+		app.logf("New player created: name='%s', id=%d", name, playerID)
+		DebugLog("handleSignin", "Player '%s' signed up with ID %d", name, playerID)
+		LogDBState(app.db, "after signup: "+name)
+	case lookupErr != nil:
+		app.logf("ERROR [handleSignin: db.Get player]: %v", lookupErr)
+		toast("err_something_wrong")
 		return
+	default:
+		// Name already taken — require the matching secret code to log in.
+		if secretCode == "" {
+			toast("err_name_taken")
+			return
+		}
+		if secretCode != existing.SecretCode {
+			toast("err_invalid_credentials")
+			return
+		}
+		playerID = existing.ID
+		app.logf("Player logged in: name='%s', id=%d", name, playerID)
+		DebugLog("handleSignin", "Player '%s' logged in with ID %d", name, playerID)
 	}
 
-	var player Player
-	err := app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ? AND secret_code = ?", name, secretCode)
-	if err == sql.ErrNoRows {
-		toast("err_invalid_credentials")
-		return
-	}
-	if err != nil {
-		app.logf("ERROR [handleLogin: db.Get player]: %v", err)
+	if err := setSessionCookie(app.db, w, playerID); err != nil {
+		app.logf("ERROR [handleSignin: setSessionCookie]: %v", err)
 		toast("err_something_wrong")
 		return
 	}
-
-	app.logf("Player logged in: name='%s', id=%d", name, player.ID)
-	DebugLog("handleLogin", "Player '%s' logged in with ID %d", name, player.ID)
-	if err := setSessionCookie(app.db, w, player.ID); err != nil {
-		app.logf("ERROR [handleLogin: setSessionCookie]: %v", err)
-		toast("err_something_wrong")
-		return
+	redirectTarget := "/"
+	if gameName != "" {
+		redirectTarget = "/game/" + gameName
 	}
-	w.Header().Set("HX-Redirect", "/game/"+gameName)
+	w.Header().Set("HX-Redirect", redirectTarget)
 }
 
 func (app *App) handlePlayerImage(w http.ResponseWriter, r *http.Request) {

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -878,7 +879,7 @@ func (tb *TestBrowser) signupPlayerInGame(baseURL, name, gameName string) *TestP
 		tb.logger.Debug("Signing up player: %s (game: %s)", name, gameName)
 	}
 
-	page := tb.newIncognitoPage(baseURL)
+	page := tb.newIncognitoPage(baseURL + "?game=" + url.QueryEscape(gameName))
 
 	player := &TestPlayer{
 		Name:   name,
@@ -888,20 +889,10 @@ func (tb *TestBrowser) signupPlayerInGame(baseURL, name, gameName string) *TestP
 	}
 
 	// Fill form and submit; sidebar is rendered inline so it's present as soon as /game loads.
-	p := page.Timeout(browserTimeout)
-	if el, err := p.Element("#signup-game-name"); err == nil {
-		el.Input(gameName)
-	}
-	if el, err := p.Element("#signup-name"); err == nil {
-		el.Input(name)
-	}
-	wait := page.WaitNavigation(proto.PageLifecycleEventNameLoad)
-	if el, err := p.Element("#btn-signup"); err == nil {
-		el.Click(proto.InputMouseButtonLeft, 1)
-	}
-	wait() // blocks until navigation to /game completes
+	player.submitAuthForm(name)
 
 	// Sidebar is inline in game.html response — #secret-code-display is in the DOM immediately.
+	p := page.Timeout(browserTimeout)
 	if _, err := p.Element("#secret-code-display"); err != nil {
 		tb.t.Fatalf("signup %q: #secret-code-display not found: %v", name, err)
 	}
@@ -921,46 +912,6 @@ func (tb *TestBrowser) signupPlayerInGame(baseURL, name, gameName string) *TestP
 	if tb.logger != nil {
 		tb.logger.LogDB(fmt.Sprintf("after signup: %s", name))
 	}
-
-	return player
-}
-
-// signupPlayerNoRedirect signs up into "test-game" but expects failure (stays on page).
-// Uses incognito context for isolated session.
-func (tb *TestBrowser) signupPlayerNoRedirect(baseURL, name string) *TestPlayer {
-	return tb.signupPlayerNoRedirectInGame(baseURL, name, "test-game")
-}
-
-// signupPlayerNoRedirectInGame signs up into the specified game but expects failure (stays on page).
-// Uses incognito context for isolated session.
-func (tb *TestBrowser) signupPlayerNoRedirectInGame(baseURL, name, gameName string) *TestPlayer {
-	if tb.logger != nil {
-		tb.logger.Debug("Attempting signup (expecting failure): %s (game: %s)", name, gameName)
-	}
-
-	page := tb.newIncognitoPage(baseURL)
-
-	player := &TestPlayer{
-		Name:   name,
-		Page:   page,
-		logger: tb.logger,
-		t:      tb.t,
-	}
-
-	// Fill form and submit, expecting failure
-	player.doWithHTMXSwap(func() {
-		p := page.Timeout(browserTimeout)
-		if el, err := p.Element("#signup-game-name"); err == nil {
-			el.Input(gameName)
-		}
-		if el, err := p.Element("#signup-name"); err == nil {
-			el.Input(name)
-		}
-		if el, err := p.Element("#btn-signup"); err == nil {
-			el.Click(proto.InputMouseButtonLeft, 1)
-		}
-	})
-	player.logHTML("after failed signup attempt")
 
 	return player
 }
@@ -1167,8 +1118,11 @@ func (tp *TestPlayer) doWithHTMXSwap(action func()) {
 		tp.logger.Debug("[%s] Setting up HTMX swap listener", tp.Name)
 	}
 
-	// Set up listener first
-	_, err := tp.Page.Timeout(timeout).Eval(`
+	// Set up listener first. Page.Eval always wraps the JS as (EXPR).apply(this, arguments),
+	// so EXPR must itself be a callable — a bare statement/assignment throws a TypeError
+	// (silently swallowed below as a Debug log), which made this wait a no-op. Wrapping in
+	// an arrow function gives Eval something callable to invoke.
+	_, err := tp.Page.Timeout(timeout).Eval(`() => {
 		window._htmxSwapPromise = new Promise((resolve) => {
 			const timeoutMs = ` + fmt.Sprintf("%d", timeout.Milliseconds()) + `;
 			let timeoutId = setTimeout(() => {
@@ -1184,7 +1138,7 @@ func (tp *TestPlayer) doWithHTMXSwap(action func()) {
 
 			document.addEventListener('htmx:afterSwap', handler);
 		});
-	`)
+	}`)
 	if err != nil && tp.logger != nil {
 		tp.logger.Debug("[%s] Error setting up HTMX listener: %v", tp.Name, err)
 	}
@@ -1193,14 +1147,48 @@ func (tp *TestPlayer) doWithHTMXSwap(action func()) {
 	action()
 
 	// Wait for the swap
-	_, err = tp.Page.Timeout(timeout).Eval(`window._htmxSwapPromise`)
+	_, err = tp.Page.Timeout(timeout).Eval(`() => window._htmxSwapPromise`)
 	if err != nil && tp.logger != nil {
 		tp.logger.Debug("[%s] HTMX swap wait error: %v", tp.Name, err)
 	}
 
 	// Clean up
-	_, _ = tp.Page.Eval(`delete window._htmxSwapPromise`)
+	_, _ = tp.Page.Eval(`() => { delete window._htmxSwapPromise }`)
 	tp.logHTML("after doWithHTMXSwap")
+}
+
+// fillNameAndSecretCode types name into #auth-name and blocks until the live
+// /check-name lookup reveals #secret-code (which can't happen before its debounced
+// fetch+morph completes), then types secretCode into it.
+func (tp *TestPlayer) fillNameAndSecretCode(name, secretCode string) {
+	p := tp.p()
+	if el, err := p.Element("#auth-name"); err == nil {
+		el.Input(name)
+	}
+	secretEl, err := p.Element("#secret-code")
+	if err != nil {
+		tp.t.Fatalf("[%s] #secret-code field never appeared: %v", tp.Name, err)
+	}
+	secretEl.Input(secretCode)
+}
+
+// submitAuthForm types name into #auth-name on the unified sign-in form, clicks
+// submit, and waits for the resulting page navigation. Typing fires htmx's live
+// /check-name lookup (delay:300ms debounce); clicking before that swap settles
+// races its DOM morph against the navigation, so doWithHTMXSwap waits for it first.
+func (tp *TestPlayer) submitAuthForm(name string) {
+	p := tp.p()
+	nameEl, err := p.Element("#auth-name")
+	if err != nil {
+		tp.t.Fatalf("[%s] #auth-name not found: %v", tp.Name, err)
+	}
+	tp.doWithHTMXSwap(func() {
+		nameEl.Input(name)
+	})
+
+	wait := p.WaitNavigation(proto.PageLifecycleEventNameLoad)
+	p.MustElement("#auth-submit-btn").Click(proto.InputMouseButtonLeft, 1)
+	wait()
 }
 
 // getSecretCode reads the secret code from the game page
@@ -1357,7 +1345,7 @@ func (tb *TestBrowser) loginPlayerInGame(baseURL, name, secretCode, gameName str
 		tb.logger.Debug("Logging in player: %s (game: %s)", name, gameName)
 	}
 
-	page := tb.newIncognitoPage(baseURL)
+	page := tb.newIncognitoPage(baseURL + "?game=" + url.QueryEscape(gameName))
 
 	player := &TestPlayer{
 		Name:       name,
@@ -1367,18 +1355,9 @@ func (tb *TestBrowser) loginPlayerInGame(baseURL, name, secretCode, gameName str
 		t:          tb.t,
 	}
 
-	// Fill form and submit, wait for redirect
+	player.fillNameAndSecretCode(name, secretCode)
 	p := page.Timeout(browserTimeout)
-	if el, err := p.Element("#login-game-name"); err == nil {
-		el.Input(gameName)
-	}
-	if el, err := p.Element("#login-name"); err == nil {
-		el.Input(name)
-	}
-	if el, err := p.Element("#secret-code"); err == nil {
-		el.Input(secretCode)
-	}
-	if el, err := p.Element("#btn-login"); err == nil {
+	if el, err := p.Element("#auth-submit-btn"); err == nil {
 		el.Click(proto.InputMouseButtonLeft, 1)
 	}
 
@@ -1411,7 +1390,7 @@ func (tb *TestBrowser) loginPlayerNoRedirectInGame(baseURL, name, secretCode, ga
 		tb.logger.Debug("Attempting login (expecting failure): %s (game: %s)", name, gameName)
 	}
 
-	page := tb.newIncognitoPage(baseURL)
+	page := tb.newIncognitoPage(baseURL + "?game=" + url.QueryEscape(gameName))
 
 	player := &TestPlayer{
 		Name:       name,
@@ -1421,19 +1400,12 @@ func (tb *TestBrowser) loginPlayerNoRedirectInGame(baseURL, name, secretCode, ga
 		t:          tb.t,
 	}
 
+	player.fillNameAndSecretCode(name, secretCode)
+	p := page.Timeout(browserTimeout)
+
 	// Fill form and submit, expecting failure
 	player.doWithHTMXSwap(func() {
-		p := page.Timeout(browserTimeout)
-		if el, err := p.Element("#login-game-name"); err == nil {
-			el.Input(gameName)
-		}
-		if el, err := p.Element("#login-name"); err == nil {
-			el.Input(name)
-		}
-		if el, err := p.Element("#secret-code"); err == nil {
-			el.Input(secretCode)
-		}
-		if el, err := p.Element("#btn-login"); err == nil {
+		if el, err := p.Element("#auth-submit-btn"); err == nil {
 			el.Click(proto.InputMouseButtonLeft, 1)
 		}
 	})

@@ -472,7 +472,7 @@ Split code into files where each file contains a complete feature or subsystem. 
 | `./translations.go` | Translation table (EN/DE), `T(lang, key, args...)` lookup function, `getLangFromCookie(r)` |
 | `./main.go` | Entry point, HTTP route handlers, GameData struct, game component dispatcher |
 | `./database.go` | Database models (Game, Player, Role, GameAction), all queries, schema initialization |
-| `./auth.go` | Session management, signup/login/logout handlers, player authentication |
+| `./auth.go` | Session management, unified sign-in (`handleSignin` creates or logs in depending on whether the name exists)/logout handlers, player authentication |
 | `./hub.go` | WebSocket hub, Client connection management, message broadcasting to players |
 | `./toast.go` | Toast notification struct and rendering utilities for user feedback |
 | `./lobby.go` | Lobby display, player management, role configuration, game start initiation |
@@ -518,7 +518,8 @@ Test files are organized by feature and contain all tests and helpers for that f
 
 | Path | Purpose |
 |------|---------|
-| `templates/index.html` | Login/signup page (standard HTTP, no WebSocket) |
+| `templates/index.html` | Single sign-in page (standard HTTP, no WebSocket): one name field, then either the post-auth join-game/your-games screen (`LoggedIn`) or the sign-in form |
+| `templates/check_name.html` | Defines `"auth-control"`, the shared sign-in submit fragment (returned by `/check-name` and included from `index.html`): plain "Continue" button for a new name, or a secret-code field + "Login" button once the name is recognized as an existing account |
 | `templates/check_game.html` | Join-form fragment returned by `/check-game`: error + (en/dis)abled Join button when the typed game is already running |
 | `templates/game.html` | Main game shell (includes sidebar + content area) |
 | `templates/sidebar.html` | Player list, history, role display |
@@ -557,7 +558,7 @@ Test files are organized by feature and contain all tests and helpers for that f
 
 ## Architecture
 - Go backend, SQLite database, HTMX frontend
-- Signup/login page uses standard HTTP (no WebSockets)
+- Sign-in page uses standard HTTP (no WebSockets)
 - After joining a game, all communication is over WebSockets (one persistent connection per player)
 - Single page app: the game view is one HTML shell updated via HTMX OOB swaps over the WebSocket
 
@@ -676,6 +677,9 @@ You are a senior developer with many years of hard-won experience. You think lik
 - **CSS transition + click gotcha**: `MustClick()` calls `scrollIntoViewIfNeeded` → scroll triggers CSS animations → layout shifts during click → click misses → 5s timeout. Use `clickAndWait(selector)` (JS `element.click()`) instead of `clickElementAndWait(btn)` for buttons that may require scrolling alongside active CSS transitions.
 - **Debugging HTML**: `tp.dumpElement(selector)` returns innerHTML of any element — useful for ad-hoc `t.Logf("state: %s", p.dumpElement("#game-content"))` calls when debugging test failures.
 - **Idiomorph + structural DOM changes**: When `hx-swap-oob="morph"` updates a panel whose structure changes significantly between renders (e.g., a `<p>` replaced by a `<card-list>`), idiomorph can mismatch elements and drop subsequent siblings. Fix by wrapping distinct sections in `<div id="...">` so idiomorph tracks them by ID across morphs.
+- **`Page.Eval()` always wraps your JS as `(EXPR).apply(this, arguments)`** — a bare statement/assignment (e.g. `window._x = new Promise(...)`) isn't callable, so `.apply` throws `TypeError: ...apply is not a function`. Always pass an arrow function: `Page.Eval("() => { ... }")`. The error is easy to miss because call sites that swallow it at Debug-log level silently no-op forever (this is exactly what made `doWithHTMXSwap` in `utils.go` a complete no-op since its introduction).
+- **`page.WaitNavigation(...)` must be called on a timeboxed clone, not the raw `page`/`tp.Page`** — `wait := page.WaitNavigation(...)` with the untimeboxed page has NO timeout at all (not even `browserTimeout`), so a stuck navigation hangs until Go's test-binary-wide default timeout (10 min) kills the whole suite. Always do `p := page.Timeout(browserTimeout); wait := p.WaitNavigation(...)` (or use the `tp.p()` helper on `*TestPlayer`).
+- **Debounce race when typing then immediately clicking submit**: if a field has an `hx-trigger="input changed delay:300ms"` live-check (like `#auth-name` → `/check-name`), clicking submit before that debounced fetch+morph settles races the swap against the click-triggered navigation — usually fine at low concurrency, but stalls intermittently under heavy parallel test load. Wrap the typing in `doWithHTMXSwap(func() { el.Input(name) })` so the swap completes before the click fires.
 
 ### Logging
 - Log generously.

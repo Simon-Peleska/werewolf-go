@@ -10,6 +10,20 @@ type FinishedData struct {
 	Lang        string
 }
 
+// playerWon reports whether a player on the given team (or alive status, for lovers)
+// is on the winning side for the given winner faction ("villagers", "werewolves", or "lovers").
+func playerWon(winner, team string, alive bool) bool {
+	switch winner {
+	case "villagers":
+		return team == "villager"
+	case "werewolves":
+		return team == "werewolf"
+	case "lovers":
+		return alive
+	}
+	return false
+}
+
 // transitionToNight moves the game to the next night phase
 func (h *Hub) transitionToNight(game *Game) {
 	newRound := game.Round + 1
@@ -149,9 +163,9 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	h.triggerBroadcast()
 }
 
-// endGame marks the game as finished with a winner
+// endGame marks the game as finished and persists the winning faction.
 func (h *Hub) endGame(game *Game, winner string) {
-	_, err := h.db.Exec("UPDATE game SET status = 'finished' WHERE rowid = ?", game.ID)
+	_, err := h.db.Exec("UPDATE game SET status = 'finished', winner = ? WHERE rowid = ?", winner, game.ID)
 	if err != nil {
 		h.logError("endGame: update game status", err)
 		return

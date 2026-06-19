@@ -1,0 +1,11 @@
+{{define "auth-control"}}
+{{if .NameExists}}
+<label for="secret-code">
+    {{T .Lang "secret_code_label"}}
+    <input type="text" id="secret-code" name="secret_code" placeholder="{{T .Lang "secret_code_placeholder"}}" required>
+</label>
+<button type="submit" id="auth-submit-btn">{{T .Lang "btn_login"}}</button>
+{{else}}
+<button type="submit" id="auth-submit-btn">{{T .Lang "btn_signin_continue"}}</button>
+{{end}}
+{{end}}

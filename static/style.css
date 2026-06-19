@@ -486,6 +486,13 @@ border-top: 1px solid var(--c-muted);
 }
 .topbar-phase-day { color: var(--c-flame); }
 
+/* Clickable "Werewolf" brand title — returns to the home/logout page. */
+.brand-link {
+  color: inherit;
+  text-decoration: none;
+}
+.brand-link:hover { color: var(--c-flame); }
+
 
 /* ── Game-content enter/exit animation ─────────────────────────────────── */
 /* Similar to pc-enter: fade-up from slightly below. JS controls the exit.   */

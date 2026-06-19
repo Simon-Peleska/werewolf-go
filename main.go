@@ -274,10 +274,15 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	playerID, err := getPlayerIdFromSession(app.db, r)
 	loggedIn := err == nil && playerID > 0
 
+	var games []PlayerGame
 	if loggedIn {
 		var playerName string
 		app.db.Get(&playerName, "SELECT name FROM player WHERE rowid = ?", playerID)
 		DebugLog("handleIndex", "Page accessed by logged-in player '%s' (ID: %d)", playerName, playerID)
+
+		if games, err = getPlayerGames(app.db, playerID); err != nil {
+			app.logf("ERROR [handleIndex: getPlayerGames]: %v", err)
+		}
 	} else {
 		DebugLog("handleIndex", "Page accessed by anonymous visitor")
 	}
@@ -285,16 +290,24 @@ func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	gameName := r.URL.Query().Get("game")
 	playerName := r.URL.Query().Get("name")
 
+	nameExists := false
+	if !loggedIn && playerName != "" {
+		_, err := getPlayerByName(app.db, playerName)
+		nameExists = err == nil
+	}
+
 	lang := getLangFromCookie(r)
 	app.templates.ExecuteTemplate(w, "index.html", struct {
 		LoggedIn     bool
 		GameName     string
 		PlayerName   string
+		NameExists   bool
+		Games        []PlayerGame
 		StyleTag     template.HTML
 		ScriptTag    template.HTML
 		Lang         string
 		BuildVersion string
-	}{loggedIn, gameName, playerName, app.pageStyleTag, app.pageIndexScriptTag, lang, buildVersion})
+	}{loggedIn, gameName, playerName, nameExists, games, app.pageStyleTag, app.pageIndexScriptTag, lang, buildVersion})
 }
 
 func (app *App) handleSetLang(w http.ResponseWriter, r *http.Request) {
@@ -1284,38 +1297,13 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			return nil, err
 		}
 	} else if game.Status == "finished" {
-		// Determine winner from game_action log (endGame stores the winner via status only,
-		// so we infer from alive players — or "lovers" if a lover pair is the last two)
-		var werewolfCount int
-		db.Get(&werewolfCount, `
-			SELECT COUNT(*) FROM game_player g
-			JOIN role r ON g.role_id = r.rowid
-			WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
-
-		winner := "villagers"
-		if werewolfCount > 0 {
-			// Check if the alive players are a lover pair (lovers win)
-			var alivePlayers []Player
-			db.Select(&alivePlayers, `SELECT g.player_id as player_id FROM game_player g WHERE g.game_id = ? AND g.is_alive = 1`, game.ID)
-			if len(alivePlayers) == 2 && getLoverPartner(db, game.ID, alivePlayers[0].PlayerID) == alivePlayers[1].PlayerID {
-				winner = "lovers"
-			} else {
-				winner = "werewolves"
-			}
-		}
+		// endGame persists the winning faction on the game row before flipping status
+		// to "finished", so it's always set by the time we get here.
+		winner := *game.Winner
 
 		var winners, losers []Player
 		for _, p := range players {
-			isWinner := false
-			switch winner {
-			case "villagers":
-				isWinner = p.Team == "villager"
-			case "werewolves":
-				isWinner = p.Team == "werewolf"
-			case "lovers":
-				isWinner = p.IsAlive
-			}
-			if isWinner {
+			if playerWon(winner, p.Team, p.IsAlive) {
 				winners = append(winners, p)
 			} else {
 				losers = append(losers, p)
@@ -1391,11 +1379,11 @@ func withGzip(next http.Handler) http.Handler {
 // images, healthz) are registered by the caller.
 func (app *App) registerAppRoutes(wrap func(string, http.HandlerFunc)) {
 	wrap("/", app.handleIndex)
-	wrap("/signup", app.handleSignup)
-	wrap("/login", app.handleLogin)
+	wrap("/signin", app.handleSignin)
 	wrap("/logout", app.handleLogout)
 	wrap("/set-lang", app.handleSetLang)
 	wrap("/check-game", app.handleCheckGame)
+	wrap("/check-name", app.handleCheckName)
 	wrap("/game/{name}", app.handleGame)
 	wrap("/ws/{name}", func(w http.ResponseWriter, r *http.Request) {
 		gameName := r.PathValue("name")

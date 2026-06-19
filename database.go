@@ -8,11 +8,12 @@ import (
 )
 
 type Game struct {
-	ID        int64  `db:"id"`
-	Name      string `db:"name"`
-	Status    string `db:"status"` // lobby, night, day, finished
-	Round     int    `db:"round"`
-	AIEnabled bool   `db:"ai_enabled"` // true = AI storyteller + narrator active for this game (default on)
+	ID        int64   `db:"id"`
+	Name      string  `db:"name"`
+	Status    string  `db:"status"` // lobby, night, day, finished
+	Round     int     `db:"round"`
+	AIEnabled bool    `db:"ai_enabled"` // true = AI storyteller + narrator active for this game (default on)
+	Winner    *string `db:"winner"`     // nil until finished; then "villagers", "werewolves", or "lovers"
 }
 
 type GameRoleConfig struct {
@@ -70,6 +71,14 @@ func getPlayerName(db *sqlx.DB, playerID int64) string {
 	var name string
 	db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
 	return name
+}
+
+// getPlayerByName looks up a player account by name, returning sql.ErrNoRows if
+// no account with that name exists.
+func getPlayerByName(db *sqlx.DB, name string) (Player, error) {
+	var player Player
+	err := db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
+	return player, err
 }
 
 // getRoleName returns the player's role name in the given game, or "" if not found.
@@ -255,7 +264,8 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		name TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'lobby',
 		round INTEGER NOT NULL DEFAULT 0,
-		ai_enabled INTEGER NOT NULL DEFAULT 1
+		ai_enabled INTEGER NOT NULL DEFAULT 1,
+		winner TEXT
 	);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_game_name ON game(name) WHERE name != '';
 	CREATE TABLE IF NOT EXISTS player (
@@ -381,6 +391,13 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
+	// Migration: add winner to game (idempotent) — nil until the game ends, then the
+	// winning faction ("villagers", "werewolves", or "lovers")
+	if err := addColumnIfNotExists(db, "game", "winner", "TEXT"); err != nil {
+		logfn("initDB migration error: %v", err)
+		return err
+	}
+
 	logfn("Database initialized successfully")
 	return nil
 }
@@ -438,8 +455,42 @@ func getPlayerImage(db *sqlx.DB, imageID int64) ([]byte, string, error) {
 func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	db.Exec("INSERT OR IGNORE INTO game (name, status, round) VALUES (?, 'lobby', 0)", name)
 	var game Game
-	err := db.Get(&game, "SELECT rowid as id, name, status, round, ai_enabled FROM game WHERE name = ?", name)
+	err := db.Get(&game, "SELECT rowid as id, name, status, round, ai_enabled, winner FROM game WHERE name = ?", name)
 	return &game, err
+}
+
+// PlayerGame is a game the player has joined, for the logged-in index listing.
+type PlayerGame struct {
+	Name        string `db:"name"`
+	Status      string `db:"status"` // lobby, night, day, finished
+	Round       int    `db:"round"`
+	Winner      string `db:"winner"`       // "villagers", "werewolves", "lovers"; "" unless finished
+	PlayerTeam  string `db:"player_team"`  // this player's team ("" until roles are assigned)
+	PlayerAlive bool   `db:"player_alive"` // whether this player is still alive
+	Won         bool   // whether this player is on the winning side (finished games only)
+}
+
+// getPlayerGames returns every game the player is a participant in, newest first.
+// Won is derived from the persisted winner faction (set once by endGame) plus the
+// player's own team (or survival, for the lovers win).
+func getPlayerGames(db *sqlx.DB, playerID int64) ([]PlayerGame, error) {
+	var games []PlayerGame
+	err := db.Select(&games, `
+		SELECT g.name as name, g.status as status, g.round as round,
+			IFNULL(pr.team, '') as player_team, gp.is_alive as player_alive,
+			IFNULL(g.winner, '') as winner
+		FROM game_player gp
+		JOIN game g ON gp.game_id = g.rowid
+		LEFT JOIN role pr ON gp.role_id = pr.rowid
+		WHERE gp.player_id = ?
+		ORDER BY g.rowid DESC`, playerID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range games {
+		games[i].Won = playerWon(games[i].Winner, games[i].PlayerTeam, games[i].PlayerAlive)
+	}
+	return games, err
 }
 
 // isPlayerInGame reports whether the player is a participant (including observers)
