@@ -352,6 +352,10 @@ html::before {
   content: '';
   position: fixed;
   inset: 0;
+  /* Mobile toolbars come and go; sizing to the large viewport up front means
+     hiding the toolbar reveals more of the same image instead of a gap. */
+  height: 100vh;
+  height: 100lvh;
   z-index: 0;
   /* gradient overlay, full image, then the inlined blur-up placeholder behind it */
   background-image: linear-gradient(rgba(7, 8, 13, 0.4), rgba(7, 8, 13, 0.7)),
@@ -368,6 +372,8 @@ html::after {
   content: '';
   position: fixed;
   inset: 0;
+  height: 100vh;
+  height: 100lvh;
   z-index: 0;
   background-image: linear-gradient(rgba(242, 234, 214, 0.2), rgba(242, 234, 214, 0.5)),
                     url('/static/backgrounds/background_day.webp'),
