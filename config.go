@@ -31,6 +31,7 @@ type AppConfig struct {
 	OpenAIAPIKey           string `json:"openai_api_key"`          // API key
 	StorytellerLanguage    string `json:"storyteller_language"`    // language for built-in prompts: "en" (default) or "de"
 	StorytellerTemperature string `json:"storyteller_temperature"` // float 0-2 as string (default 1.2)
+	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`  // max tokens per completion (default 600)
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -119,6 +120,13 @@ func loadConfig(configPath string) AppConfig {
 	if v := envStr("STORYTELLER_TEMPERATURE"); v != "" {
 		cfg.StorytellerTemperature = v
 	}
+	if v := envStr("STORYTELLER_MAX_TOKENS"); v != "" {
+		var n int
+		fmt.Sscanf(v, "%d", &n)
+		if n > 0 {
+			cfg.StorytellerMaxTokens = n
+		}
+	}
 	if v := envStr("NARRATOR_PROVIDER"); v != "" {
 		cfg.NarratorProvider = v
 	}
@@ -184,6 +192,7 @@ func (cfg AppConfig) logConfig() {
 	log.Printf("  openai_api_key:                %s", censor(cfg.OpenAIAPIKey))
 	log.Printf("  storyteller_language:          %s", cfg.StorytellerLanguage)
 	log.Printf("  storyteller_temperature:       %s", cfg.StorytellerTemperature)
+	log.Printf("  storyteller_max_tokens:        %d", cfg.StorytellerMaxTokens)
 	log.Printf("  narrator_provider:             %s", cfg.NarratorProvider)
 	log.Printf("  narrator_model:                %s", cfg.NarratorModel)
 	log.Printf("  narrator_voice:                %s", cfg.NarratorVoice)
@@ -220,6 +229,9 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str("openai_api_key", &cfg.OpenAIAPIKey)
 	str("storyteller_language", &cfg.StorytellerLanguage)
 	str("storyteller_temperature", &cfg.StorytellerTemperature)
+	if v, ok := m["storyteller_max_tokens"]; ok {
+		json.Unmarshal(v, &cfg.StorytellerMaxTokens)
+	}
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
 	str("narrator_voice", &cfg.NarratorVoice)
@@ -248,6 +260,7 @@ type flagValues struct {
 	openaiAPIKey           *string
 	storytellerLanguage    *string
 	storytellerTemperature *string
+	storytellerMaxTokens   *int
 	narratorProvider       *string
 	narratorModel          *string
 	narratorVoice          *string
@@ -276,6 +289,7 @@ func registerFlags() flagValues {
 		openaiAPIKey:           flag.String("openai-api-key", "", "OpenAI API key"),
 		storytellerLanguage:    flag.String("storyteller-language", "", `language for built-in prompts: "en" (default) or "de"`),
 		storytellerTemperature: flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
+		storytellerMaxTokens:   flag.Int("storyteller-max-tokens", 0, "max tokens per storyteller completion (default 600)"),
 		narratorProvider:       flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
 		narratorModel:          flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
 		narratorVoice:          flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
@@ -320,6 +334,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerLanguage = *fv.storytellerLanguage
 		case "storyteller-temperature":
 			cfg.StorytellerTemperature = *fv.storytellerTemperature
+		case "storyteller-max-tokens":
+			cfg.StorytellerMaxTokens = *fv.storytellerMaxTokens
 		case "narrator-provider":
 			cfg.NarratorProvider = *fv.narratorProvider
 		case "narrator-model":

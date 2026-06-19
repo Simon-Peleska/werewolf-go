@@ -366,6 +366,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 | OpenAI API key | `OPENAI_API_KEY` | `openai_api_key` | `-openai-api-key` | — | API key |
 | Language | `STORYTELLER_LANGUAGE` | `storyteller_language` | `-storyteller-language` | `en` | Prompt language: `en` or `de` |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
+| Storyteller max tokens | `STORYTELLER_MAX_TOKENS` | `storyteller_max_tokens` | `-storyteller-max-tokens` | `600` | Max tokens per storyteller completion |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |

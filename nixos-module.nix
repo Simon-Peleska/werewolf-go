@@ -67,6 +67,11 @@ in {
       default = null;
       description = "Sampling temperature (0-2, default 1.2).";
     };
+    storytellerMaxTokens = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Max tokens per storyteller completion (default 600).";
+    };
 
     # ── Narrator (TTS) ────────────────────────────────────────────────────────
     narratorProvider = lib.mkOption {
@@ -122,6 +127,7 @@ in {
       // optionalEnv "OPENAI_API_BASE"           cfg.openaiApiBase
       // optionalEnv "STORYTELLER_LANGUAGE"      cfg.storytellerLanguage
       // optionalEnv "STORYTELLER_TEMPERATURE"   cfg.storytellerTemperature
+      // optionalEnv "STORYTELLER_MAX_TOKENS"    cfg.storytellerMaxTokens
       // optionalEnv "NARRATOR_PROVIDER"       cfg.narratorProvider
       // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
       // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice

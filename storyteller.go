@@ -31,6 +31,7 @@ type openaiStoryteller struct {
 	apiKey      string
 	model       string
 	temperature float64
+	maxTokens   int
 }
 
 func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt string, onChunk func(string)) (string, error) {
@@ -42,6 +43,7 @@ func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt s
 		"model":       s.model,
 		"stream":      true,
 		"temperature": s.temperature,
+		"max_tokens":  s.maxTokens,
 		"messages": []message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
@@ -308,8 +310,14 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	log.Printf("Storyteller: model=%s url=%s temperature=%.2f", cfg.OpenAIModel, baseURL, temperature)
-	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: cfg.OpenAIModel, temperature: temperature}
+
+	maxTokens := cfg.StorytellerMaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 600
+	}
+
+	log.Printf("Storyteller: model=%s url=%s temperature=%.2f max_tokens=%d", cfg.OpenAIModel, baseURL, temperature, maxTokens)
+	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: cfg.OpenAIModel, temperature: temperature, maxTokens: maxTokens}
 }
 
 // ── Story generation ─────────────────────────────────────────────────────────

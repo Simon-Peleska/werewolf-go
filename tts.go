@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"strings"
-	"math/rand"
 	"time"
 )
 
@@ -37,21 +37,15 @@ type openaiNarrator struct {
 func (n *openaiNarrator) SampleRate() int { return n.sampleRate }
 
 func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]byte)) error {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	accents := []string{
-		"[Österreichisch] ",
-		"[Russian Accent] ",
-		"[Very Fast] ",
-		"[Backwards] ",
-		"[asdfwae3weewwef] ",
-		"[Stoned] ",
-		"[Loud] ",
-	}
-	rn := rand.Int() % len(accents)
-
 	// Gemini's TTS preview honours an inline style tag; ask it for Austrian
 	// High German. Other models would just read the tag aloud, so gate on it.
 	if n.model == geminiTTSModel {
+		rand.New(rand.NewSource(time.Now().UnixNano()))
+		accents := []string{
+			"[leichter Österreichischer akzent] ",
+		}
+		rn := rand.Int() % len(accents)
+
 		text = accents[rn] + text
 	}
 
