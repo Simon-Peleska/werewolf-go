@@ -453,6 +453,7 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	DebugLog("handleWebSocket", "Player '%s' (ID: %d) initiating WebSocket connection", playerName, playerID)
 
 	var upgrader = websocket.Upgrader{
+		EnableCompression: true,
 		// CheckOrigin: func(r *http.Request) bool {
 		// 	return true // Allow all origins for local development
 		// },
