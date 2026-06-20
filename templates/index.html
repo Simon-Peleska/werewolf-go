@@ -15,9 +15,9 @@
          required even same-origin: fonts always fetch in anonymous CORS mode. -->
     <link rel="preload" href="/static/fonts/MetalMania-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/IMFellGreatPrimer-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/seals/Werewolf.webp" as="image">
     {{.StyleTag}}
     <link rel="prefetch" href="/static/seals/Villager.webp" as="image">
-    <link rel="prefetch" href="/static/seals/Werewolf.webp" as="image">
     <link rel="prefetch" href="/static/seals/Seer.webp" as="image">
     <link rel="prefetch" href="/static/seals/Doctor.webp" as="image">
     <link rel="prefetch" href="/static/seals/Witch.webp" as="image">
@@ -207,7 +207,7 @@
         <div class="page-header">
             <div class="header-brand">
                 <img src="/static/seals/Werewolf.webp" alt="Werewolf" class="header-logo lqip" style="background-image:url({{sealLQIP "Werewolf"}})" onload="this.classList.add('seal-loaded')" title="{{.BuildVersion}}">
-                <h1 title="{{.BuildVersion}}">Werewolf</h1>
+                <h1 title="{{.BuildVersion}}">{{T .Lang "brand_name"}}</h1>
             </div>
             <div class="lang-switcher">
                 <a href="/set-lang?lang=en" {{if eq .Lang "en"}}class="active"{{end}}>EN</a>

@@ -11,6 +11,7 @@ var translations = map[string]map[string]string{
 		"lang_name": "English",
 
 		// Index page
+		"brand_name":              "Werewolf",
 		"page_title_index":        "Werewolf - Sign In",
 		"join_game_heading":       "Join Game",
 		"game_name_label":         "Game Name",
@@ -235,6 +236,7 @@ var translations = map[string]map[string]string{
 		"lang_name": "Deutsch",
 
 		// Index page
+		"brand_name":              "Werwolf",
 		"page_title_index":        "Werwolf - Anmelden",
 		"join_game_heading":       "Spiel beitreten",
 		"game_name_label":         "Spielname",
