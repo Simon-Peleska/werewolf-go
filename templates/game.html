@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="htmx-config" content='{"historyCacheSize": 0}'>
   <title>Werewolf - Lobby</title>
   <link rel="icon" type="image/webp" href="/static/seals/Werewolf.webp">
   <!-- Preload the two main fonts so they fetch in parallel with the big inlined CSS
@@ -606,10 +607,19 @@
     // Global helper: send a WS message from inside shadow DOM where htmx
     // ws-send can't reach the [ws-connect] ancestor across the shadow boundary.
     var _wsSocket = null;
+    var _wsRawSocket = null;
     var _wsConnected = false;
     document.body.addEventListener('htmx:wsOpen', function (e) {
       _wsSocket = e.detail.socketWrapper;
+      _wsRawSocket = e.detail.event.target; // native WebSocket, for closing on navigation
       _wsConnected = true;
+    });
+
+    // Close the socket ourselves when navigating away (link clicks, back/forward,
+    // tab close) instead of leaving it to the browser's implicit teardown — lets
+    // the server notice the disconnect immediately rather than after a TCP timeout.
+    window.addEventListener('pagehide', function () {
+      if (_wsRawSocket) _wsRawSocket.close();
     });
     var _reconnectPolling = false;
     document.body.addEventListener('htmx:wsClose', function () {
@@ -629,15 +639,10 @@
     });
 
     // If the browser restores this page from its back-forward cache (bfcache),
-    // check whether the session cookie is still present. If it's gone the user
-    // was logged out since the page was last shown — reload so the server can
-    // redirect them to the login page.
+    // the WS we explicitly closed on pagehide is now dead — reload to
+    // reconnect (and to pick up a login change if the session cookie is gone).
     window.addEventListener('pageshow', function (e) {
-      if (e.persisted && !document.cookie.split(';').some(function(c) {
-        return c.trim().startsWith('{{.SessionCookieName}}=');
-      })) {
-        location.reload();
-      }
+      if (e.persisted) location.reload();
     });
     window.wsSend = function (params) {
       if (_wsSocket) _wsSocket.send(JSON.stringify(params), null);
