@@ -39,11 +39,11 @@
 
 /* ── Global (theme-independent) ────────────────────────────────────────── */
 :root {
-  --pico-font-family: "IM Fell Great Primer", "Noto Serif", var(--pico-font-family-emoji);
+  --pico-font-family: "IM Fell Great Primer", "Times New Roman", var(--pico-font-family-emoji);
 }
 
 h1, h2, h3, h4, h5, h6 {
-  --pico-font-family: "Metal Mania", "Noto Serif", var(--pico-font-family-emoji);
+  --pico-font-family: "Metal Mania", "Times New Roman", var(--pico-font-family-emoji);
   font-weight: 200;
 }
 
