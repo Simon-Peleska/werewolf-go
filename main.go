@@ -1459,7 +1459,8 @@ func main() {
 		"roleSealName": func(name string) string {
 			return strings.ReplaceAll(name, " ", "_")
 		},
-		"T": T,
+		"buildVersion": func() string { return buildVersion },
+		"T":            T,
 	})
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {

@@ -3,7 +3,7 @@
   <div id="topbar-phase">
     {{if eq .Game.Status "night"}}<span class="topbar-phase-label" id="topbar-phase-label" data-phase="night">{{T .Lang "night_round" .Game.Round}}</span>
     {{else if eq .Game.Status "day"}}<span class="topbar-phase-label topbar-phase-day" id="topbar-phase-label" data-phase="day">{{T .Lang "day_round" .Game.Round}}</span>
-    {{else}}<h1><a href="/" class="brand-link">{{T .Lang "brand_name"}}</a></h1>{{end}}
+    {{else}}<h1><a href="/" class="brand-link" title="{{buildVersion}}">{{T .Lang "brand_name"}}</a></h1>{{end}}
   </div>
   <div id="topbar-history-btn">{{if .HasHistory}}<label class="nav-toggle-button" for="history-bar-nav-toggle" role="button" aria-label="History Toggle navigation">H</label>{{end}}</div>
 </header>
