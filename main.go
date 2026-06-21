@@ -893,7 +893,8 @@ func handleWSMessage(client *Client, message []byte) {
 	game, err := client.hub.getGame()
 	if err != nil {
 		client.hub.logError("handleWSMessage: getGame", err)
-		client.hub.sendErrorToast(client.playerID, "Failed to get game")
+		lang := client.hub.getPlayerLang(client.playerID)
+		client.hub.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 

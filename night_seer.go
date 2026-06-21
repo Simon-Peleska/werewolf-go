@@ -53,46 +53,47 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSSeerSelect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSSeerSelect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_act"))
 		return
 	}
 	investigator, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSSeerSelect: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if investigator.RoleName != "Seer" {
-		h.sendErrorToast(client.playerID, "Only the Seer can select an investigation target")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_seer_select"))
 		return
 	}
 	if !investigator.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 	var existingCount int
 	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
 	if existingCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already investigated this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_investigated"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -117,32 +118,33 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 
 func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only investigate during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_investigate"))
 		return
 	}
 
 	investigator, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if investigator.RoleName != "Seer" {
-		h.sendErrorToast(client.playerID, "Only the Seer can investigate")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_seer_investigate"))
 		return
 	}
 
 	if !investigator.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 
@@ -152,7 +154,7 @@ SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
 	if existingCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already investigated this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_investigated"))
 		return
 	}
 
@@ -162,19 +164,19 @@ SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionSeerSelect); err != nil || selectAction.TargetPlayerID == nil {
-		h.sendErrorToast(client.playerID, "Select a player to investigate first")
+		h.sendErrorToast(client.playerID, T(lang, "err_select_investigate_first"))
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot investigate a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_investigate_dead"))
 		return
 	}
 
@@ -194,13 +196,13 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc, seerKey, histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
-		h.sendErrorToast(client.playerID, "Failed to record investigation")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_investigation"))
 		return
 	}
 
-	toastMsg := fmt.Sprintf("🔮 %s is not a werewolf.", target.Name)
+	toastMsg := T(lang, "toast_seer_not_werewolf", target.Name)
 	if target.Team == "werewolf" {
-		toastMsg = fmt.Sprintf("🔮 %s is a werewolf!", target.Name)
+		toastMsg = T(lang, "toast_seer_is_werewolf", target.Name)
 	}
 	h.sendToPlayer(client.playerID, []byte(renderToast(h.templates, h.logf, "info", toastMsg)))
 

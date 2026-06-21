@@ -282,19 +282,20 @@ AND r.name = 'Wolf Cub'`,
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNightSurveySuspect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Survey only available during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_survey_only"))
 		return
 	}
 	player, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil || !player.IsAlive {
-		h.sendErrorToast(client.playerID, "You must be alive to submit the survey")
+		h.sendErrorToast(client.playerID, T(lang, "err_must_be_alive_survey"))
 		return
 	}
 	// Don't allow changes after survey is submitted
@@ -307,12 +308,12 @@ func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -341,21 +342,22 @@ WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
 // Once all alive players have submitted, the game transitions to day.
 func handleWSNightSurvey(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSNightSurvey: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Survey only available during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_survey_only"))
 		return
 	}
 
 	player, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil || !player.IsAlive {
-		h.sendErrorToast(client.playerID, "You must be alive to submit the survey")
+		h.sendErrorToast(client.playerID, T(lang, "err_must_be_alive_survey"))
 		return
 	}
 
@@ -381,10 +383,6 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 	deathTheory := strings.TrimSpace(msg.DeathTheory)
 	notes := strings.TrimSpace(msg.Notes)
 
-	lang := client.lang
-	if lang == "" {
-		lang = "en"
-	}
 	var parts []string
 	if suspectID > 0 {
 		var suspectName string
@@ -410,7 +408,7 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 		game.ID, game.Round, client.playerID, ActionNightSurvey, VisibilityResolved, description)
 	if err != nil {
 		h.logError("handleWSNightSurvey: insert survey", err)
-		h.sendErrorToast(client.playerID, "Failed to record survey")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_survey"))
 		return
 	}
 

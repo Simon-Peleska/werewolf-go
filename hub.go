@@ -121,6 +121,7 @@ func (h *Hub) aiEnabled(gameID int64) bool {
 // handleWSToggleAI flips the game's AI on/off switch and rebroadcasts so every
 // player's sidebar reflects the new state.
 func (h *Hub) handleWSToggleAI(client *Client) {
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSToggleAI: getGame", err)
@@ -128,7 +129,7 @@ func (h *Hub) handleWSToggleAI(client *Client) {
 	}
 	if _, err := h.db.Exec("UPDATE game SET ai_enabled = NOT ai_enabled WHERE rowid = ?", game.ID); err != nil {
 		h.logError("handleWSToggleAI: update", err)
-		h.sendErrorToast(client.playerID, "Failed to toggle AI features")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_toggle_ai"))
 		return
 	}
 	h.logf("AI features toggled for game %d", game.ID)

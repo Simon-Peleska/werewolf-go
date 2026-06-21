@@ -49,27 +49,28 @@ func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 // Picks are staged (replaceable) until Cupid explicitly confirms via handleWSCupidLink.
 func handleWSCupidChoose(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSCupidChoose: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" || game.Round != 1 {
-		h.sendErrorToast(client.playerID, "Cupid can only act on Night 1")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_night1_only"))
 		return
 	}
 
 	cupid, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSCupidChoose: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if cupid.RoleName != "Cupid" || !cupid.IsAlive {
-		h.sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_only_living"))
 		return
 	}
 
@@ -77,18 +78,18 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 	var finalized int
 	h.db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 	if finalized > 0 {
-		h.sendErrorToast(client.playerID, "You have already linked the lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_already_linked"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -105,7 +106,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 			game.ID, client.playerID, ActionCupidLink)
 		if err != nil {
 			h.logError("handleWSCupidChoose: delete slot1", err)
-			h.sendErrorToast(client.playerID, "Failed to clear choice")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_choice"))
 			return
 		}
 		h.logf("Cupid '%s' unselected first lover", cupid.Name)
@@ -117,7 +118,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 			game.ID, client.playerID, ActionCupidLink2)
 		if err != nil {
 			h.logError("handleWSCupidChoose: delete slot2", err)
-			h.sendErrorToast(client.playerID, "Failed to clear choice")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_choice"))
 			return
 		}
 		h.logf("Cupid '%s' unselected second lover", cupid.Name)
@@ -135,20 +136,20 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 	var fillType string
 	if slot1ID == 0 {
 		if slot2ID == targetID {
-			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
 		fillType = ActionCupidLink
 	} else if slot2ID == 0 {
 		if slot1ID == targetID {
-			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
 		fillType = ActionCupidLink2
 	} else {
 		// Both filled — replace slot 2
 		if slot1ID == targetID {
-			h.sendErrorToast(client.playerID, "The two lovers must be different players")
+			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
 		fillType = ActionCupidLink2
@@ -162,7 +163,7 @@ DO UPDATE SET target_player_id = ?, description = ''`,
 		game.ID, client.playerID, fillType, targetID, VisibilityActor, targetID)
 	if err != nil {
 		h.logError("handleWSCupidChoose: insert", err)
-		h.sendErrorToast(client.playerID, "Failed to record choice")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_choice"))
 		return
 	}
 	h.logf("Cupid '%s' chose lover '%s' (slot: %s)", cupid.Name, target.Name, fillType)
@@ -172,34 +173,35 @@ DO UPDATE SET target_player_id = ?, description = ''`,
 // handleWSCupidLink finalizes Cupid's staged lover choices on Night 1.
 func handleWSCupidLink(client *Client) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSCupidLink: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" || game.Round != 1 {
-		h.sendErrorToast(client.playerID, "Cupid can only act on Night 1")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_night1_only"))
 		return
 	}
 
 	cupid, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSCupidLink: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if cupid.RoleName != "Cupid" || !cupid.IsAlive {
-		h.sendErrorToast(client.playerID, "Only the living Cupid can link lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_only_living"))
 		return
 	}
 
 	var finalized int
 	h.db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 	if finalized > 0 {
-		h.sendErrorToast(client.playerID, "You have already linked the lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_cupid_already_linked"))
 		return
 	}
 
@@ -211,11 +213,11 @@ func handleWSCupidLink(client *Client) {
 		game.ID, client.playerID, ActionCupidLink2)
 
 	if firstLoverID == 0 || secondLoverID == 0 {
-		h.sendErrorToast(client.playerID, "Choose two lovers before linking them")
+		h.sendErrorToast(client.playerID, T(lang, "err_choose_two_lovers_first"))
 		return
 	}
 	if firstLoverID == secondLoverID {
-		h.sendErrorToast(client.playerID, "The two lovers must be different players")
+		h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 		return
 	}
 
@@ -223,12 +225,12 @@ func handleWSCupidLink(client *Client) {
 	var second Player
 	first, err = getPlayerInGame(h.db, game.ID, firstLoverID)
 	if err != nil || !first.IsAlive {
-		h.sendErrorToast(client.playerID, "First lover is invalid")
+		h.sendErrorToast(client.playerID, T(lang, "err_first_lover_invalid"))
 		return
 	}
 	second, err = getPlayerInGame(h.db, game.ID, secondLoverID)
 	if err != nil || !second.IsAlive {
-		h.sendErrorToast(client.playerID, "Second lover is invalid")
+		h.sendErrorToast(client.playerID, T(lang, "err_second_lover_invalid"))
 		return
 	}
 
@@ -236,14 +238,14 @@ func handleWSCupidLink(client *Client) {
 		game.ID, firstLoverID, secondLoverID)
 	if err != nil {
 		h.logError("handleWSCupidLink: insert lovers row1", err)
-		h.sendErrorToast(client.playerID, "Failed to link lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_link_lovers"))
 		return
 	}
 	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
 		game.ID, secondLoverID, firstLoverID)
 	if err != nil {
 		h.logError("handleWSCupidLink: insert lovers row2", err)
-		h.sendErrorToast(client.playerID, "Failed to link lovers")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_link_lovers"))
 		return
 	}
 
@@ -258,8 +260,8 @@ func handleWSCupidLink(client *Client) {
 	_, _ = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND phase = 'night' AND actor_player_id = ? AND action_type IN (?, ?)`,
 		game.ID, client.playerID, ActionCupidLink, ActionCupidLink2)
 
-	h.sendToPlayer(firstLoverID, []byte(renderToast(h.templates, h.logf, "info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", second.Name))))
-	h.sendToPlayer(secondLoverID, []byte(renderToast(h.templates, h.logf, "info", fmt.Sprintf("💞 Cupid has linked you! Your lover is %s.", first.Name))))
+	h.sendToPlayer(firstLoverID, []byte(renderToast(h.templates, h.logf, "info", T(h.getPlayerLang(firstLoverID), "toast_cupid_linked", second.Name))))
+	h.sendToPlayer(secondLoverID, []byte(renderToast(h.templates, h.logf, "info", T(h.getPlayerLang(secondLoverID), "toast_cupid_linked", first.Name))))
 
 	h.logf("Cupid '%s' linked lovers: '%s' and '%s'", cupid.Name, first.Name, second.Name)
 	DebugLog("handleWSCupidLink", "Cupid '%s' linked '%s' and '%s'", cupid.Name, first.Name, second.Name)

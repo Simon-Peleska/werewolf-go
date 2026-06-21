@@ -53,46 +53,47 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSDoctorSelect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoctorSelect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_act"))
 		return
 	}
 	doctor, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDoctorSelect: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if doctor.RoleName != "Doctor" {
-		h.sendErrorToast(client.playerID, "Only the Doctor can select a protection target")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_doctor_select"))
 		return
 	}
 	if !doctor.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 	var existingCount int
 	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect)
 	if existingCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_protected"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -117,32 +118,33 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 
 func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoctorProtect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only protect during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_protect"))
 		return
 	}
 
 	doctor, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDoctorProtect: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if doctor.RoleName != "Doctor" {
-		h.sendErrorToast(client.playerID, "Only the Doctor can protect players")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_doctor_protect"))
 		return
 	}
 
 	if !doctor.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 
@@ -152,7 +154,7 @@ SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect)
 	if existingCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already protected someone this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_protected"))
 		return
 	}
 
@@ -162,19 +164,19 @@ SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionDoctorSelect); err != nil || selectAction.TargetPlayerID == nil {
-		h.sendErrorToast(client.playerID, "Select a player to protect first")
+		h.sendErrorToast(client.playerID, T(lang, "err_select_protect_first"))
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot protect a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_protect_dead"))
 		return
 	}
 
@@ -188,7 +190,7 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionDoctorProtect, targetID, VisibilityActor, doctorDesc, "hist_protected", histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSDoctorProtect: db.Exec insert protection", err)
-		h.sendErrorToast(client.playerID, "Failed to record protection")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_protection"))
 		return
 	}
 

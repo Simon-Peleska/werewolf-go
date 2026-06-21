@@ -154,48 +154,49 @@ ORDER BY count DESC`,
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchSelectHeal: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_act"))
 		return
 	}
 	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWitchSelectHeal: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if witch.RoleName != "Witch" {
-		h.sendErrorToast(client.playerID, "Only the Witch can select a heal target")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_witch_select_heal"))
 		return
 	}
 	if !witch.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 	var appliedCount int
 	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_submitted_night"))
 		return
 	}
 	var healUsed int
 	h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionWitchHeal)
 	if healUsed > 0 {
-		h.sendErrorToast(client.playerID, "Your heal potion has already been used")
+		h.sendErrorToast(client.playerID, T(lang, "err_heal_already_used"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -221,48 +222,49 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 // handleWSWitchSelectPoison toggles the witch's pending poison selection.
 func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchSelectPoison: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_act"))
 		return
 	}
 	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWitchSelectPoison: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if witch.RoleName != "Witch" {
-		h.sendErrorToast(client.playerID, "Only the Witch can select a poison target")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_witch_select_poison"))
 		return
 	}
 	if !witch.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 	var appliedCount int
 	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_submitted_night"))
 		return
 	}
 	var poisonUsed int
 	h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionWitchKill)
 	if poisonUsed > 0 {
-		h.sendErrorToast(client.playerID, "Your poison potion has already been used")
+		h.sendErrorToast(client.playerID, T(lang, "err_poison_already_used"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -288,35 +290,36 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 // handleWSWitchApply commits the witch's pending selections and ends her night turn.
 func handleWSWitchApply(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWitchApply: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Can only act during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_phase_act"))
 		return
 	}
 	witch, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWitchApply: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if witch.RoleName != "Witch" {
-		h.sendErrorToast(client.playerID, "Only the Witch can apply actions")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_witch_apply"))
 		return
 	}
 	if !witch.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot act")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_act"))
 		return
 	}
 	var appliedCount int
 	h.db.Get(&appliedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionWitchApply)
 	if appliedCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already submitted your actions for this night")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_submitted_night"))
 		return
 	}
 
@@ -333,25 +336,25 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 			game.ID, client.playerID, ActionWitchHeal)
 		if healUsed > 0 {
-			h.sendErrorToast(client.playerID, "Your heal potion has already been used")
+			h.sendErrorToast(client.playerID, T(lang, "err_heal_already_used"))
 			return
 		}
 		if targetID == client.playerID {
-			h.sendErrorToast(client.playerID, "You cannot heal yourself")
+			h.sendErrorToast(client.playerID, T(lang, "err_cannot_heal_self"))
 			return
 		}
 		var endVoteCount int
 		h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
 			game.ID, game.Round, ActionWerewolfEndVote)
 		if endVoteCount == 0 {
-			h.sendErrorToast(client.playerID, "Werewolves have not locked in their vote yet")
+			h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_locked"))
 			return
 		}
 		var isVictim int
 		h.db.Get(&isVictim, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type IN (?,?) AND target_player_id=?`,
 			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, targetID)
 		if isVictim == 0 {
-			h.sendErrorToast(client.playerID, "You can only heal a werewolf target")
+			h.sendErrorToast(client.playerID, T(lang, "err_heal_must_target_werewolf"))
 			return
 		}
 		var targetName string
@@ -363,7 +366,7 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 			game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc, "hist_witch_heal", histArgs(game.Round, targetName))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit heal", err)
-			h.sendErrorToast(client.playerID, "Failed to commit heal")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_commit_heal"))
 			return
 		}
 		h.logf("Witch '%s' committed heal on player %d (%s)", witch.Name, targetID, targetName)
@@ -382,12 +385,12 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
 			game.ID, client.playerID, ActionWitchKill)
 		if poisonUsed > 0 {
-			h.sendErrorToast(client.playerID, "Your poison potion has already been used")
+			h.sendErrorToast(client.playerID, T(lang, "err_poison_already_used"))
 			return
 		}
 		target, err := getPlayerInGame(h.db, game.ID, targetID)
 		if err != nil || !target.IsAlive {
-			h.sendErrorToast(client.playerID, "Poison target is no longer valid")
+			h.sendErrorToast(client.playerID, T(lang, "err_poison_target_invalid"))
 			return
 		}
 		witchKillDesc := fmt.Sprintf("Night %d: You poisoned %s", game.Round, target.Name)
@@ -397,7 +400,7 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 			game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc, "hist_witch_poison", histArgs(game.Round, target.Name))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit poison", err)
-			h.sendErrorToast(client.playerID, "Failed to commit poison")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_commit_poison"))
 			return
 		}
 		h.logf("Witch '%s' committed poison on player %d (%s)", witch.Name, targetID, target.Name)
@@ -410,7 +413,7 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?)`,
 		game.ID, game.Round, client.playerID, ActionWitchApply, VisibilityActor, witchApplyDesc, "hist_witch_confirmed", histArgs(game.Round, witch.Name))
 	if err != nil {
 		h.logError("handleWSWitchApply: insert apply", err)
-		h.sendErrorToast(client.playerID, "Failed to record witch action")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_witch_action"))
 		return
 	}
 

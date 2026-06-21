@@ -137,32 +137,33 @@ WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfVote: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfVote: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_vote"))
 		return
 	}
 
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 
@@ -170,24 +171,24 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote)
 	if endVoteCount > 0 {
-		h.sendErrorToast(client.playerID, "The vote has already been locked in")
+		h.sendErrorToast(client.playerID, T(lang, "err_vote_locked"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot target a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_target_dead"))
 		return
 	}
 
@@ -200,7 +201,7 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 			game.ID, game.Round, client.playerID, ActionWerewolfKill)
 		if err != nil {
 			h.logError("handleWSWerewolfVote: db.Exec delete vote", err)
-			h.sendErrorToast(client.playerID, "Failed to clear vote")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_vote"))
 			return
 		}
 		h.logf("Werewolf %d (%s) unselected vote for player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
@@ -218,7 +219,7 @@ DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, descri
 		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, dKey, dArgs, targetID, description, dKey, dArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfVote: db.Exec insert vote", err)
-		h.sendErrorToast(client.playerID, "Failed to record vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote"))
 		return
 	}
 
@@ -231,37 +232,38 @@ DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, descri
 
 func handleWSWerewolfVote2(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_vote"))
 		return
 	}
 
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 
 	if game.Round <= 1 {
-		h.sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		h.sendErrorToast(client.playerID, T(lang, "err_wolfcub_not_active"))
 		return
 	}
 	var wolfCubDeathCount int
@@ -274,7 +276,7 @@ AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_
 AND r.name = 'Wolf Cub'`,
 		game.ID, game.Round-1)
 	if wolfCubDeathCount == 0 {
-		h.sendErrorToast(client.playerID, "Wolf Cub double kill not active")
+		h.sendErrorToast(client.playerID, T(lang, "err_wolfcub_not_active"))
 		return
 	}
 
@@ -282,24 +284,24 @@ AND r.name = 'Wolf Cub'`,
 	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote2)
 	if endVote2Count > 0 {
-		h.sendErrorToast(client.playerID, "The second vote has already been locked in")
+		h.sendErrorToast(client.playerID, T(lang, "err_vote2_locked"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot target a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_target_dead"))
 		return
 	}
 
@@ -313,7 +315,7 @@ DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, descri
 		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, dKey2, dArgs2, targetID, description2, dKey2, dArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
-		h.sendErrorToast(client.playerID, "Failed to record second vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote2"))
 		return
 	}
 
@@ -326,35 +328,36 @@ DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, descri
 
 func handleWSWerewolfPass(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfPass: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfPass: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_vote"))
 		return
 	}
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 	var endVoteCount int
 	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote)
 	if endVoteCount > 0 {
-		h.sendErrorToast(client.playerID, "The vote has already been locked in")
+		h.sendErrorToast(client.playerID, T(lang, "err_vote_locked"))
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed", game.Round, voter.Name)
@@ -367,7 +370,7 @@ DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, des
 		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passKey, passArgs, passDesc, passKey, passArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfPass: db.Exec", err)
-		h.sendErrorToast(client.playerID, "Failed to record pass")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
 		return
 	}
 	h.logf("Werewolf %d (%s) passed the kill vote", client.playerID, voter.Name)
@@ -376,35 +379,36 @@ DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, des
 
 func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can vote at night")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_vote"))
 		return
 	}
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 	var endVote2Count int
 	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		game.ID, game.Round, ActionWerewolfEndVote2)
 	if endVote2Count > 0 {
-		h.sendErrorToast(client.playerID, "The second vote has already been locked in")
+		h.sendErrorToast(client.playerID, T(lang, "err_vote2_locked"))
 		return
 	}
 	passDesc := fmt.Sprintf("Night %d: %s passed (second kill)", game.Round, voter.Name)
@@ -417,7 +421,7 @@ DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, des
 		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passKey2, passArgs2, passDesc, passKey2, passArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: db.Exec", err)
-		h.sendErrorToast(client.playerID, "Failed to record pass")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
 		return
 	}
 	h.logf("Werewolf %d (%s) passed the second kill vote", client.playerID, voter.Name)
@@ -426,24 +430,25 @@ DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, des
 
 func handleWSWerewolfEndVote(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_end_vote"))
 		return
 	}
 
@@ -460,7 +465,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 		game.ID, game.Round, ActionWerewolfKill)
 
 	if totalActed < len(werewolves) {
-		h.sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted yet (%d/%d)", totalActed, len(werewolves)))
+		h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_done", totalActed, len(werewolves)))
 		return
 	}
 
@@ -471,9 +476,10 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 	}
 
 	h.logf("Werewolf %d (%s) ended the kill vote", client.playerID, voter.Name)
-	html := renderToast(h.templates, h.logf, "info", "🐺 The werewolves have made their choice...")
-	if html != "" {
-		h.broadcast <- []byte(html)
+	if players, err := getPlayersByGameId(h.db, game.ID); err == nil {
+		for _, p := range players {
+			h.sendToPlayer(p.PlayerID, []byte(renderToast(h.templates, h.logf, "info", T(h.getPlayerLang(p.PlayerID), "toast_wolves_chosen"))))
+		}
 	}
 	h.maybeSpeakStory(game.ID, T(h.storytellerLang, "tts_wolves_chosen"))
 	h.resolveWerewolfVotes(game)
@@ -481,24 +487,25 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 func handleWSWerewolfEndVote2(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote2: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during night phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_night_vote_only"))
 		return
 	}
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote2: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if voter.Team != "werewolf" {
-		h.sendErrorToast(client.playerID, "Only werewolves can end the vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_only_werewolves_end_vote"))
 		return
 	}
 
@@ -515,7 +522,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 		game.ID, game.Round, ActionWerewolfKill2)
 
 	if totalActed2 < len(werewolves) {
-		h.sendErrorToast(client.playerID, fmt.Sprintf("Not all werewolves have voted for the second kill yet (%d/%d)", totalActed2, len(werewolves)))
+		h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_done_second", totalActed2, len(werewolves)))
 		return
 	}
 

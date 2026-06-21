@@ -86,15 +86,16 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 
 func handleWSDayVote(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayVote: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "day" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_day_vote_only"))
 		return
 	}
 
@@ -102,31 +103,31 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDayVote: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 
 	// Parse target player ID
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
 	// Check that the target is valid (alive)
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot vote for a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_vote_dead"))
 		return
 	}
 
@@ -139,7 +140,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 			game.ID, game.Round, client.playerID, ActionDayVote)
 		if err != nil {
 			h.logError("handleWSDayVote: db.Exec delete vote", err)
-			h.sendErrorToast(client.playerID, "Failed to clear vote")
+			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_vote"))
 			return
 		}
 		h.logf("Player %d (%s) unselected day vote for player %d (%s)", client.playerID, voter.Name, targetID, target.Name)
@@ -158,7 +159,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, dayVoteDesc, dvKey, dvArgs, targetID, dayVoteDesc, dvKey, dvArgs)
 	if err != nil {
 		h.logError("handleWSDayVote: db.Exec insert vote", err)
-		h.sendErrorToast(client.playerID, "Failed to record vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote"))
 		return
 	}
 
@@ -171,27 +172,28 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 
 func handleWSDayPass(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayPass: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "day" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_day_vote_only"))
 		return
 	}
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDayPass: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_vote"))
 		return
 	}
 
@@ -206,7 +208,7 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 		game.ID, game.Round, client.playerID, ActionDayVote, VisibilityPublic, passDesc, dpKey, dpArgs, passDesc, dpKey, dpArgs)
 	if err != nil {
 		h.logError("handleWSDayPass: db.Exec", err)
-		h.sendErrorToast(client.playerID, "Failed to record pass")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
 		return
 	}
 
@@ -216,27 +218,28 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 
 func handleWSDayEndVote(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDayEndVote: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "day" {
-		h.sendErrorToast(client.playerID, "Voting only allowed during day phase")
+		h.sendErrorToast(client.playerID, T(lang, "err_day_vote_only"))
 		return
 	}
 
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDayEndVote: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if !voter.IsAlive {
-		h.sendErrorToast(client.playerID, "Dead players cannot end the vote")
+		h.sendErrorToast(client.playerID, T(lang, "err_dead_cannot_end_vote"))
 		return
 	}
 
@@ -253,7 +256,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 		game.ID, game.Round, ActionDayVote)
 
 	if totalActed < len(alivePlayers) {
-		h.sendErrorToast(client.playerID, fmt.Sprintf("Not all players have voted yet (%d/%d)", totalActed, len(alivePlayers)))
+		h.sendErrorToast(client.playerID, T(lang, "err_players_not_done", totalActed, len(alivePlayers)))
 		return
 	}
 
@@ -369,28 +372,29 @@ func (h *Hub) resolveDayVotes(game *Game) {
 // Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSHunterSelect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSHunterSelect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "day" {
-		h.sendErrorToast(client.playerID, "Hunter revenge not active")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_revenge_inactive"))
 		return
 	}
 	hunter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSHunterSelect: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if hunter.RoleName != "Hunter" {
-		h.sendErrorToast(client.playerID, "Only the Hunter can select a target")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_only_select"))
 		return
 	}
 	if hunter.IsAlive {
-		h.sendErrorToast(client.playerID, "Hunter revenge is only available when eliminated")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_revenge_only_dead"))
 		return
 	}
 	// Don't allow re-selection if already shot
@@ -398,18 +402,18 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 	h.db.Get(&revengeCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionHunterRevenge)
 	if revengeCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already taken your revenge shot")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_shot"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -436,32 +440,33 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 
 func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSHunterRevenge: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 
 	if game.Status != "day" {
-		h.sendErrorToast(client.playerID, "Hunter revenge not active")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_revenge_inactive"))
 		return
 	}
 
 	hunter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSHunterRevenge: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 
 	if hunter.RoleName != "Hunter" {
-		h.sendErrorToast(client.playerID, "Only the Hunter can take a revenge shot")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_only_shoot"))
 		return
 	}
 
 	if hunter.IsAlive {
-		h.sendErrorToast(client.playerID, "Hunter revenge is only available when eliminated")
+		h.sendErrorToast(client.playerID, T(lang, "err_hunter_revenge_only_dead"))
 		return
 	}
 
@@ -472,7 +477,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		WHERE game_id = ? AND round = ? AND actor_player_id = ? AND action_type = ?`,
 		game.ID, game.Round, client.playerID, ActionHunterRevenge)
 	if revengeCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already taken your revenge shot")
+		h.sendErrorToast(client.playerID, T(lang, "err_already_shot"))
 		return
 	}
 
@@ -483,19 +488,19 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		FROM game_action
 		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
 		game.ID, game.Round, client.playerID, ActionHunterSelect); err != nil || selectAction.TargetPlayerID == nil {
-		h.sendErrorToast(client.playerID, "Select a player to shoot first")
+		h.sendErrorToast(client.playerID, T(lang, "err_select_shoot_first"))
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
 	if !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Cannot shoot a dead player")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_shoot_dead"))
 		return
 	}
 
@@ -507,7 +512,7 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	_, err = h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, targetID)
 	if err != nil {
 		h.logError("handleWSHunterRevenge: kill target", err)
-		h.sendErrorToast(client.playerID, "Failed to kill target")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_kill_target"))
 		return
 	}
 

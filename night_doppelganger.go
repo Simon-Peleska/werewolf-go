@@ -58,46 +58,47 @@ WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_t
 // handleWSDoppelgangerSelect toggles the Doppelganger's pending copy target on Night 1.
 func handleWSDoppelgangerSelect(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoppelgangerSelect: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" || game.Round != 1 {
-		h.sendErrorToast(client.playerID, "Doppelganger can only act on Night 1")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_night1_only"))
 		return
 	}
 	doppelganger, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDoppelgangerSelect: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if doppelganger.RoleName != "Doppelganger" || !doppelganger.IsAlive {
-		h.sendErrorToast(client.playerID, "Only the living Doppelganger can copy a role")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_only_living"))
 		return
 	}
 	var copiedCount int
 	h.db.Get(&copiedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionDoppelgangerCopy)
 	if copiedCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already chosen a role to copy")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_already_chosen"))
 		return
 	}
 
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 	if targetID == client.playerID {
-		h.sendErrorToast(client.playerID, "You cannot copy yourself")
+		h.sendErrorToast(client.playerID, T(lang, "err_cannot_copy_self"))
 		return
 	}
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Invalid target")
+		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
@@ -126,31 +127,32 @@ WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_t
 // (they act as their new role starting from Night 2).
 func handleWSDoppelgangerCopy(client *Client, msg WSMessage) {
 	h := client.hub
+	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSDoppelgangerCopy: getOrCreateCurrentGame", err)
-		h.sendErrorToast(client.playerID, "Failed to get game")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
 		return
 	}
 	if game.Status != "night" || game.Round != 1 {
-		h.sendErrorToast(client.playerID, "Doppelganger can only act on Night 1")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_night1_only"))
 		return
 	}
 	doppelganger, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDoppelgangerCopy: getPlayerInGame", err)
-		h.sendErrorToast(client.playerID, "You are not in this game")
+		h.sendErrorToast(client.playerID, T(lang, "err_not_in_game"))
 		return
 	}
 	if doppelganger.RoleName != "Doppelganger" || !doppelganger.IsAlive {
-		h.sendErrorToast(client.playerID, "Only the living Doppelganger can copy a role")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_only_living"))
 		return
 	}
 	var copiedCount int
 	h.db.Get(&copiedCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionDoppelgangerCopy)
 	if copiedCount > 0 {
-		h.sendErrorToast(client.playerID, "You have already chosen a role to copy")
+		h.sendErrorToast(client.playerID, T(lang, "err_doppelganger_already_chosen"))
 		return
 	}
 
@@ -160,14 +162,14 @@ SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_
 FROM game_action
 WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_type=?`,
 		game.ID, client.playerID, ActionDoppelgangerSelect); err != nil || selectAction.TargetPlayerID == nil {
-		h.sendErrorToast(client.playerID, "Select a player to copy first")
+		h.sendErrorToast(client.playerID, T(lang, "err_select_copy_first"))
 		return
 	}
 	targetID := *selectAction.TargetPlayerID
 
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
-		h.sendErrorToast(client.playerID, "Target not found")
+		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
 		return
 	}
 
@@ -180,7 +182,7 @@ WHERE game_id=? AND round=1 AND phase='night' AND actor_player_id=? AND action_t
 	if _, err := h.db.Exec(`UPDATE game_player SET role_id = ?, original_role_id = ? WHERE game_id = ? AND player_id = ?`,
 		targetRoleID, originalRoleID, game.ID, client.playerID); err != nil {
 		h.logError("handleWSDoppelgangerCopy: update role", err)
-		h.sendErrorToast(client.playerID, "Failed to apply role change")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_apply_role_change"))
 		return
 	}
 
@@ -194,11 +196,11 @@ VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 		game.ID, client.playerID, ActionDoppelgangerCopy, targetID, VisibilityActor, copyDesc, "hist_doppelganger", histArgs(target.RoleName, target.Name))
 	if err != nil {
 		h.logError("handleWSDoppelgangerCopy: insert copy action", err)
-		h.sendErrorToast(client.playerID, "Failed to record copy")
+		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_copy"))
 		return
 	}
 
-	toastMsg := fmt.Sprintf("🎭 You are now a %s!", target.RoleName)
+	toastMsg := T(lang, "toast_doppelganger_became", T(lang, "role_name_"+target.RoleName))
 	h.sendToPlayer(client.playerID, []byte(renderToast(h.templates, h.logf, "info", toastMsg)))
 
 	// Notify any Seers who previously investigated the Doppelganger if the copied role is werewolf team
@@ -211,7 +213,7 @@ SELECT actor_player_id FROM game_action
 WHERE game_id = ? AND action_type = ? AND target_player_id = ?`,
 			game.ID, ActionSeerInvestigate, doppelganger.PlayerID)
 		for _, inv := range seerInvestigations {
-			notif := fmt.Sprintf("⚠️ %s (whom you investigated) has become a werewolf — your earlier reading is outdated!", doppelganger.Name)
+			notif := T(h.getPlayerLang(inv.ActorPlayerID), "toast_seer_outdated_reading", doppelganger.Name)
 			h.sendToPlayer(inv.ActorPlayerID, []byte(renderToast(h.templates, h.logf, "warning", notif)))
 		}
 	}
