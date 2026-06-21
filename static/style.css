@@ -114,6 +114,7 @@ h1, h2, h3, h4, h5, h6 {
   --pico-primary-hover-border:     var(--c-amber);
   --pico-primary-focus:            rgba(200, 104, 32, 0.4);
   --pico-primary-inverse:          var(--c-amber-bright);
+  --pico-text-selection-color:     color-mix(in srgb, var(--pico-primary) 35%, transparent);
 
   --pico-secondary:                  var(--c-muted);
   --pico-secondary-background:       #1a2430;
@@ -229,6 +230,7 @@ h1, h2, h3, h4, h5, h6 {
   --pico-primary-hover-border:     #2a5e2a;
   --pico-primary-focus:            rgba(58, 122, 58, 0.3);
   --pico-primary-inverse:          #f2ead6;
+  --pico-text-selection-color:     color-mix(in srgb, var(--pico-primary) 35%, transparent);
 
   --pico-secondary:                  var(--c-muted);
   --pico-secondary-background:       var(--c-bark);
