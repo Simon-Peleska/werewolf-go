@@ -632,7 +632,7 @@
       (function poll() {
         setTimeout(function () {
           fetch('/healthz', { cache: 'no-store' })
-            .then(function () { location.reload(); })
+            .then(function (r) { if (r.ok) location.reload(); else poll(); })
             .catch(function () { poll(); });
         }, 500);
       })();
