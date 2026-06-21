@@ -42,7 +42,7 @@ func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]
 	if n.model == geminiTTSModel {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
 		accents := []string{
-			"[Österreichisches Hochdeutsch] ",
+			"[Österreichisches Hochdeutsch, tiefe Männerstimme, ernster Prophet] ",
 			// "[русский] ",
 			// "[dansk] ",
 			// "[ᐃᓄᒃᑎᑐᑦ] ",
