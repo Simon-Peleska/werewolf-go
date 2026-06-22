@@ -11,7 +11,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// WSMessage represents a message from the client
 type WSMessage struct {
 	Action          string `json:"action"`
 	RoleID          string `json:"role_id,omitempty"`
@@ -24,13 +23,11 @@ type WSMessage struct {
 
 const clientSendBuf = 64 // outbound message buffer per client
 
-// hubMsg is a tagged WebSocket message (text or binary).
 type hubMsg struct {
 	binary bool
 	data   []byte
 }
 
-// Client represents a websocket connection with player info
 type Client struct {
 	conn     *websocket.Conn
 	playerID int64
@@ -39,7 +36,6 @@ type Client struct {
 	lang     string
 }
 
-// writer drains the send channel and writes to the WebSocket connection.
 // Runs in its own goroutine so slow clients never block the hub.
 func (c *Client) writer() {
 	defer c.hub.clientWg.Done()
@@ -55,7 +51,6 @@ func (c *Client) writer() {
 	}
 }
 
-// WebSocket hub for broadcasting updates to all connected clients
 type Hub struct {
 	clients        map[*websocket.Conn]*Client
 	broadcast      chan []byte
@@ -102,13 +97,12 @@ func (h *Hub) getGame() (*Game, error) {
 	return getOrCreateGameByName(h.db, h.gameName)
 }
 
-// logError logs an error with context, routed through hub's logf so tests see it via t.Logf.
+// routed through hub's logf so tests see it via t.Logf.
 func (h *Hub) logError(context string, err error) {
 	h.logf("ERROR [%s]: %v", context, err)
 }
 
-// aiEnabled reports whether AI features (storyteller + narrator) are switched on
-// for the given game. Defaults to true; players can toggle it from the sidebar.
+// Defaults to true; players can toggle it from the sidebar.
 func (h *Hub) aiEnabled(gameID int64) bool {
 	var enabled bool
 	if err := h.db.Get(&enabled, "SELECT ai_enabled FROM game WHERE rowid = ?", gameID); err != nil {
@@ -118,8 +112,6 @@ func (h *Hub) aiEnabled(gameID int64) bool {
 	return enabled
 }
 
-// handleWSToggleAI flips the game's AI on/off switch and rebroadcasts so every
-// player's sidebar reflects the new state.
 func (h *Hub) handleWSToggleAI(client *Client) {
 	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
@@ -146,7 +138,6 @@ func (h *Hub) getPlayerLang(playerID int64) string {
 	return "en"
 }
 
-// triggerBroadcast signals the broadcast worker to call broadcastGameUpdate.
 // Multiple rapid calls coalesce into a single broadcast.
 func (h *Hub) triggerBroadcast() {
 	select {
@@ -155,14 +146,12 @@ func (h *Hub) triggerBroadcast() {
 	}
 }
 
-// stop signals the hub goroutine to exit and waits for it and all
-// WebSocket goroutines to finish. Channels are closed here (after all
-// senders have stopped) to avoid "send on closed channel" panics.
+// Channels are only closed once all senders have stopped, to avoid
+// "send on closed channel" panics.
 func (h *Hub) stop() {
 	close(h.done)
 	h.wg.Wait() // waits for run() + broadcast worker; no senders alive after this
 
-	// Close send channels for any remaining clients so writer goroutines exit.
 	h.mu.Lock()
 	for _, client := range h.clients {
 		close(client.send)
@@ -193,7 +182,6 @@ func (h *Hub) sendToPlayer(playerID int64, message []byte) {
 	}
 }
 
-// broadcastAudio sends raw PCM audio bytes to all connected clients as a binary WebSocket frame.
 func (h *Hub) broadcastAudio(data []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -207,7 +195,6 @@ func (h *Hub) broadcastAudio(data []byte) {
 }
 
 func (h *Hub) run() {
-	// run() goroutine
 	h.wg.Add(1)
 	defer h.wg.Done()
 
@@ -258,7 +245,6 @@ func (h *Hub) run() {
 				close(client.send) // signal writer goroutine to exit
 				conn.Close()
 
-				// Check if player has any remaining connections
 				hasOtherConn := false
 				for _, c := range h.clients {
 					if c.playerID == playerID {
@@ -299,7 +285,6 @@ func (h *Hub) run() {
 	}
 }
 
-// connectedPlayerIDs returns the set of unique player IDs with active WebSocket connections.
 func (h *Hub) connectedPlayerIDs() []int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -314,7 +299,6 @@ func (h *Hub) connectedPlayerIDs() []int64 {
 	return ids
 }
 
-// broadcastGameUpdate sends the current game state to all connected clients
 func (h *Hub) broadcastGameUpdate() {
 	game, err := h.getGame()
 	if err != nil {
@@ -376,12 +360,10 @@ func (h *Hub) broadcastGameUpdate() {
 	}
 }
 
-// logDBState logs the database state with this hub's db
 func (h *Hub) logDBState(context string) {
 	LogDBState(h.db, context)
 }
 
-// addPlayerToLobby adds a player to the game if it's in lobby state
 func (h *Hub) addPlayerToLobby(playerID int64) {
 	playerName := getPlayerName(h.db, playerID)
 
@@ -413,7 +395,6 @@ func (h *Hub) addPlayerToLobby(playerID int64) {
 	}
 }
 
-// removePlayerFromLobby removes a player from the game if it's still in lobby state
 func (h *Hub) removePlayerFromLobby(playerID int64) {
 	playerName := getPlayerName(h.db, playerID)
 
@@ -467,8 +448,7 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	DebugLog("handleWebSocket", "WebSocket upgraded successfully for player '%s' (ID: %d)", playerName, playerID)
 
-	// Check if the player still exists in the current game.
-	// On reconnect after a disconnect, the player may have been removed.
+	// On reconnect after a disconnect, the player may have been removed from the game.
 	game, err := hub.getGame()
 	if err == nil && game.Status != "lobby" && !isPlayerInGame(hub.db, game.ID, playerID) {
 		DebugLog("handleWebSocket", "Player '%s' (ID: %d) not in game %d, redirecting to index", playerName, playerID, game.ID)
@@ -480,7 +460,6 @@ func handleWebSocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	client := &Client{conn: conn, playerID: playerID, hub: currentHub, send: make(chan hubMsg, clientSendBuf), lang: getLangFromCookie(r)}
 	currentHub.register <- client
 
-	// Handle messages and disconnection.
 	// clientWg tracks this goroutine so hub.stop() can wait for it to exit
 	// before cleanup proceeds — preventing resources from being closed while
 	// this goroutine is still using them.

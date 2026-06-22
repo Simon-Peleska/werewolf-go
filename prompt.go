@@ -1,19 +1,9 @@
 package main
 
-// Storyteller system-prompt module.
-//
-// The system prompt is not a static file — it is built up here from a static
-// base (the narrator's persona, task, and style rules, held as the consts
-// below) plus dynamic sections derived from the live game: only the roles
-// actually in play get role-specific paranoia, and the running jokes are
-// anchored to the real player names.
-
 import (
 	"fmt"
 	"strings"
 )
-
-// ── Ending prompt prose ──────────────────────────────────────────────────────
 
 const defaultEndingPrompt = `The game is over and all roles are now revealed. Announce the winners with theatrical flair, then give a vivid recap of the key moments that decided the game.
 Call out standout plays, fatal mistakes, surprising twists, and any moments of betrayal or heroism.
@@ -23,10 +13,6 @@ const defaultEndingPromptDE = `Das Spiel ist aus und alle Rollen sind jetzt enth
 Verkünde die Sieger mit theatralik, und gib dann an lebhaften Rückblick auf die entscheidenden Momente des Spiels.
 Hebe besondere Züge, verhängnisvolle Fehler, überraschende Wendungen und Momente vom Verrat oder Heldenmut hervor.
 Sei dramatisch, sei konkret, und lasse die geschichte anfühlen wie des große Finale.`
-
-// ── Static base prose (persona / task / style) ───────────────────────────────
-// Role-specific personality lines have been pulled out into rolesSection below
-// so they only appear when that role is actually in the game.
 
 const systemPromptHeadEN = `Your are a the village idiot who after some beers at a Pub tells rumors of what has happened.
 
@@ -406,15 +392,6 @@ sich nie — und damit, logischerweise, irrst du dich auch nie.
 
 `
 
-// ── Voice direction (Gemini TTS only — see geminiTTSModel in tts.go) ─────────
-//
-// streamStory (storyteller.go) splits the streamed text into sentences via
-// nextSentence() and sends each one to the narrator in its own Speak() call.
-// A feeling tag only colours the sentence it travels in, so it must sit at
-// the START of a sentence (the same chunk as the text it should affect) —
-// a tag glued to the END of the previous sentence rides along with that
-// sentence instead and has no effect on the one that follows.
-
 const feelingTagsPromptEN = `--------------------------------------------------
 VOICE DIRECTION
 --------------------------------------------------
@@ -445,12 +422,6 @@ oder "[lacht] Klar war's der, der ist es doch immer."
 - Wähle aus Gefühlen wie entsetzt, lacht, flüstert, wütend, schluchzend, aufgeregt — oder erfinde eigene
 - Erkläre niemals, was das Tag bedeutet — benutze es einfach`
 
-// ── User prompt (the per-event message sent to the model) ────────────────────
-
-// buildUserPrompt builds the per-event message for the storyteller. An empty
-// winner produces a mid-game death prompt (history + who is still alive); a
-// non-empty winner ("villagers"/"werewolves"/"lovers") produces the closing
-// prompt with the full role reveal.
 func buildUserPrompt(history []string, players []Player, winner string) string {
 	prompt := "Game history so far:\n" + strings.Join(history, "\n")
 	var alive []string
@@ -495,12 +466,8 @@ func buildUserPrompt(history []string, players []Player, winner string) string {
 	return prompt
 }
 
-// ── Builders ─────────────────────────────────────────────────────────────────
-
-// buildGameSystemPrompt assembles the system prompt for a game, derived entirely
-// from the gameID: static head + roles in play + static tail + the player roster,
-// and — for a finished game — the closing-narration instructions. Callers just
-// ask for a system prompt and never deal with a separate ending prompt.
+// buildGameSystemPrompt appends closing-narration prose itself when the game is
+// finished, so callers never need a separate ending prompt.
 func (h *Hub) buildGameSystemPrompt(gameID int64) string {
 	players, err := getPlayersByGameId(h.db, gameID)
 	if err != nil {

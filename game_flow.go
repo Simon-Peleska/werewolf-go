@@ -1,17 +1,14 @@
 package main
 
-// FinishedData holds all data needed to render the finished game screen
 type FinishedData struct {
 	Winners     []Player
 	Losers      []Player
-	WinnerCards []PlayerCardData // pre-built cards for the victors
-	LoserCards  []PlayerCardData // pre-built cards for the fallen
-	Winner      string           // "villagers", "werewolves", or "lovers"
+	WinnerCards []PlayerCardData
+	LoserCards  []PlayerCardData
+	Winner      string
 	Lang        string
 }
 
-// playerWon reports whether a player on the given team (or alive status, for lovers)
-// is on the winning side for the given winner faction ("villagers", "werewolves", or "lovers").
 func playerWon(winner, team string, alive bool) bool {
 	switch winner {
 	case "villagers":
@@ -24,7 +21,6 @@ func playerWon(winner, team string, alive bool) bool {
 	return false
 }
 
-// transitionToNight moves the game to the next night phase
 func (h *Hub) transitionToNight(game *Game) {
 	newRound := game.Round + 1
 	_, err := h.db.Exec("UPDATE game SET status = 'night', round = ? WHERE rowid = ?", newRound, game.ID)
@@ -41,7 +37,6 @@ func (h *Hub) transitionToNight(game *Game) {
 	h.maybeSpeakStory(game.ID, T(h.storytellerLang, "tts_night_falls", newRound))
 }
 
-// checkWinConditions checks if the game has ended and returns true if so
 func (h *Hub) checkWinConditions(game *Game) bool {
 	var counts struct {
 		Werewolves int `db:"werewolf_count"`
@@ -63,8 +58,6 @@ func (h *Hub) checkWinConditions(game *Game) bool {
 
 	h.logf("Win check: %d werewolves, %d villagers alive", werewolfCount, villagerCount)
 
-	// Lovers win condition: if only 2 players alive and they are a linked lover pair,
-	// they win together regardless of team (overrides normal win conditions).
 	if werewolfCount+villagerCount == 2 {
 		var alivePlayers []Player
 		h.db.Select(&alivePlayers, `
@@ -79,14 +72,12 @@ func (h *Hub) checkWinConditions(game *Game) bool {
 		}
 	}
 
-	// Villagers win if all werewolves are dead
 	if werewolfCount == 0 {
 		h.logf("VILLAGERS WIN - all werewolves eliminated")
 		h.endGame(game, "villagers")
 		return true
 	}
 
-	// Werewolves win if all villagers are dead
 	if villagerCount == 0 {
 		h.logf("WEREWOLVES WIN - all villagers eliminated")
 		h.endGame(game, "werewolves")
@@ -113,7 +104,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 		return
 	}
 
-	// Save role configs from the finished game
 	var roleConfigs []GameRoleConfig
 	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
@@ -122,7 +112,7 @@ func (h *Hub) handleWSNewGame(client *Client) {
 		return
 	}
 
-	// Delete the old game and all its associated data first (frees the unique name)
+	// game.name has a unique index, so the old row must go before the new one can claim the name.
 	oldGameID := game.ID
 	h.db.Exec("DELETE FROM game_action WHERE game_id = ?", oldGameID)
 	h.db.Exec("DELETE FROM game_lovers WHERE game_id = ?", oldGameID)
@@ -130,7 +120,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	h.db.Exec("DELETE FROM game_player WHERE game_id = ?", oldGameID)
 	h.db.Exec("DELETE FROM game WHERE rowid = ?", oldGameID)
 
-	// Create new lobby game with same name
 	result, err := h.db.Exec("INSERT INTO game (name, status, round) VALUES (?, 'lobby', 0)", h.gameName)
 	if err != nil {
 		h.logError("handleWSNewGame: create new game", err)
@@ -139,7 +128,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	}
 	newGameID, _ := result.LastInsertId()
 
-	// Copy role configs to new game
 	for _, rc := range roleConfigs {
 		_, err = h.db.Exec("INSERT INTO game_role_config (game_id, role_id, count) VALUES (?, ?, ?)", newGameID, rc.RoleID, rc.Count)
 		if err != nil {
@@ -147,7 +135,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 		}
 	}
 
-	// Add all currently connected players to the new lobby
 	playerIDs := h.connectedPlayerIDs()
 	for _, pid := range playerIDs {
 		_, err = h.db.Exec("INSERT OR IGNORE INTO game_player (game_id, player_id) VALUES (?, ?)", newGameID, pid)
@@ -163,7 +150,6 @@ func (h *Hub) handleWSNewGame(client *Client) {
 	h.triggerBroadcast()
 }
 
-// endGame marks the game as finished and persists the winning faction.
 func (h *Hub) endGame(game *Game, winner string) {
 	_, err := h.db.Exec("UPDATE game SET status = 'finished', winner = ? WHERE rowid = ?", winner, game.ID)
 	if err != nil {

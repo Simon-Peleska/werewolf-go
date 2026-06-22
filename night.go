@@ -8,11 +8,10 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// NightData holds all data needed to render the night phase.
 // Role-specific data is embedded from per-role structs defined in their own files.
 type NightData struct {
 	Player       *Player
-	AliveTargets []Player // alive players; visibility pre-applied
+	AliveTargets []Player // visibility already applied
 	NightNumber  int
 	HasHistory   bool
 	Lang         string
@@ -23,7 +22,7 @@ type NightData struct {
 	AliveCount            int
 	SurveyTargets         []Player
 	SurveySelectedSuspect *Player
-	SurveyTargetCards     []PlayerCardData // selectable suspect cards for the night survey
+	SurveyTargetCards     []PlayerCardData
 
 	WerewolfNightData
 	SeerNightData
@@ -41,7 +40,6 @@ func isNightLover(target, viewer Player) bool {
 	return target.Lover != 0 && target.Lover == viewer.PlayerID
 }
 
-// nightTargetCard builds a selectable night target card with the lover flag applied.
 func nightTargetCard(target, viewer Player, lang string) PlayerCardData {
 	card := makePlayerCard(target, lang)
 	card.Selectable = true
@@ -49,8 +47,7 @@ func nightTargetCard(target, viewer Player, lang string) PlayerCardData {
 	return card
 }
 
-// nightResultCard builds a (non-selectable) result card shown after a role acts.
-// It forces the role seal when showRoleSeal is set (so the revealed role shows).
+// showRoleSeal forces the role seal to render even when a profile image is set, revealing the role.
 func nightResultCard(target, viewer Player, lang string, showRoleSeal bool) PlayerCardData {
 	card := makePlayerCard(target, lang)
 	card.ShowRoleSeal = showRoleSeal
@@ -58,8 +55,8 @@ func nightResultCard(target, viewer Player, lang string, showRoleSeal bool) Play
 	return card
 }
 
-// buildNightCards fills the pre-built []PlayerCardData fields on NightData from the
-// already-populated *Player / []Player fields. Keeps the template free of card markup.
+// buildNightCards turns the *Player/[]Player selections on NightData into the
+// []PlayerCardData the templates render, so templates never build card markup themselves.
 func buildNightCards(data *NightData, viewer Player, lang string) {
 	// Survey suspects
 	for _, t := range data.SurveyTargets {
@@ -128,17 +125,17 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 		data.GuardTargetCards = append(data.GuardTargetCards, card)
 	}
 
-	// Witch heal (wolf victim and optional Wolf Cub second victim)
-	if data.WitchVictimPlayer != nil {
-		card := nightTargetCard(*data.WitchVictimPlayer, viewer, lang)
-		if data.WitchSelectedHealPlayer != nil && data.WitchSelectedHealPlayer.PlayerID == data.WitchVictimPlayer.PlayerID {
+	// Witch heal
+	if data.WerewolfVictimPlayer != nil {
+		card := nightTargetCard(*data.WerewolfVictimPlayer, viewer, lang)
+		if data.WitchPendingHealPlayer != nil && data.WitchPendingHealPlayer.PlayerID == data.WerewolfVictimPlayer.PlayerID {
 			card.Selected = true
 		}
 		data.WitchHealCards = append(data.WitchHealCards, card)
 	}
-	if data.WitchVictimPlayer2 != nil {
-		card := nightTargetCard(*data.WitchVictimPlayer2, viewer, lang)
-		if data.WitchSelectedHealPlayer != nil && data.WitchSelectedHealPlayer.PlayerID == data.WitchVictimPlayer2.PlayerID {
+	if data.WerewolfVictimPlayer2 != nil {
+		card := nightTargetCard(*data.WerewolfVictimPlayer2, viewer, lang)
+		if data.WitchPendingHealPlayer != nil && data.WitchPendingHealPlayer.PlayerID == data.WerewolfVictimPlayer2.PlayerID {
 			card.Selected = true
 		}
 		data.WitchHealCards = append(data.WitchHealCards, card)
@@ -146,7 +143,7 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 	// Witch poison
 	for _, t := range data.AliveTargets {
 		card := nightTargetCard(t, viewer, lang)
-		if data.WitchSelectedPoisonPlayer != nil && data.WitchSelectedPoisonPlayer.PlayerID == t.PlayerID {
+		if data.WitchPendingPoisonPlayer != nil && data.WitchPendingPoisonPlayer.PlayerID == t.PlayerID {
 			card.Selected = true
 		}
 		data.WitchPoisonCards = append(data.WitchPoisonCards, card)
@@ -159,7 +156,7 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 		data.MasonCards = append(data.MasonCards, card)
 	}
 
-	// Cupid targets (chosen ones marked selected)
+	// Cupid targets
 	for _, t := range data.AliveTargets {
 		card := nightTargetCard(t, viewer, lang)
 		if (data.CupidChosen1Player != nil && data.CupidChosen1Player.PlayerID == t.PlayerID) ||
@@ -168,7 +165,7 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 		}
 		data.CupidTargetCards = append(data.CupidTargetCards, card)
 	}
-	// Cupid linked-state lover cards (display only, but kept selectable for styling)
+	// once lovers are linked, these display the pair — Selectable stays true only for the card styling
 	if data.CupidChosen1Player != nil {
 		card := nightTargetCard(*data.CupidChosen1Player, viewer, lang)
 		data.CupidChosen1Card = &card
@@ -178,7 +175,7 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 		data.CupidChosen2Card = &card
 	}
 
-	// Doppelganger (result card never shows a lover heart, matching the old markup)
+	// Doppelganger
 	if data.DoppelgangerHasCopied && data.DoppelgangerCopiedPlayer != nil {
 		card := nightResultCard(*data.DoppelgangerCopiedPlayer, viewer, lang, true)
 		card.Lover = false
@@ -193,7 +190,6 @@ func buildNightCards(data *NightData, viewer Player, lang string) {
 	}
 }
 
-// surveySuspectCard builds a selectable survey-suspect card (always shown alive).
 func surveySuspectCard(target, viewer Player, lang string, selected *Player) PlayerCardData {
 	card := nightTargetCard(target, viewer, lang)
 	if selected != nil && selected.PlayerID == target.PlayerID {
@@ -202,13 +198,11 @@ func surveySuspectCard(target, viewer Player, lang string, selected *Player) Pla
 	return card
 }
 
-// SeerResultPlayerCard reports whether the seer result card should be built.
 func (d *NightData) SeerResultPlayerCard() bool {
 	return d.HasInvestigated && d.SeerSelectedPlayer != nil
 }
 
-// playerDoneWithNightAction returns true if the given player has completed their night role action
-// and the survey should be shown to them.
+// playerDoneWithNightAction gates when the night survey appears for this player.
 func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Player) bool {
 	switch player.RoleName {
 	case "Villager", "Mason", "Hunter":
@@ -217,22 +211,22 @@ func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Play
 		// Night 1 only (role changes after copying, so this case is hit before copying)
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			gameID, round, player.PlayerID, ActionDoppelgangerCopy)
+			gameID, round, player.PlayerID, ActionDoppelgangerApplyCopy)
 		return c > 0
 	case "Seer":
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			gameID, round, player.PlayerID, ActionSeerInvestigate)
+			gameID, round, player.PlayerID, ActionSeerApplyInvestigate)
 		return c > 0
 	case "Doctor":
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			gameID, round, player.PlayerID, ActionDoctorProtect)
+			gameID, round, player.PlayerID, ActionDoctorApplyProtect)
 		return c > 0
 	case "Guard":
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			gameID, round, player.PlayerID, ActionGuardProtect)
+			gameID, round, player.PlayerID, ActionGuardApplyProtect)
 		return c > 0
 	case "Witch":
 		var c int
@@ -243,7 +237,7 @@ func playerDoneWithNightAction(db *sqlx.DB, gameID int64, round int, player Play
 		// Survey available after End Vote is pressed (any wolf)
 		var c int
 		db.Get(&c, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-			gameID, round, ActionWerewolfEndVote)
+			gameID, round, ActionWerewolfApplyKill)
 		if c == 0 {
 			return false
 		}
@@ -255,13 +249,13 @@ SELECT COUNT(*) FROM game_action ga
 JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 JOIN role r ON gp.role_id = r.rowid
 WHERE ga.game_id = ? AND ga.round = ?
-AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+AND ga.action_type IN (?, ?, ?, ?)
 AND r.name = 'Wolf Cub'`,
-				gameID, round-1)
+				gameID, round-1, ActionWerewolfSelectKill, ActionDayApplyKill, ActionHunterApplyKill, ActionWitchApplyKill)
 			if wolfCubDeathCount > 0 {
 				var c2 int
 				db.Get(&c2, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-					gameID, round, ActionWerewolfEndVote2)
+					gameID, round, ActionWerewolfApplyKill2)
 				return c2 > 0
 			}
 		}
@@ -278,8 +272,6 @@ AND r.name = 'Wolf Cub'`,
 	}
 }
 
-// handleWSNightSurveySuspect toggles the player's pending suspect selection.
-// Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -298,10 +290,10 @@ func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 		h.sendErrorToast(client.playerID, T(lang, "err_must_be_alive_survey"))
 		return
 	}
-	// Don't allow changes after survey is submitted
+	// no changes once the final survey is submitted
 	var submitted int
 	h.db.Get(&submitted, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
-		game.ID, game.Round, ActionNightSurvey, client.playerID)
+		game.ID, game.Round, ActionNightSurveyApplySuspect, client.playerID)
 	if submitted > 0 {
 		return
 	}
@@ -322,23 +314,21 @@ func handleWSNightSurveySuspect(client *Client, msg WSMessage) {
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
+		game.ID, game.Round, client.playerID, ActionNightSurveySelectSuspect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
-		// Same player clicked again → deselect
+		// clicking the same target again deselects it
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
+			game.ID, game.Round, client.playerID, ActionNightSurveySelectSuspect)
 		h.logf("Player '%s' deselected survey suspect", player.Name)
 	} else {
-		// Select (or replace prior selection)
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionNightSurveySuspect, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionNightSurveySelectSuspect, targetID, VisibilityActor)
 		h.logf("Player '%s' selected survey suspect %d", player.Name, targetID)
 	}
 
 	h.triggerBroadcast()
 }
 
-// handleWSNightSurvey records a player's night survey answers.
 // Once all alive players have submitted, the game transitions to day.
 func handleWSNightSurvey(client *Client, msg WSMessage) {
 	h := client.hub
@@ -364,22 +354,20 @@ func handleWSNightSurvey(client *Client, msg WSMessage) {
 	// Idempotent: ignore if already submitted
 	var existing int
 	h.db.Get(&existing, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
-		game.ID, game.Round, ActionNightSurvey, client.playerID)
+		game.ID, game.Round, ActionNightSurveyApplySuspect, client.playerID)
 	if existing > 0 {
 		return
 	}
 
-	// Read suspect from pre-selection (night_survey_suspect action)
 	var suspectID int64
 	var suspectAction GameAction
 	if err := h.db.Get(&suspectAction, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionNightSurveySuspect); err == nil && suspectAction.TargetPlayerID != nil {
+		game.ID, game.Round, client.playerID, ActionNightSurveySelectSuspect); err == nil && suspectAction.TargetPlayerID != nil {
 		suspectID = *suspectAction.TargetPlayerID
 	}
 
-	// Build description from non-empty fields
 	deathTheory := strings.TrimSpace(msg.DeathTheory)
 	notes := strings.TrimSpace(msg.Notes)
 
@@ -405,37 +393,36 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 	// If all empty, description stays "" (counts as submitted, hidden from history)
 
 	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionNightSurvey, VisibilityResolved, description)
+		game.ID, game.Round, client.playerID, ActionNightSurveyApplySuspect, VisibilityResolved, description)
 	if err != nil {
 		h.logError("handleWSNightSurvey: insert survey", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_survey"))
 		return
 	}
 
-	// Clean up the pending suspect selection now that it's committed
+	// the pending pick was already read above; no longer needed once the survey is recorded
 	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionNightSurveySuspect)
+		game.ID, game.Round, client.playerID, ActionNightSurveySelectSuspect)
 
 	h.logf("Survey submitted by '%s' (game %d round %d)", player.Name, game.ID, game.Round)
 
-	// Transition to day if all alive players have now submitted
 	var aliveCount int
 	h.db.Get(&aliveCount, `SELECT COUNT(*) FROM game_player WHERE game_id=? AND is_alive=1`, game.ID)
 	var surveyCount int
 	h.db.Get(&surveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-		game.ID, game.Round, ActionNightSurvey)
+		game.ID, game.Round, ActionNightSurveyApplySuspect)
 
 	h.logf("Night survey progress: %d/%d", surveyCount, aliveCount)
 
 	if surveyCount >= aliveCount {
-		// Apply all pending night kills (description=” marks them as pending)
+		// description="" marks a kill as pending; resolveWerewolfVotes inserted these rows earlier tonight
 		type pendingKill struct {
 			ID             int64 `db:"id"`
 			TargetPlayerID int64 `db:"target_player_id"`
 		}
 		var pendingKills []pendingKill
 		h.db.Select(&pendingKills, `SELECT rowid as id, target_player_id FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND description=''`,
-			game.ID, game.Round, ActionNightKill)
+			game.ID, game.Round, ActionNightApplyKill)
 
 		var nightKills []int64
 		var nightKillNames []string
@@ -481,7 +468,6 @@ FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_ty
 	h.triggerBroadcast()
 }
 
-// recordPublicDeath inserts a public history entry when a player dies at night.
 func recordPublicDeath(h *Hub, game *Game, playerID int64) {
 	var name string
 	h.db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
@@ -489,7 +475,7 @@ func recordPublicDeath(h *Hub, game *Game, playerID int64) {
 	h.db.Get(&roleName, `SELECT r.name FROM game_player gp JOIN role r ON gp.role_id = r.rowid WHERE gp.game_id = ? AND gp.player_id = ?`, game.ID, playerID)
 	desc := fmt.Sprintf("Night %d: %s (%s) was found dead", game.Round, name, roleName)
 	_, err := h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, playerID, ActionNightKill, playerID, VisibilityPublic, desc, "hist_found_dead", histArgs(game.Round, name, roleName))
+		game.ID, game.Round, playerID, ActionNightApplyKill, playerID, VisibilityPublic, desc, "hist_found_dead", histArgs(game.Round, name, roleName))
 	if err != nil {
 		h.logError("recordPublicDeath: insert death record", err)
 	} else {
@@ -497,9 +483,7 @@ func recordPublicDeath(h *Hub, game *Game, playerID int64) {
 	}
 }
 
-// resolveWerewolfVotes checks if all werewolves have voted and resolves the kill
 func (h *Hub) resolveWerewolfVotes(game *Game) {
-	// Get all living werewolves
 	var werewolves []Player
 	err := h.db.Select(&werewolves, `
 SELECT g.rowid as id, g.player_id as player_id, p.name as name
@@ -512,13 +496,12 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 		return
 	}
 
-	// Get all werewolf votes for this night
 	var votes []GameAction
 	err = h.db.Select(&votes, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfKill)
+		game.ID, game.Round, ActionWerewolfSelectKill)
 	if err != nil {
 		h.logError("resolveWerewolfVotes: get votes", err)
 		return
@@ -526,17 +509,15 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 
 	h.logf("Werewolf vote check: %d werewolves, %d votes", len(werewolves), len(votes))
 
-	// Check if all werewolves have voted or passed
 	if len(votes) < len(werewolves) {
 		h.logf("Not all werewolves have voted yet (%d/%d)", len(votes), len(werewolves))
 		h.triggerBroadcast()
 		return
 	}
 
-	// Check if End Vote has been pressed — don't resolve until one wolf locks it in
 	var endVoteCount int
 	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote)
+		game.ID, game.Round, ActionWerewolfApplyKill)
 	if endVoteCount == 0 {
 		h.logf("Werewolves have all voted but End Vote not pressed yet")
 		h.triggerBroadcast()
@@ -551,7 +532,6 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		}
 	}
 
-	// Find the target with the most votes
 	var maxVotes int
 	var victim int64
 	for targetID, count := range voteCounts {
@@ -561,15 +541,14 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		}
 	}
 
-	// Check for majority (more than half of werewolves)
-	// If no majority (all passed or split), victim = 0 (no kill) — proceed to check other night roles
+	// victim stays 0 on a non-majority — we still need to check the other night roles before deciding
 	majority := len(werewolves)/2 + 1
 	if maxVotes < majority {
 		h.logf("No majority reached (need %d, max is %d) — no kill this night", majority, maxVotes)
 		victim = 0
 	}
 
-	// Check if Wolf Cub died last round → double kill required
+	// Wolf Cub died last round → a second kill is required tonight
 	wolfCubDoubleKill := false
 	var victim2 int64
 	if game.Round > 1 {
@@ -579,9 +558,9 @@ SELECT COUNT(*) FROM game_action ga
 JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 JOIN role r ON gp.role_id = r.rowid
 WHERE ga.game_id = ? AND ga.round = ?
-AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+AND ga.action_type IN (?, ?, ?, ?)
 AND r.name = 'Wolf Cub'`,
-			game.ID, game.Round-1)
+			game.ID, game.Round-1, ActionWerewolfSelectKill, ActionDayApplyKill, ActionHunterApplyKill, ActionWitchApplyKill)
 		wolfCubDoubleKill = wolfCubDeathCount > 0
 	}
 
@@ -591,7 +570,7 @@ AND r.name = 'Wolf Cub'`,
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-			game.ID, game.Round, ActionWerewolfKill2)
+			game.ID, game.Round, ActionWerewolfSelectKill2)
 
 		if len(votes2) < len(werewolves) {
 			h.logf("Wolf Cub double kill: waiting for second votes (%d/%d)", len(votes2), len(werewolves))
@@ -601,7 +580,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 
 		var endVote2Count int
 		h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-			game.ID, game.Round, ActionWerewolfEndVote2)
+			game.ID, game.Round, ActionWerewolfApplyKill2)
 		if endVote2Count == 0 {
 			h.logf("Wolf Cub double kill: End Vote 2 not pressed yet")
 			h.triggerBroadcast()
@@ -627,7 +606,6 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		}
 	}
 
-	// Night 1: check Cupid has linked lovers before resolving
 	if game.Round == 1 {
 		var aliveCupidCount int
 		h.db.Get(&aliveCupidCount, `
@@ -645,8 +623,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Cupid'`, game.ID)
 		}
 	}
 
-	// Night 1: check all alive Doppelgangers have copied before resolving
-	// (after copying, role_id changes so this count drops to 0)
+	// after copying, role_id changes, so this count naturally drops to 0 once a Doppelganger is done
 	if game.Round == 1 {
 		var aliveDoppelgangerCount int
 		h.db.Get(&aliveDoppelgangerCount, `
@@ -660,7 +637,6 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Doppelganger'`, game.ID)
 		}
 	}
 
-	// Check if all alive Seers have investigated before resolving the night
 	var aliveSeerCount int
 	h.db.Get(&aliveSeerCount, `
 SELECT COUNT(*) FROM game_player g
@@ -671,7 +647,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Seer'`, game.ID)
 	h.db.Get(&seerInvestigateCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionSeerInvestigate)
+		game.ID, game.Round, ActionSeerApplyInvestigate)
 
 	if seerInvestigateCount < aliveSeerCount {
 		h.logf("Waiting for seers to investigate (%d/%d)", seerInvestigateCount, aliveSeerCount)
@@ -679,7 +655,6 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		return
 	}
 
-	// Check if all alive Doctors have protected before resolving the night
 	var aliveDoctorCount int
 	h.db.Get(&aliveDoctorCount, `
 SELECT COUNT(*) FROM game_player g
@@ -690,7 +665,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Doctor'`, game.ID)
 	h.db.Get(&doctorProtectCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionDoctorProtect)
+		game.ID, game.Round, ActionDoctorApplyProtect)
 
 	if doctorProtectCount < aliveDoctorCount {
 		h.logf("Waiting for doctors to protect (%d/%d)", doctorProtectCount, aliveDoctorCount)
@@ -698,7 +673,6 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		return
 	}
 
-	// Check if all alive Guards have protected before resolving the night
 	var aliveGuardCount int
 	h.db.Get(&aliveGuardCount, `
 SELECT COUNT(*) FROM game_player g
@@ -709,7 +683,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.name = 'Guard'`, game.ID)
 	h.db.Get(&guardProtectCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionGuardProtect)
+		game.ID, game.Round, ActionGuardApplyProtect)
 
 	if guardProtectCount < aliveGuardCount {
 		h.logf("Waiting for guards to protect (%d/%d)", guardProtectCount, aliveGuardCount)
@@ -717,7 +691,6 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		return
 	}
 
-	// Check if all alive Witches have passed before resolving the night
 	var aliveWitchCount int
 	h.db.Get(&aliveWitchCount, `
 SELECT COUNT(*) FROM game_player g
@@ -738,14 +711,13 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 		}
 	}
 
-	// No kill this night (wolves passed or no majority) — record pending kills for wolf cub and witch
+	// no wolf kill, but Wolf Cub's and the Witch's kills are independent and still need applying
 	if victim == 0 {
 		h.logf("No werewolf kill this night (wolves passed or no majority)")
-		// Wolf Cub second kill (pending — applied when surveys complete)
 		if wolfCubDoubleKill && victim2 != 0 {
 			var protect2Count int
 			h.db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
-				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+				game.ID, game.Round, ActionDoctorApplyProtect, ActionGuardApplyProtect, ActionWitchApplyProtect, victim2)
 			var victim2Name string
 			h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 			if protect2Count > 0 {
@@ -753,43 +725,39 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
 			} else {
 				h.logf("Wolf Cub double kill pending: %s", victim2Name)
 				h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
+					game.ID, game.Round, victim2, ActionNightApplyKill, victim2, VisibilityPublic)
 			}
 		}
-		// Witch poison (pending — applied when surveys complete)
 		var witchKillActionNoVictim GameAction
-		if wkErr := h.db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
+		if wkErr := h.db.Get(&witchKillActionNoVictim, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchApplyKill); wkErr == nil && witchKillActionNoVictim.TargetPlayerID != nil {
 			var poisonName string
 			h.db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionNoVictim.TargetPlayerID)
 			h.logf("Witch poison pending: %s", poisonName)
 			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-				game.ID, game.Round, *witchKillActionNoVictim.TargetPlayerID, ActionNightKill, *witchKillActionNoVictim.TargetPlayerID, VisibilityPublic)
+				game.ID, game.Round, *witchKillActionNoVictim.TargetPlayerID, ActionNightApplyKill, *witchKillActionNoVictim.TargetPlayerID, VisibilityPublic)
 		}
 		h.logf("Night %d: no wolf kill, waiting for surveys", game.Round)
 		h.triggerBroadcast()
 		return
 	}
 
-	// Check if the victim is protected by any Doctor
 	var protectionCount int
 	h.db.Get(&protectionCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
-		game.ID, game.Round, ActionDoctorProtect, victim)
+		game.ID, game.Round, ActionDoctorApplyProtect, victim)
 
-	// Check if the victim is protected by any Guard
 	var guardProtectionCount int
 	h.db.Get(&guardProtectionCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
-		game.ID, game.Round, ActionGuardProtect, victim)
+		game.ID, game.Round, ActionGuardApplyProtect, victim)
 
-	// Check if the victim is healed by the Witch (target-specific)
 	var witchHealCount int
 	h.db.Get(&witchHealCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND target_player_id = ?`,
-		game.ID, game.Round, ActionWitchHeal, victim)
+		game.ID, game.Round, ActionWitchApplyProtect, victim)
 
 	if protectionCount > 0 || guardProtectionCount > 0 || witchHealCount > 0 {
 		var victimName string
@@ -808,7 +776,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND targ
 		if wolfCubDoubleKill && victim2 != 0 {
 			var protect2Count int
 			h.db.Get(&protect2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type IN (?, ?, ?) AND target_player_id = ?`,
-				game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+				game.ID, game.Round, ActionDoctorApplyProtect, ActionGuardApplyProtect, ActionWitchApplyProtect, victim2)
 			var victim2Name string
 			h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 			if protect2Count > 0 {
@@ -816,17 +784,17 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND targ
 			} else {
 				h.logf("Wolf Cub double kill pending: %s", victim2Name)
 				h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-					game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
+					game.ID, game.Round, victim2, ActionNightApplyKill, victim2, VisibilityPublic)
 			}
 		}
 		// Witch poison is separate from the main wolf kill
 		var witchKillActionP2 GameAction
-		if wkErr := h.db.Get(&witchKillActionP2, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); wkErr == nil && witchKillActionP2.TargetPlayerID != nil {
+		if wkErr := h.db.Get(&witchKillActionP2, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchApplyKill); wkErr == nil && witchKillActionP2.TargetPlayerID != nil {
 			var poisonName string
 			h.db.Get(&poisonName, "SELECT name FROM player WHERE rowid = ?", *witchKillActionP2.TargetPlayerID)
 			h.logf("Witch poison pending: %s", poisonName)
 			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-				game.ID, game.Round, *witchKillActionP2.TargetPlayerID, ActionNightKill, *witchKillActionP2.TargetPlayerID, VisibilityPublic)
+				game.ID, game.Round, *witchKillActionP2.TargetPlayerID, ActionNightApplyKill, *witchKillActionP2.TargetPlayerID, VisibilityPublic)
 		}
 
 		h.logf("Night %d: main victim protected, waiting for surveys", game.Round)
@@ -835,32 +803,29 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ? AND targ
 		return
 	}
 
-	// Insert pending kill for main wolf victim (description=” hides from history until surveys complete)
 	var victimName string
 	h.db.Get(&victimName, "SELECT name FROM player WHERE rowid = ?", victim)
 	h.logf("Werewolf kill pending: %s (player ID %d)", victimName, victim)
 	DebugLog("resolveWerewolfVotes", "Werewolf kill pending: '%s', waiting for surveys", victimName)
 	h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-		game.ID, game.Round, victim, ActionNightKill, victim, VisibilityPublic)
+		game.ID, game.Round, victim, ActionNightApplyKill, victim, VisibilityPublic)
 
-	// Witch poison (pending — applied when surveys complete)
 	var witchKillAction GameAction
-	if err := h.db.Get(&witchKillAction, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchKill); err == nil && witchKillAction.TargetPlayerID != nil {
+	if err := h.db.Get(&witchKillAction, `SELECT * FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`, game.ID, game.Round, ActionWitchApplyKill); err == nil && witchKillAction.TargetPlayerID != nil {
 		var poisonVictimName string
 		h.db.Get(&poisonVictimName, "SELECT name FROM player WHERE rowid = ?", *witchKillAction.TargetPlayerID)
 		h.logf("Witch poison pending: %s (player ID %d)", poisonVictimName, *witchKillAction.TargetPlayerID)
 		h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, *witchKillAction.TargetPlayerID, ActionNightKill, *witchKillAction.TargetPlayerID, VisibilityPublic)
+			game.ID, game.Round, *witchKillAction.TargetPlayerID, ActionNightApplyKill, *witchKillAction.TargetPlayerID, VisibilityPublic)
 	}
 
-	// Wolf Cub second kill (pending — applied when surveys complete)
 	if wolfCubDoubleKill && victim2 != 0 && victim2 != victim {
 		var protect2Count int
 		h.db.Get(&protect2Count, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night'
 AND action_type IN (?, ?, ?) AND target_player_id = ?`,
-			game.ID, game.Round, ActionDoctorProtect, ActionGuardProtect, ActionWitchHeal, victim2)
+			game.ID, game.Round, ActionDoctorApplyProtect, ActionGuardApplyProtect, ActionWitchApplyProtect, victim2)
 		var victim2Name string
 		h.db.Get(&victim2Name, "SELECT name FROM player WHERE rowid = ?", victim2)
 		if protect2Count > 0 {
@@ -868,7 +833,7 @@ AND action_type IN (?, ?, ?) AND target_player_id = ?`,
 		} else {
 			h.logf("Wolf Cub double kill pending: %s (player ID %d)", victim2Name, victim2)
 			h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-				game.ID, game.Round, victim2, ActionNightKill, victim2, VisibilityPublic)
+				game.ID, game.Round, victim2, ActionNightApplyKill, victim2, VisibilityPublic)
 		}
 	}
 

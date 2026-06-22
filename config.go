@@ -8,13 +8,12 @@ import (
 	"os"
 )
 
-// AppConfig holds all server configuration.
 // Priority (lowest → highest): defaults < env vars < JSON config file < CLI flags.
 type AppConfig struct {
 	// Server
-	DB   string `json:"db"`   // database connection string
-	Dev  bool   `json:"dev"`  // dev mode: verbose logging, db dumps on errors
-	Addr string `json:"addr"` // HTTP listen address
+	DB   string `json:"db"`
+	Dev  bool   `json:"dev"` // verbose logging, db dumps on errors
+	Addr string `json:"addr"`
 
 	// Logging (extended diagnostics, off by default)
 	LogOutputDir string `json:"log_output_dir"`
@@ -25,22 +24,22 @@ type AppConfig struct {
 	LogDebug     bool   `json:"log_debug"`
 
 	// AI Storyteller
-	Storyteller            bool   `json:"storyteller"`              // enable AI storyteller
-	OpenAIModel            string `json:"openai_model"`             // model name
-	OpenAIAPIBase          string `json:"openai_api_base"`          // base URL (default: https://api.openai.com/v1)
-	OpenAIAPIKey           string `json:"openai_api_key"`           // API key
-	StorytellerLanguage    string `json:"storyteller_language"`     // language for built-in prompts: "en" (default) or "de"
+	Storyteller            bool   `json:"storyteller"`
+	OpenAIModel            string `json:"openai_model"`
+	OpenAIAPIBase          string `json:"openai_api_base"` // default: https://api.openai.com/v1
+	OpenAIAPIKey           string `json:"openai_api_key"`
+	StorytellerLanguage    string `json:"storyteller_language"`     // "en" (default) or "de"
 	StorytellerTemperature string `json:"storyteller_temperature"`  // float 0-2 as string (default 1.2)
-	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`   // max tokens per completion (default 600)
-	StorytellerExtraParams string `json:"storyteller_extra_params"` // raw JSON object merged into every chat completion request body (e.g. OpenRouter's "provider", "top_p")
+	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`   // default 600
+	StorytellerExtraParams string `json:"storyteller_extra_params"` // raw JSON object merged into every chat completion request body
 
 	// AI Narrator (TTS)
-	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
-	NarratorModel      string `json:"narrator_model"`       // e.g. "tts-1", "tts-1-hd"
-	NarratorVoice      string `json:"narrator_voice"`       // e.g. "onyx", "alloy" or ElevenLabs voice ID
-	NarratorAPIKey     string `json:"narrator_api_key"`     // API key
+	NarratorProvider   string `json:"narrator_provider"` // openai | openai-compatible | elevenlabs
+	NarratorModel      string `json:"narrator_model"`
+	NarratorVoice      string `json:"narrator_voice"`
+	NarratorAPIKey     string `json:"narrator_api_key"`
 	NarratorURL        string `json:"narrator_url"`         // base URL for openai-compatible
-	NarratorSampleRate int    `json:"narrator_sample_rate"` // PCM sample rate in Hz (default 24000)
+	NarratorSampleRate int    `json:"narrator_sample_rate"` // Hz, default 24000
 }
 
 func (cfg AppConfig) toLogConfig() LogConfig {
@@ -248,7 +247,6 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	}
 }
 
-// flagValues holds pointers to all registered CLI flags.
 type flagValues struct {
 	configPath             *string
 	db                     *string
@@ -276,8 +274,7 @@ type flagValues struct {
 	narratorSampleRate     *int
 }
 
-// registerFlags registers all CLI flags and returns pointers to their values.
-// Call flag.Parse() after this, then applyTo to layer them over the loaded config.
+// Call flag.Parse() after this, then applyTo to layer the flags over the loaded config.
 func registerFlags() flagValues {
 	return flagValues{
 		configPath:             flag.String("config", "/etc/werewolf/config.json", "path to JSON config file"),
@@ -307,8 +304,8 @@ func registerFlags() flagValues {
 	}
 }
 
-// applyTo overlays any CLI flags that were explicitly set onto cfg.
-// Flags that were not passed on the command line are ignored (env/JSON values win).
+// flag.Visit only visits flags explicitly passed on the command line, so unset
+// flags leave the env/JSON values already on cfg untouched.
 func (fv flagValues) applyTo(cfg *AppConfig) {
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {

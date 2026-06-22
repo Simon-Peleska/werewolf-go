@@ -6,42 +6,32 @@ import (
 	"strconv"
 )
 
-// NightVictim represents a player killed during the night
-type NightVictim struct {
-	Name string `db:"name"`
-	Role string `db:"role"`
-	Team string `db:"team"`
-}
-
-// DayData holds all data needed to render the day phase
 type DayData struct {
-	Player               *Player  // this player's current vote (nil = no vote / pass)
-	AliveTargets         []Player // alive players; visibility pre-applied
+	Player               *Player
+	AliveTargets         []Player
 	NightNumber          int
 	HasHistory           bool
-	NightVictims         []Player // all players killed last night
-	PassVoters           []string // names of players who passed this round
-	CurrentVotePlayer    *Player  // this player's current vote (nil = no vote / pass)
+	NightVictims         []Player
+	PassVoters           []string
+	CurrentVotePlayer    *Player
 	IsAlive              bool
-	HunterRevengeNeeded  bool     // a dead Hunter hasn't shot yet
-	HunterRevengeDone    bool     // Hunter has taken their shot
-	HunterVictimPlayer   *Player  // who the Hunter shot (full role visible — dead player)
-	IsTheHunter          bool     // is this player the dead Hunter needing to shoot?
-	HunterSelectedPlayer *Player  // pending revenge target (nil = none selected)
+	HunterRevengeNeeded  bool
+	HunterRevengeDone    bool
+	HunterVictimPlayer   *Player
+	IsTheHunter          bool // is this player the dead Hunter needing to shoot?
+	HunterSelectedPlayer *Player
 	HunterTargets        []Player // alive targets for the Hunter; visibility pre-applied
-	AllActed             bool     // all alive players have voted or passed this round
-	HasVoted             bool     // this player has a day_vote record (including pass)
+	AllActed             bool
+	HasVoted             bool
 	Lang                 string
 
-	NightVictimCards  []PlayerCardData // cards for players killed last night
-	HunterTargetCards []PlayerCardData // selectable cards for the Hunter's revenge shot
-	VoteTargetCards   []PlayerCardData // selectable cards for the day elimination vote
+	NightVictimCards  []PlayerCardData
+	HunterTargetCards []PlayerCardData
+	VoteTargetCards   []PlayerCardData
 }
 
-// applyHeartbreaks checks if any of the given killed players have a living lover.
-// Kills any living lovers and records public heartbreak actions, then recurses for chains
-// (multiple Cupids can create chained heartbreaks across multiple lover pairs).
-// Returns all player IDs killed by heartbreak in this chain.
+// applyHeartbreaks recurses so chained heartbreaks resolve (multiple Cupids can link
+// overlapping lover pairs). Returns every player ID killed by heartbreak in the chain.
 func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []int64 {
 	var allHeartbroken []int64
 	toProcess := killedIDs
@@ -62,7 +52,7 @@ func (h *Hub) applyHeartbreaks(game *Game, phase string, killedIDs []int64) []in
 				h.logError("applyHeartbreaks: kill partner", err)
 				continue
 			}
-			// Record public heartbreak action: actor=trigger person, target=heartbreak victim
+			// actor = the player whose death triggered this, target = the heartbreak victim
 			killedName := getPlayerName(h.db, killed)
 			partnerName := getPlayerName(h.db, partnerID)
 			heartbreakKey := "hist_heartbreak_night"
@@ -99,7 +89,6 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Check that the player is alive
 	voter, err := getPlayerInGame(h.db, game.ID, client.playerID)
 	if err != nil {
 		h.logError("handleWSDayVote: getPlayerInGame", err)
@@ -112,14 +101,12 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Parse target player ID
 	targetID, err := strconv.ParseInt(msg.TargetPlayerID, 10, 64)
 	if err != nil {
 		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
 
-	// Check that the target is valid (alive)
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil {
 		h.sendErrorToast(client.playerID, T(lang, "err_target_not_found"))
@@ -131,13 +118,13 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Toggle: if already voted for this target, unselect (delete the vote)
 	var existingTarget sql.NullInt64
 	h.db.Get(&existingTarget, `SELECT target_player_id FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, client.playerID, ActionDayVote)
+		game.ID, game.Round, client.playerID, ActionDaySelectKill)
+	// voting the same target again retracts the vote
 	if existingTarget.Valid && existingTarget.Int64 == targetID {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND actor_player_id = ? AND action_type = ?`,
-			game.ID, game.Round, client.playerID, ActionDayVote)
+			game.ID, game.Round, client.playerID, ActionDaySelectKill)
 		if err != nil {
 			h.logError("handleWSDayVote: db.Exec delete vote", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_vote"))
@@ -148,7 +135,6 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Record or update the vote
 	dayVoteDesc := fmt.Sprintf("Day %d: %s voted to eliminate %s", game.Round, voter.Name, target.Name)
 	dvKey, dvArgs := "hist_day_vote", histArgs(game.Round, voter.Name, target.Name)
 	_, err = h.db.Exec(`
@@ -156,7 +142,7 @@ func handleWSDayVote(client *Client, msg WSMessage) {
 		VALUES (?, ?, 'day', ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 		DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionDayVote, targetID, VisibilityPublic, dayVoteDesc, dvKey, dvArgs, targetID, dayVoteDesc, dvKey, dvArgs)
+		game.ID, game.Round, client.playerID, ActionDaySelectKill, targetID, VisibilityPublic, dayVoteDesc, dvKey, dvArgs, targetID, dayVoteDesc, dvKey, dvArgs)
 	if err != nil {
 		h.logError("handleWSDayVote: db.Exec insert vote", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote"))
@@ -205,7 +191,7 @@ func handleWSDayPass(client *Client, msg WSMessage) {
 		VALUES (?, ?, 'day', ?, ?, NULL, ?, ?, ?, ?)
 		ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 		DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionDayVote, VisibilityPublic, passDesc, dpKey, dpArgs, passDesc, dpKey, dpArgs)
+		game.ID, game.Round, client.playerID, ActionDaySelectKill, VisibilityPublic, passDesc, dpKey, dpArgs, passDesc, dpKey, dpArgs)
 	if err != nil {
 		h.logError("handleWSDayPass: db.Exec", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
@@ -243,7 +229,6 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Check all alive players have acted
 	var alivePlayers []Player
 	h.db.Select(&alivePlayers, `
 		SELECT g.rowid as id, g.player_id as player_id, p.name as name
@@ -253,7 +238,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 
 	var totalActed int
 	h.db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-		game.ID, game.Round, ActionDayVote)
+		game.ID, game.Round, ActionDaySelectKill)
 
 	if totalActed < len(alivePlayers) {
 		h.sendErrorToast(client.playerID, T(lang, "err_players_not_done", totalActed, len(alivePlayers)))
@@ -264,9 +249,7 @@ func handleWSDayEndVote(client *Client, msg WSMessage) {
 	h.resolveDayVotes(game)
 }
 
-// resolveDayVotes checks if all alive players have voted and resolves the elimination
 func (h *Hub) resolveDayVotes(game *Game) {
-	// Get all living players
 	var alivePlayers []Player
 	err := h.db.Select(&alivePlayers, `
 		SELECT g.rowid as id, g.player_id as player_id, p.name as name
@@ -278,8 +261,7 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		return
 	}
 
-	// Get all day votes for this round
-	voteCounts, totalVotes, err := getVoteCounts(h.db, game.ID, game.Round, "day", ActionDayVote)
+	voteCounts, totalVotes, err := getVoteCounts(h.db, game.ID, game.Round, "day", ActionDaySelectKill)
 	if err != nil {
 		h.logError("resolveDayVotes: getVoteCounts", err)
 		return
@@ -287,7 +269,6 @@ func (h *Hub) resolveDayVotes(game *Game) {
 
 	h.logf("Day vote check: %d alive players, %d votes", len(alivePlayers), totalVotes)
 
-	// Check if majority passed — if so, skip elimination
 	realVoteCount := 0
 	for _, c := range voteCounts {
 		realVoteCount += c
@@ -299,7 +280,6 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		return
 	}
 
-	// Find the target with the most votes
 	var maxVotes int
 	var eliminatedID int64
 	var isTie bool
@@ -313,16 +293,13 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		}
 	}
 
-	// Check for majority (more than half of alive players)
 	majority := len(alivePlayers)/2 + 1
 	if maxVotes < majority || isTie {
 		h.logf("No majority reached (need %d, max is %d, tie: %v) - no elimination", majority, maxVotes, isTie)
-		// No elimination, transition to night
 		h.transitionToNight(game)
 		return
 	}
 
-	// Eliminate the player
 	_, err = h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, eliminatedID)
 	if err != nil {
 		h.logError("resolveDayVotes: eliminate player", err)
@@ -332,12 +309,11 @@ func (h *Hub) resolveDayVotes(game *Game) {
 	eliminatedName := getPlayerName(h.db, eliminatedID)
 	eliminatedRole := getRoleName(h.db, game.ID, eliminatedID)
 
-	// Record the elimination action
 	eliminationDesc := fmt.Sprintf("Day %d: %s (%s) was eliminated by the village", game.Round, eliminatedName, eliminatedRole)
 	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 		VALUES (?, ?, 'day', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, eliminatedID, ActionElimination, eliminatedID, VisibilityPublic, eliminationDesc, "hist_eliminated", histArgs(game.Round, eliminatedName, eliminatedRole))
+		game.ID, game.Round, eliminatedID, ActionDayApplyKill, eliminatedID, VisibilityPublic, eliminationDesc, "hist_eliminated", histArgs(game.Round, eliminatedName, eliminatedRole))
 	if err != nil {
 		h.logError("resolveDayVotes: record elimination", err)
 	}
@@ -345,10 +321,8 @@ func (h *Hub) resolveDayVotes(game *Game) {
 	DebugLog("resolveDayVotes", "Village eliminated '%s'", eliminatedName)
 	h.maybeGenerateStory(game.ID, game.Round, "day", eliminatedID)
 
-	// Apply heartbreak from day elimination — chains across multiple lover pairs
 	heartbroken := h.applyHeartbreaks(game, "day", []int64{eliminatedID})
 
-	// Check if any of the dead (eliminated + heartbroken) are Hunters needing revenge
 	for _, deadID := range append([]int64{eliminatedID}, heartbroken...) {
 		if getRoleName(h.db, game.ID, deadID) == "Hunter" {
 			deadName := getPlayerName(h.db, deadID)
@@ -359,17 +333,13 @@ func (h *Hub) resolveDayVotes(game *Game) {
 		}
 	}
 
-	// Check win conditions
 	if h.checkWinConditions(game) {
 		return // Game ended
 	}
 
-	// Transition to night
 	h.transitionToNight(game)
 }
 
-// handleWSHunterSelect toggles the hunter's pending revenge target selection.
-// Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSHunterSelect(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -397,10 +367,9 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 		h.sendErrorToast(client.playerID, T(lang, "err_hunter_revenge_only_dead"))
 		return
 	}
-	// Don't allow re-selection if already shot
 	var revengeCount int
 	h.db.Get(&revengeCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionHunterRevenge)
+		game.ID, game.Round, client.playerID, ActionHunterApplyKill)
 	if revengeCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_shot"))
 		return
@@ -422,16 +391,15 @@ func handleWSHunterSelect(client *Client, msg WSMessage) {
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionHunterSelect)
+		game.ID, game.Round, client.playerID, ActionHunterSelectKill)
+	// clicking the same target again deselects it
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
-		// Same player clicked again → deselect
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionHunterSelect)
+			game.ID, game.Round, client.playerID, ActionHunterSelectKill)
 		h.logf("Hunter '%s' deselected revenge target", hunter.Name)
 	} else {
-		// Select (or replace prior selection)
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'day', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionHunterSelect, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionHunterSelectKill, targetID, VisibilityActor)
 		h.logf("Hunter '%s' selected revenge target %d", hunter.Name, targetID)
 	}
 
@@ -470,24 +438,22 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Check if this Hunter already took their revenge shot
 	var revengeCount int
 	h.db.Get(&revengeCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, client.playerID, ActionHunterRevenge)
+		game.ID, game.Round, client.playerID, ActionHunterApplyKill)
 	if revengeCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_shot"))
 		return
 	}
 
-	// Read the pending selection from DB
 	var selectAction GameAction
 	if err := h.db.Get(&selectAction, `
 		SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 		FROM game_action
 		WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionHunterSelect); err != nil || selectAction.TargetPlayerID == nil {
+		game.ID, game.Round, client.playerID, ActionHunterSelectKill); err != nil || selectAction.TargetPlayerID == nil {
 		h.sendErrorToast(client.playerID, T(lang, "err_select_shoot_first"))
 		return
 	}
@@ -504,11 +470,9 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Remove the pending selection
 	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionHunterSelect)
+		game.ID, game.Round, client.playerID, ActionHunterSelectKill)
 
-	// Kill the target
 	_, err = h.db.Exec("UPDATE game_player SET is_alive = 0 WHERE game_id = ? AND player_id = ?", game.ID, targetID)
 	if err != nil {
 		h.logError("handleWSHunterRevenge: kill target", err)
@@ -516,12 +480,11 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Record the revenge action (public visibility)
 	hunterRevengeDesc := fmt.Sprintf("Day %d: Hunter %s shot %s", game.Round, hunter.Name, target.Name)
 	_, err = h.db.Exec(`
 		INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 		VALUES (?, ?, 'day', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionHunterRevenge, targetID, VisibilityPublic, hunterRevengeDesc, "hist_hunter_shot", histArgs(game.Round, hunter.Name, target.Name))
+		game.ID, game.Round, client.playerID, ActionHunterApplyKill, targetID, VisibilityPublic, hunterRevengeDesc, "hist_hunter_shot", histArgs(game.Round, hunter.Name, target.Name))
 	if err != nil {
 		h.logError("handleWSHunterRevenge: record action", err)
 	}
@@ -531,10 +494,8 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 	LogDBState(h.db, "after hunter revenge")
 	h.maybeGenerateStory(game.ID, game.Round, "day", targetID)
 
-	// Apply heartbreak from Hunter's shot — chains across multiple lover pairs
 	heartbroken := h.applyHeartbreaks(game, "day", []int64{targetID})
 
-	// Check if the target (or any heartbreak victim) is also a Hunter
 	for _, deadID := range append([]int64{targetID}, heartbroken...) {
 		if getRoleName(h.db, game.ID, deadID) == "Hunter" {
 			deadName := getPlayerName(h.db, deadID)
@@ -544,23 +505,21 @@ func handleWSHunterRevenge(client *Client, msg WSMessage) {
 		}
 	}
 
-	// Check win conditions
 	if h.checkWinConditions(game) {
 		return // Game ended
 	}
 
-	// Check if a day elimination happened this round (the chain started from a day vote)
+	// distinguishes whether this revenge chain started from a day-vote elimination
+	// (transition to night) or a night kill (stay in day for voting)
 	var dayEliminationCount int
 	h.db.Get(&dayEliminationCount, `
 		SELECT COUNT(*) FROM game_action
 		WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-		game.ID, game.Round, ActionElimination)
+		game.ID, game.Round, ActionDayApplyKill)
 
 	if dayEliminationCount > 0 {
-		// Chain started from day elimination — transition to night
 		h.transitionToNight(game)
 	} else {
-		// Chain started from night kill — stay in day for voting
 		h.triggerBroadcast()
 	}
 }

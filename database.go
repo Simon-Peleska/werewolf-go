@@ -66,22 +66,18 @@ func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
 	return player, err
 }
 
-// getPlayerName returns the player's display name, or "" if not found.
 func getPlayerName(db *sqlx.DB, playerID int64) string {
 	var name string
 	db.Get(&name, "SELECT name FROM player WHERE rowid = ?", playerID)
 	return name
 }
 
-// getPlayerByName looks up a player account by name, returning sql.ErrNoRows if
-// no account with that name exists.
 func getPlayerByName(db *sqlx.DB, name string) (Player, error) {
 	var player Player
 	err := db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", name)
 	return player, err
 }
 
-// getRoleName returns the player's role name in the given game, or "" if not found.
 func getRoleName(db *sqlx.DB, gameID, playerID int64) string {
 	var name string
 	db.Get(&name, `SELECT r.name FROM game_player g JOIN role r ON g.role_id = r.rowid WHERE g.game_id = ? AND g.player_id = ?`, gameID, playerID)
@@ -114,7 +110,6 @@ func getPlayersByGameId(db *sqlx.DB, id int64) ([]Player, error) {
 	return players, err
 }
 
-// Role definitions
 type Role struct {
 	ID          int64  `db:"id"`
 	Name        string `db:"name"`
@@ -134,7 +129,6 @@ func getRoles(db *sqlx.DB) ([]Role, error) {
 	return roles, err
 }
 
-// GameAction represents any action taken during the game (night or day phase)
 // Visibility determines who can see this action:
 //   - "public": everyone can see
 //   - "team:werewolf": only werewolf team can see
@@ -154,35 +148,45 @@ type GameAction struct {
 }
 
 // Action types
+//
+// Two-stage actor actions follow <subject>_select_<effect> / <subject>_apply_<effect>:
+// "select" is the mutable, re-toggleable pick; "apply" is the row written once the
+// player commits (Investigate/Protect/Shoot/Apply/Become/etc.), always with the same
+// effect word as its select counterpart. The witch's heal potion protects the victim
+// from the werewolf kill, so it uses "protect" like Doctor/Guard rather than "heal".
 const (
-	ActionWerewolfKill       = "werewolf_kill"
-	ActionDayVote            = "day_vote"
-	ActionElimination        = "elimination"
-	ActionSeerSelect         = "seer_select" // pending investigation selection (toggled, committed on Investigate)
-	ActionSeerInvestigate    = "seer_investigate"
-	ActionDoctorSelect       = "doctor_select" // pending protection target (toggled, committed on Protect)
-	ActionDoctorProtect      = "doctor_protect"
-	ActionGuardSelect        = "guard_select" // pending protection target (toggled, committed on Protect)
-	ActionGuardProtect       = "guard_protect"
-	ActionHunterSelect       = "hunter_select" // pending revenge target (toggled, committed on Shoot)
-	ActionHunterRevenge      = "hunter_revenge"
-	ActionWitchSelectHeal    = "witch_select_heal"    // pending heal selection (toggled, committed on Apply)
-	ActionWitchSelectPoison  = "witch_select_poison"  // pending poison selection (toggled, committed on Apply)
-	ActionWitchHeal          = "witch_heal"           // committed heal (written by witch_apply)
-	ActionWitchKill          = "witch_kill"           // committed kill (written by witch_apply)
-	ActionWitchApply         = "witch_apply"          // witch presses Done; replaces witch_pass
-	ActionWerewolfKill2      = "werewolf_kill_2"      // second kill on Wolf Cub death night
-	ActionCupidLink          = "cupid_link"           // tracks Cupid's step-1 lover choice (Night 1 only)
-	ActionCupidLink2         = "cupid_link_2"         // tracks Cupid's step-2 lover choice (Night 1 only)
-	ActionDoppelgangerSelect = "doppelganger_select"  // pending copy target (Night 1 only)
-	ActionDoppelgangerCopy   = "doppelganger_copy"    // committed copy: Doppelganger becomes target's role (Night 1 only)
-	ActionLoverHeartbreak    = "lover_heartbreak"     // partner dies of heartbreak when their lover is killed
-	ActionWerewolfEndVote    = "werewolf_end_vote"    // one wolf presses End Vote to lock in first kill
-	ActionWerewolfEndVote2   = "werewolf_end_vote_2"  // one wolf presses End Vote to lock in second kill (Wolf Cub)
-	ActionNightKill          = "night_kill"           // public death record inserted when any player dies at night
-	ActionStory              = "story"                // AI-generated story shown in history after deaths
-	ActionNightSurvey        = "night_survey"         // one per player when they press Continue (visibility=resolved)
-	ActionNightSurveySuspect = "night_survey_suspect" // pending suspect selection (toggled, committed on Continue)
+	ActionSeerSelectInvestigate    = "seer_select_investigate"
+	ActionSeerApplyInvestigate     = "seer_apply_investigate"
+	ActionDoctorSelectProtect      = "doctor_select_protect"
+	ActionDoctorApplyProtect       = "doctor_apply_protect"
+	ActionGuardSelectProtect       = "guard_select_protect"
+	ActionGuardApplyProtect        = "guard_apply_protect"
+	ActionHunterSelectKill         = "hunter_select_kill"
+	ActionHunterApplyKill          = "hunter_apply_kill"
+	ActionWitchSelectProtect       = "witch_select_protect"
+	ActionWitchApplyProtect        = "witch_apply_protect"
+	ActionWitchSelectKill          = "witch_select_kill"
+	ActionWitchApplyKill           = "witch_apply_kill"
+	ActionWitchApply               = "witch_apply" // turn-done marker; covers protect/kill/neither, so no single effect word fits
+	ActionDoppelgangerSelectCopy   = "doppelganger_select_copy"
+	ActionDoppelgangerApplyCopy    = "doppelganger_apply_copy"
+	ActionWerewolfSelectKill       = "werewolf_select_kill"
+	ActionWerewolfApplyKill        = "werewolf_apply_kill"
+	ActionWerewolfSelectKill2      = "werewolf_select_kill_2" // second kill on Wolf Cub death night
+	ActionWerewolfApplyKill2       = "werewolf_apply_kill_2"
+	ActionNightSurveySelectSuspect = "night_survey_select_suspect"
+	ActionNightSurveyApplySuspect  = "night_survey_apply_suspect"
+	ActionDaySelectKill            = "day_select_kill"
+	ActionDayApplyKill             = "day_apply_kill"
+	ActionNightApplyKill           = "night_apply_kill"
+
+	// Cupid has no apply stage: "Link" mutates the same select row instead of writing a
+	// second one, so there's no <subject>_apply_<effect> to name.
+	ActionCupidSelectLink1 = "cupid_select_link_1"
+	ActionCupidSelectLink2 = "cupid_select_link_2"
+
+	ActionLoverHeartbreak = "lover_heartbreak"
+	ActionStory           = "story"
 )
 
 // Visibility types
@@ -194,7 +198,6 @@ const (
 	VisibilityResolved     = "resolved"
 )
 
-// canSeeAction determines if a player can see a specific action based on visibility rules
 func canSeeAction(action GameAction, viewer Player, currentRound int, currentPhase string) bool {
 	switch action.Visibility {
 	case VisibilityPublic:
@@ -219,7 +222,6 @@ func canSeeAction(action GameAction, viewer Player, currentRound int, currentPha
 	}
 }
 
-// getVoteCounts returns vote counts for a specific phase
 func getVoteCounts(db *sqlx.DB, gameID int64, round int, phase string, actionType string) (map[int64]int, int, error) {
 	var actions []GameAction
 	err := db.Select(&actions, `
@@ -240,8 +242,7 @@ func getVoteCounts(db *sqlx.DB, gameID int64, round int, phase string, actionTyp
 	return voteCounts, len(actions), nil
 }
 
-// getLoverPartner returns the partner's player ID if playerID is one of the two lovers,
-// or 0 if they are not a lover (or Cupid hasn't linked anyone yet).
+// Returns 0 if playerID is not a lover (or Cupid hasn't linked anyone yet).
 // Both directions are stored in game_lovers, so this is a simple lookup.
 func getLoverPartner(db *sqlx.DB, gameID, playerID int64) int64 {
 	var partnerID int64
@@ -363,25 +364,25 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
-	// Migration: add profile_image_id to player table (idempotent)
 	if err := addColumnIfNotExists(db, "player", "profile_image_id", "INTEGER REFERENCES player_image(player_id)"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}
 
-	// Migration: add original_role_id to game_player for Doppelganger tracking (idempotent)
+	// original_role_id holds the role a Doppelganger started as, so is_doppelganger
+	// can be derived as "has this player copied a role yet?"
 	if err := addColumnIfNotExists(db, "game_player", "original_role_id", "INTEGER REFERENCES role(rowid)"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}
 
-	// Migration: add ai_enabled to game (idempotent) — lets players switch AI features on/off per game
+	// lets players switch AI features on/off per game
 	if err := addColumnIfNotExists(db, "game", "ai_enabled", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}
 
-	// Migration: add description_key and description_args to game_action for i18n (idempotent)
+	// description_key/description_args back the i18n'd history entries alongside description
 	if err := addColumnIfNotExists(db, "game_action", "description_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
@@ -391,8 +392,7 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
-	// Migration: add winner to game (idempotent) — nil until the game ends, then the
-	// winning faction ("villagers", "werewolves", or "lovers")
+	// nil until the game ends, then the winning faction
 	if err := addColumnIfNotExists(db, "game", "winner", "TEXT"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
@@ -410,8 +410,7 @@ func addColumnIfNotExists(db *sqlx.DB, table, column, definition string) error {
 	return err
 }
 
-// histArgs encodes translation arguments for a history entry as a tab-separated string.
-// All args are formatted as strings via %v. Tabs in arg values are not expected.
+// Tabs in arg values are not expected — they would break the tab-separated encoding.
 func histArgs(args ...interface{}) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
@@ -451,7 +450,6 @@ func getPlayerImage(db *sqlx.DB, imageID int64) ([]byte, string, error) {
 	return row.Data, row.MimeType, err
 }
 
-// getOrCreateGameByName returns the game with the given name, creating it if it doesn't exist.
 func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	db.Exec("INSERT OR IGNORE INTO game (name, status, round) VALUES (?, 'lobby', 0)", name)
 	var game Game
@@ -459,20 +457,18 @@ func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	return &game, err
 }
 
-// PlayerGame is a game the player has joined, for the logged-in index listing.
 type PlayerGame struct {
 	Name        string `db:"name"`
 	Status      string `db:"status"` // lobby, night, day, finished
 	Round       int    `db:"round"`
-	Winner      string `db:"winner"`       // "villagers", "werewolves", "lovers"; "" unless finished
-	PlayerTeam  string `db:"player_team"`  // this player's team ("" until roles are assigned)
-	PlayerAlive bool   `db:"player_alive"` // whether this player is still alive
-	Won         bool   // whether this player is on the winning side (finished games only)
+	Winner      string `db:"winner"`
+	PlayerTeam  string `db:"player_team"`
+	PlayerAlive bool   `db:"player_alive"`
+	Won         bool
 }
 
-// getPlayerGames returns every game the player is a participant in, newest first.
-// Won is derived from the persisted winner faction (set once by endGame) plus the
-// player's own team (or survival, for the lovers win).
+// Newest game first. Won is derived from the persisted winner faction (set once by
+// endGame) plus the player's own team (or survival, for the lovers win).
 func getPlayerGames(db *sqlx.DB, playerID int64) ([]PlayerGame, error) {
 	var games []PlayerGame
 	err := db.Select(&games, `
@@ -493,8 +489,6 @@ func getPlayerGames(db *sqlx.DB, playerID int64) ([]PlayerGame, error) {
 	return games, err
 }
 
-// isPlayerInGame reports whether the player is a participant (including observers)
-// in the given game.
 func isPlayerInGame(db *sqlx.DB, gameID, playerID int64) bool {
 	var count int
 	db.Get(&count, "SELECT COUNT(*) FROM game_player WHERE game_id = ? AND player_id = ?", gameID, playerID)

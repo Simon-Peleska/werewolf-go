@@ -7,14 +7,13 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// CupidNightData holds night-phase display data for Cupid.
 type CupidNightData struct {
 	CupidLinked        bool
 	CupidChosen1Player *Player
 	CupidChosen2Player *Player
-	CupidTargetCards   []PlayerCardData // selectable target cards (chosen ones marked selected)
-	CupidChosen1Card   *PlayerCardData  // first linked lover (shown in the linked state)
-	CupidChosen2Card   *PlayerCardData  // second linked lover (shown in the linked state)
+	CupidTargetCards   []PlayerCardData
+	CupidChosen1Card   *PlayerCardData
+	CupidChosen2Card   *PlayerCardData
 }
 
 func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) CupidNightData {
@@ -32,9 +31,9 @@ func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 		db.Get(&cupidChosen2ID, `SELECT player2_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
 	} else {
 		db.Get(&cupidChosen1ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-			game.ID, playerID, ActionCupidLink)
+			game.ID, playerID, ActionCupidSelectLink1)
 		db.Get(&cupidChosen2ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-			game.ID, playerID, ActionCupidLink2)
+			game.ID, playerID, ActionCupidSelectLink2)
 	}
 	if cupidChosen1ID != 0 {
 		d.CupidChosen1Player = getVisiblePlayer(db, game.ID, cupidChosen1ID, player, seerInvestigated)
@@ -45,8 +44,6 @@ func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 	return d
 }
 
-// handleWSCupidChoose handles Cupid's lover selection on Night 1.
-// Picks are staged (replaceable) until Cupid explicitly confirms via handleWSCupidLink.
 func handleWSCupidChoose(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -74,7 +71,6 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Reject if already finalized
 	var finalized int
 	h.db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
 	if finalized > 0 {
@@ -93,17 +89,15 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Toggle: if this player is already in a slot, remove them from that slot.
-	// Query each slot directly by (action_type, target_player_id) — fully independent.
 	var inSlot1, inSlot2 int
 	h.db.Get(&inSlot1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ? AND target_player_id = ?`,
-		game.ID, client.playerID, ActionCupidLink, targetID)
+		game.ID, client.playerID, ActionCupidSelectLink1, targetID)
 	h.db.Get(&inSlot2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ? AND target_player_id = ?`,
-		game.ID, client.playerID, ActionCupidLink2, targetID)
+		game.ID, client.playerID, ActionCupidSelectLink2, targetID)
 
 	if inSlot1 > 0 {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-			game.ID, client.playerID, ActionCupidLink)
+			game.ID, client.playerID, ActionCupidSelectLink1)
 		if err != nil {
 			h.logError("handleWSCupidChoose: delete slot1", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_choice"))
@@ -115,7 +109,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 	}
 	if inSlot2 > 0 {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-			game.ID, client.playerID, ActionCupidLink2)
+			game.ID, client.playerID, ActionCupidSelectLink2)
 		if err != nil {
 			h.logError("handleWSCupidChoose: delete slot2", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_choice"))
@@ -126,12 +120,11 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Not currently selected — read slot occupancy and fill the first empty slot.
 	var slot1ID, slot2ID int64
 	h.db.Get(&slot1ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-		game.ID, client.playerID, ActionCupidLink)
+		game.ID, client.playerID, ActionCupidSelectLink1)
 	h.db.Get(&slot2ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-		game.ID, client.playerID, ActionCupidLink2)
+		game.ID, client.playerID, ActionCupidSelectLink2)
 
 	var fillType string
 	if slot1ID == 0 {
@@ -139,20 +132,20 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
-		fillType = ActionCupidLink
+		fillType = ActionCupidSelectLink1
 	} else if slot2ID == 0 {
 		if slot1ID == targetID {
 			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
-		fillType = ActionCupidLink2
+		fillType = ActionCupidSelectLink2
 	} else {
 		// Both filled — replace slot 2
 		if slot1ID == targetID {
 			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
-		fillType = ActionCupidLink2
+		fillType = ActionCupidSelectLink2
 	}
 
 	_, err = h.db.Exec(`
@@ -170,7 +163,6 @@ DO UPDATE SET target_player_id = ?, description = ''`,
 	h.triggerBroadcast()
 }
 
-// handleWSCupidLink finalizes Cupid's staged lover choices on Night 1.
 func handleWSCupidLink(client *Client) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -208,9 +200,9 @@ func handleWSCupidLink(client *Client) {
 	var firstLoverID int64
 	var secondLoverID int64
 	h.db.Get(&firstLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-		game.ID, client.playerID, ActionCupidLink)
+		game.ID, client.playerID, ActionCupidSelectLink1)
 	h.db.Get(&secondLoverID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
-		game.ID, client.playerID, ActionCupidLink2)
+		game.ID, client.playerID, ActionCupidSelectLink2)
 
 	if firstLoverID == 0 || secondLoverID == 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_choose_two_lovers_first"))
@@ -252,13 +244,13 @@ func handleWSCupidLink(client *Client) {
 	desc1 := fmt.Sprintf("Night 1: Your lover is %s", second.Name)
 	desc2 := fmt.Sprintf("Night 1: Your lover is %s", first.Name)
 	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, firstLoverID, ActionCupidLink, secondLoverID, VisibilityActor, desc1, "hist_cupid_lover", histArgs(second.Name))
+		game.ID, firstLoverID, ActionCupidSelectLink1, secondLoverID, VisibilityActor, desc1, "hist_cupid_lover", histArgs(second.Name))
 	_, _ = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args) VALUES (?, 1, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, secondLoverID, ActionCupidLink, firstLoverID, VisibilityActor, desc2, "hist_cupid_lover", histArgs(first.Name))
+		game.ID, secondLoverID, ActionCupidSelectLink1, firstLoverID, VisibilityActor, desc2, "hist_cupid_lover", histArgs(first.Name))
 
-	// Clear Cupid's staged picks once finalized.
+	// these are the cupid's staging rows, not the lover-history rows inserted above
 	_, _ = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND phase = 'night' AND actor_player_id = ? AND action_type IN (?, ?)`,
-		game.ID, client.playerID, ActionCupidLink, ActionCupidLink2)
+		game.ID, client.playerID, ActionCupidSelectLink1, ActionCupidSelectLink2)
 
 	h.sendToPlayer(firstLoverID, []byte(renderToast(h.templates, h.logf, "info", T(h.getPlayerLang(firstLoverID), "toast_cupid_linked", second.Name))))
 	h.sendToPlayer(secondLoverID, []byte(renderToast(h.templates, h.logf, "info", T(h.getPlayerLang(secondLoverID), "toast_cupid_linked", first.Name))))

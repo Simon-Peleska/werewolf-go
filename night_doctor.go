@@ -7,13 +7,12 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// DoctorNightData holds night-phase display data for the Doctor.
 type DoctorNightData struct {
 	HasProtected           bool
-	DoctorSelectedPlayer   *Player          // pending selection (nil = none)
-	DoctorProtectingPlayer *Player          // confirmed protection target this night
-	DoctorResultCard       *PlayerCardData  // card shown after protecting
-	DoctorTargetCards      []PlayerCardData // selectable target cards
+	DoctorSelectedPlayer   *Player // pending, not yet confirmed
+	DoctorProtectingPlayer *Player // confirmed protection target this night
+	DoctorResultCard       *PlayerCardData
+	DoctorTargetCards      []PlayerCardData
 }
 
 func buildDoctorNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) DoctorNightData {
@@ -26,7 +25,7 @@ func buildDoctorNightData(db *sqlx.DB, game *Game, playerID int64, player Player
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionDoctorProtect)
+		game.ID, game.Round, playerID, ActionDoctorApplyProtect)
 	if err == nil && action.TargetPlayerID != nil {
 		return DoctorNightData{
 			HasProtected:           true,
@@ -34,13 +33,12 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 		}
 	}
 
-	// Pending selection
 	var selectAction GameAction
 	if db.Get(&selectAction, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, playerID, ActionDoctorSelect) == nil && selectAction.TargetPlayerID != nil {
+		game.ID, game.Round, playerID, ActionDoctorSelectProtect) == nil && selectAction.TargetPlayerID != nil {
 		return DoctorNightData{
 			DoctorSelectedPlayer: getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, player, seerInvestigated),
 		}
@@ -49,8 +47,6 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	return DoctorNightData{}
 }
 
-// handleWSDoctorSelect toggles the doctor's pending protection target selection.
-// Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSDoctorSelect(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -80,7 +76,7 @@ func handleWSDoctorSelect(client *Client, msg WSMessage) {
 	}
 	var existingCount int
 	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionDoctorProtect)
+		game.ID, game.Round, client.playerID, ActionDoctorApplyProtect)
 	if existingCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_protected"))
 		return
@@ -102,14 +98,15 @@ func handleWSDoctorSelect(client *Client, msg WSMessage) {
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionDoctorSelect)
+		game.ID, game.Round, client.playerID, ActionDoctorSelectProtect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// clicking the same target again deselects it
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionDoctorSelect)
+			game.ID, game.Round, client.playerID, ActionDoctorSelectProtect)
 		h.logf("Doctor '%s' deselected protection target", doctor.Name)
 	} else {
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionDoctorSelect, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionDoctorSelectProtect, targetID, VisibilityActor)
 		h.logf("Doctor '%s' selected protection target %d", doctor.Name, targetID)
 	}
 
@@ -152,7 +149,7 @@ func handleWSDoctorProtect(client *Client, msg WSMessage) {
 	h.db.Get(&existingCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, client.playerID, ActionDoctorProtect)
+		game.ID, game.Round, client.playerID, ActionDoctorApplyProtect)
 	if existingCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_protected"))
 		return
@@ -163,7 +160,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionDoctorSelect); err != nil || selectAction.TargetPlayerID == nil {
+		game.ID, game.Round, client.playerID, ActionDoctorSelectProtect); err != nil || selectAction.TargetPlayerID == nil {
 		h.sendErrorToast(client.playerID, T(lang, "err_select_protect_first"))
 		return
 	}
@@ -181,13 +178,13 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	}
 
 	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionDoctorSelect)
+		game.ID, game.Round, client.playerID, ActionDoctorSelectProtect)
 
 	doctorDesc := fmt.Sprintf("Night %d: You protected %s", game.Round, target.Name)
 	_, err = h.db.Exec(`
 INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionDoctorProtect, targetID, VisibilityActor, doctorDesc, "hist_protected", histArgs(game.Round, target.Name))
+		game.ID, game.Round, client.playerID, ActionDoctorApplyProtect, targetID, VisibilityActor, doctorDesc, "hist_protected", histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSDoctorProtect: db.Exec insert protection", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_protection"))

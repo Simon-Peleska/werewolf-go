@@ -7,21 +7,20 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// WitchNightData holds night-phase display data for the Witch.
 type WitchNightData struct {
-	WitchVictimPlayer         *Player // werewolf majority target visible to witch (nil = none/not yet)
-	WitchVictimPlayer2        *Player // Wolf Cub second kill target (nil = not set)
-	HealPotionUsed            bool
-	PoisonPotionUsed          bool
-	WitchSelectedHealPlayer   *Player // pending heal selection
-	WitchSelectedPoisonPlayer *Player // pending poison selection
-	WitchHealedThisNight      bool
-	WitchHealedPlayer         *Player // who was healed this night
-	WitchKilledThisNight      bool
-	WitchKilledPlayer         *Player          // who was poisoned this night
-	WitchDoneThisNight        bool             // true after witch_apply submitted
-	WitchHealCards            []PlayerCardData // selectable heal target cards (wolf victims)
-	WitchPoisonCards          []PlayerCardData // selectable poison target cards
+	WerewolfVictimPlayer     *Player
+	WerewolfVictimPlayer2    *Player
+	HealPotionUsed           bool
+	PoisonPotionUsed         bool
+	WitchPendingHealPlayer   *Player
+	WitchPendingPoisonPlayer *Player
+	WitchHealedThisNight     bool
+	WitchHealedPlayer        *Player
+	WitchPoisonedThisNight   bool
+	WitchPoisonedPlayer      *Player
+	WitchDoneThisNight       bool
+	WitchHealCards           []PlayerCardData
+	WitchPoisonCards         []PlayerCardData
 }
 
 func buildWitchNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) WitchNightData {
@@ -33,9 +32,9 @@ func buildWitchNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 
 	var healUsed, poisonUsed int
 	db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
-		game.ID, playerID, ActionWitchHeal)
+		game.ID, playerID, ActionWitchApplyProtect)
 	db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
-		game.ID, playerID, ActionWitchKill)
+		game.ID, playerID, ActionWitchApplyKill)
 	d.HealPotionUsed = healUsed > 0
 	d.PoisonPotionUsed = poisonUsed > 0
 
@@ -44,8 +43,8 @@ func buildWitchNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionWitchSelectHeal); err == nil && selectHealAction.TargetPlayerID != nil {
-		d.WitchSelectedHealPlayer = getVisiblePlayer(db, game.ID, *selectHealAction.TargetPlayerID, player, seerInvestigated)
+		game.ID, game.Round, playerID, ActionWitchSelectProtect); err == nil && selectHealAction.TargetPlayerID != nil {
+		d.WitchPendingHealPlayer = getVisiblePlayer(db, game.ID, *selectHealAction.TargetPlayerID, player, seerInvestigated)
 	}
 
 	var selectPoisonAction GameAction
@@ -53,8 +52,8 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionWitchSelectPoison); err == nil && selectPoisonAction.TargetPlayerID != nil {
-		d.WitchSelectedPoisonPlayer = getVisiblePlayer(db, game.ID, *selectPoisonAction.TargetPlayerID, player, seerInvestigated)
+		game.ID, game.Round, playerID, ActionWitchSelectKill); err == nil && selectPoisonAction.TargetPlayerID != nil {
+		d.WitchPendingPoisonPlayer = getVisiblePlayer(db, game.ID, *selectPoisonAction.TargetPlayerID, player, seerInvestigated)
 	}
 
 	var healAction GameAction
@@ -62,7 +61,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionWitchHeal); err == nil {
+		game.ID, game.Round, playerID, ActionWitchApplyProtect); err == nil {
 		d.WitchHealedThisNight = true
 		if healAction.TargetPlayerID != nil {
 			d.WitchHealedPlayer = getVisiblePlayer(db, game.ID, *healAction.TargetPlayerID, player, seerInvestigated)
@@ -74,9 +73,9 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionWitchKill); err == nil && killedAction.TargetPlayerID != nil {
-		d.WitchKilledThisNight = true
-		d.WitchKilledPlayer = getVisiblePlayer(db, game.ID, *killedAction.TargetPlayerID, player, seerInvestigated)
+		game.ID, game.Round, playerID, ActionWitchApplyKill); err == nil && killedAction.TargetPlayerID != nil {
+		d.WitchPoisonedThisNight = true
+		d.WitchPoisonedPlayer = getVisiblePlayer(db, game.ID, *killedAction.TargetPlayerID, player, seerInvestigated)
 	}
 
 	var doneCount int
@@ -87,7 +86,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 	// Witch sees the wolf victim only after End Vote is pressed
 	var endVoteCount int
 	db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-		game.ID, game.Round, ActionWerewolfEndVote)
+		game.ID, game.Round, ActionWerewolfApplyKill)
 	if endVoteCount > 0 {
 		type voteCount struct {
 			TargetPlayerID int64 `db:"target_player_id"`
@@ -100,7 +99,7 @@ FROM game_action ga
 WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
 GROUP BY ga.target_player_id
 ORDER BY count DESC`,
-			game.ID, game.Round, ActionWerewolfKill)
+			game.ID, game.Round, ActionWerewolfSelectKill)
 
 		var totalWerewolves int
 		db.Get(&totalWerewolves, `
@@ -110,7 +109,7 @@ WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 		if len(wvotes) > 0 && totalWerewolves > 0 {
 			majority := totalWerewolves/2 + 1
 			if wvotes[0].Count >= majority {
-				d.WitchVictimPlayer = getVisiblePlayer(db, game.ID, wvotes[0].TargetPlayerID, player, seerInvestigated)
+				d.WerewolfVictimPlayer = getVisiblePlayer(db, game.ID, wvotes[0].TargetPlayerID, player, seerInvestigated)
 			}
 		}
 
@@ -122,13 +121,13 @@ SELECT COUNT(*) FROM game_action ga
 JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 JOIN role r ON gp.role_id = r.rowid
 WHERE ga.game_id = ? AND ga.round = ?
-AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+AND ga.action_type IN (?, ?, ?, ?)
 AND r.name = 'Wolf Cub'`,
-				game.ID, game.Round-1)
+				game.ID, game.Round-1, ActionWerewolfSelectKill, ActionDayApplyKill, ActionHunterApplyKill, ActionWitchApplyKill)
 			if wolfCubDeathCount > 0 {
 				var endVote2Count int
 				db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-					game.ID, game.Round, ActionWerewolfEndVote2)
+					game.ID, game.Round, ActionWerewolfApplyKill2)
 				if endVote2Count > 0 {
 					var wvotes2 []voteCount
 					db.Select(&wvotes2, `
@@ -137,10 +136,10 @@ FROM game_action ga
 WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night' AND ga.action_type = ?
 GROUP BY ga.target_player_id
 ORDER BY count DESC`,
-						game.ID, game.Round, ActionWerewolfKill2)
+						game.ID, game.Round, ActionWerewolfSelectKill2)
 					majority := totalWerewolves/2 + 1
 					if len(wvotes2) > 0 && wvotes2[0].Count >= majority {
-						d.WitchVictimPlayer2 = getVisiblePlayer(db, game.ID, wvotes2[0].TargetPlayerID, player, seerInvestigated)
+						d.WerewolfVictimPlayer2 = getVisiblePlayer(db, game.ID, wvotes2[0].TargetPlayerID, player, seerInvestigated)
 					}
 				}
 			}
@@ -150,8 +149,6 @@ ORDER BY count DESC`,
 	return d
 }
 
-// handleWSWitchSelectHeal toggles the witch's pending heal selection.
-// Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -188,7 +185,7 @@ func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 	}
 	var healUsed int
 	h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
-		game.ID, client.playerID, ActionWitchHeal)
+		game.ID, client.playerID, ActionWitchApplyProtect)
 	if healUsed > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_heal_already_used"))
 		return
@@ -205,21 +202,21 @@ func handleWSWitchSelectHeal(client *Client, msg WSMessage) {
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionWitchSelectHeal)
+		game.ID, game.Round, client.playerID, ActionWitchSelectProtect)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// clicking the same target again deselects it
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionWitchSelectHeal)
+			game.ID, game.Round, client.playerID, ActionWitchSelectProtect)
 		h.logf("Witch '%s' deselected heal target", witch.Name)
 	} else {
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionWitchSelectHeal, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionWitchSelectProtect, targetID, VisibilityActor)
 		h.logf("Witch '%s' selected heal target %d", witch.Name, targetID)
 	}
 
 	h.triggerBroadcast()
 }
 
-// handleWSWitchSelectPoison toggles the witch's pending poison selection.
 func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -256,7 +253,7 @@ func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 	}
 	var poisonUsed int
 	h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
-		game.ID, client.playerID, ActionWitchKill)
+		game.ID, client.playerID, ActionWitchApplyKill)
 	if poisonUsed > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_poison_already_used"))
 		return
@@ -273,21 +270,21 @@ func handleWSWitchSelectPoison(client *Client, msg WSMessage) {
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionWitchSelectPoison)
+		game.ID, game.Round, client.playerID, ActionWitchSelectKill)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// clicking the same target again deselects it
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionWitchSelectPoison)
+			game.ID, game.Round, client.playerID, ActionWitchSelectKill)
 		h.logf("Witch '%s' deselected poison target", witch.Name)
 	} else {
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionWitchSelectPoison, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionWitchSelectKill, targetID, VisibilityActor)
 		h.logf("Witch '%s' selected poison target %d", witch.Name, targetID)
 	}
 
 	h.triggerBroadcast()
 }
 
-// handleWSWitchApply commits the witch's pending selections and ends her night turn.
 func handleWSWitchApply(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -323,18 +320,17 @@ func handleWSWitchApply(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Commit pending heal selection if present
 	var healAction GameAction
 	if err := h.db.Get(&healAction, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionWitchSelectHeal); err == nil && healAction.TargetPlayerID != nil {
+		game.ID, game.Round, client.playerID, ActionWitchSelectProtect); err == nil && healAction.TargetPlayerID != nil {
 
 		targetID := *healAction.TargetPlayerID
 		var healUsed int
 		h.db.Get(&healUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
-			game.ID, client.playerID, ActionWitchHeal)
+			game.ID, client.playerID, ActionWitchApplyProtect)
 		if healUsed > 0 {
 			h.sendErrorToast(client.playerID, T(lang, "err_heal_already_used"))
 			return
@@ -345,14 +341,14 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		}
 		var endVoteCount int
 		h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-			game.ID, game.Round, ActionWerewolfEndVote)
+			game.ID, game.Round, ActionWerewolfApplyKill)
 		if endVoteCount == 0 {
 			h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_locked"))
 			return
 		}
 		var isVictim int
 		h.db.Get(&isVictim, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type IN (?,?) AND target_player_id=?`,
-			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, targetID)
+			game.ID, game.Round, ActionWerewolfSelectKill, ActionWerewolfSelectKill2, targetID)
 		if isVictim == 0 {
 			h.sendErrorToast(client.playerID, T(lang, "err_heal_must_target_werewolf"))
 			return
@@ -363,7 +359,7 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		_, err = h.db.Exec(`
 INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-			game.ID, game.Round, client.playerID, ActionWitchHeal, targetID, VisibilityActor, witchHealDesc, "hist_witch_heal", histArgs(game.Round, targetName))
+			game.ID, game.Round, client.playerID, ActionWitchApplyProtect, targetID, VisibilityActor, witchHealDesc, "hist_witch_heal", histArgs(game.Round, targetName))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit heal", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_commit_heal"))
@@ -372,18 +368,17 @@ VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
 		h.logf("Witch '%s' committed heal on player %d (%s)", witch.Name, targetID, targetName)
 	}
 
-	// Commit pending poison selection if present
 	var poisonAction GameAction
 	if err := h.db.Get(&poisonAction, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionWitchSelectPoison); err == nil && poisonAction.TargetPlayerID != nil {
+		game.ID, game.Round, client.playerID, ActionWitchSelectKill); err == nil && poisonAction.TargetPlayerID != nil {
 
 		targetID := *poisonAction.TargetPlayerID
 		var poisonUsed int
 		h.db.Get(&poisonUsed, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND actor_player_id=? AND action_type=?`,
-			game.ID, client.playerID, ActionWitchKill)
+			game.ID, client.playerID, ActionWitchApplyKill)
 		if poisonUsed > 0 {
 			h.sendErrorToast(client.playerID, T(lang, "err_poison_already_used"))
 			return
@@ -397,7 +392,7 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 		_, err = h.db.Exec(`
 INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-			game.ID, game.Round, client.playerID, ActionWitchKill, targetID, VisibilityActor, witchKillDesc, "hist_witch_poison", histArgs(game.Round, target.Name))
+			game.ID, game.Round, client.playerID, ActionWitchApplyKill, targetID, VisibilityActor, witchKillDesc, "hist_witch_poison", histArgs(game.Round, target.Name))
 		if err != nil {
 			h.logError("handleWSWitchApply: commit poison", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_commit_poison"))

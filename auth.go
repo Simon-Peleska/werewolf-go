@@ -297,7 +297,6 @@ func processProfileImage(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// centerCropSquare crops an image to a square at its center.
 func centerCropSquare(src image.Image) image.Image {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
@@ -315,7 +314,6 @@ func centerCropSquare(src image.Image) image.Image {
 	return dst
 }
 
-// resizeNearest scales src to width×height using nearest-neighbor sampling.
 func resizeNearest(src image.Image, width, height int) image.Image {
 	sb := src.Bounds()
 	sw, sh := sb.Dx(), sb.Dy()

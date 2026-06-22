@@ -2,14 +2,14 @@
 <h3>{{T .Lang "witch_title"}}</h3>
 {{if .WitchDoneThisNight}}
 {{if .WitchHealedThisNight}}{{if .WitchHealedPlayer}}<p><em>{{T .Lang "witch_saved" .WitchHealedPlayer.Name}}</em></p>{{end}}{{end}}
-{{if .WitchKilledThisNight}}{{if .WitchKilledPlayer}}<p><em>{{T .Lang "witch_poisoned" .WitchKilledPlayer.Name}}</em></p>{{end}}{{end}}
+{{if .WitchPoisonedThisNight}}{{if .WitchPoisonedPlayer}}<p><em>{{T .Lang "witch_poisoned" .WitchPoisonedPlayer.Name}}</em></p>{{end}}{{end}}
 <p><em>{{T .Lang "witch_waiting"}}</em></p>
 {{else}}
 
 <div id="witch-heal-section">
 {{if not .HealPotionUsed}}
 <h4>{{T .Lang "heal_potion"}}</h4>
-{{if .WitchVictimPlayer}}
+{{if .WerewolfVictimPlayer}}
 <p>{{T .Lang "witch_targeting"}}</p>
 <div class="card-list" id="witch-heal-targets">
 {{range .WitchHealCards}}

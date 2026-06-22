@@ -16,16 +16,9 @@ import (
 	"time"
 )
 
-// Storyteller generates a dramatic story after deaths in the game.
-// systemPrompt is built per-call (see prompt.go) so it can reflect live game
-// state. onChunk is called with each text chunk as it streams in.
 type Storyteller interface {
 	Tell(ctx context.Context, systemPrompt, userPrompt string, onChunk func(string)) (string, error)
 }
-
-// ── OpenAI-compatible ────────────────────────────────────────────────────────
-// Works with OpenAI, Ollama, Groq, and any server that speaks the
-// POST /v1/chat/completions SSE streaming protocol.
 
 type openaiStoryteller struct {
 	baseURL     string
@@ -33,7 +26,7 @@ type openaiStoryteller struct {
 	model       string
 	temperature float64
 	maxTokens   int
-	extraParams map[string]any // additional JSON fields merged into every request body (e.g. OpenRouter's "provider", "top_p")
+	extraParams map[string]any
 }
 
 func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt string, onChunk func(string)) (string, error) {
@@ -79,10 +72,12 @@ func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt s
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
+
 		payload := strings.TrimPrefix(line, "data: ")
 		if payload == "[DONE]" {
 			break
 		}
+
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
@@ -93,6 +88,7 @@ func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt s
 		if json.Unmarshal([]byte(payload), &chunk) != nil {
 			continue
 		}
+
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			text := chunk.Choices[0].Delta.Content
 			full.WriteString(text)
@@ -104,34 +100,27 @@ func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt s
 	return strings.TrimSpace(full.String()), scanner.Err()
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-// nextSentence pulls the first complete sentence from text.
-// A sentence ends at . ! ? (with optional repeated punctuation) followed by
-// whitespace or end of string. Returns ("", text) if no boundary found yet.
 func nextSentence(text string) (sentence, rest string) {
 	for i := 0; i < len(text); i++ {
 		if text[i] != '.' && text[i] != '!' && text[i] != '?' {
 			continue
 		}
+
 		end := i + 1
 		for end < len(text) && (text[end] == '.' || text[end] == '!' || text[end] == '?') {
 			end++
 		}
+
 		if end >= len(text) || text[end] == ' ' || text[end] == '\n' {
 			return strings.TrimSpace(text[:end]), strings.TrimSpace(text[end:])
 		}
 	}
+
 	return "", text
 }
 
-// streamStory runs the full storyteller pipeline synchronously (call it from a
-// goroutine): insert a placeholder history row, stream the LLM response into it
-// (flushing to DB + clients every 300ms), pipe completed sentences to the
-// narrator, then finalize the row or clean it up on error/empty.
-// Callers must have already checked h.storyteller != nil && h.aiEnabled(gameID).
 func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID int64, systemPrompt, userPrompt string, timeout time.Duration) {
-	// Insert placeholder row (empty description = hidden from history until text arrives)
+	// empty description hides the row from history until text arrives
 	result, err := h.db.Exec(`
 		INSERT OR IGNORE INTO game_action
 			(game_id, round, phase, actor_player_id, action_type, visibility, description)
@@ -141,16 +130,16 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 		h.logError("streamStory: insert placeholder", err)
 		return
 	}
+
 	storyRowID, _ := result.LastInsertId()
 	if storyRowID == 0 {
-		return // row already exists (shouldn't happen)
+		return // row for this slot already exists
 	}
 
-	// Buffer for streamed tokens (for DB flush)
+	// mu guards buf between the flush ticker and the onChunk callback below
 	var mu sync.Mutex
 	var buf strings.Builder
 
-	// Flush goroutine: pushes partial text to DB and clients every 300ms
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(300 * time.Millisecond)
@@ -171,8 +160,7 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 		}
 	}()
 
-	// Sentence-by-sentence TTS: one goroutine drains the channel sequentially
-	// so sentences are always spoken in order without gaps or overlap.
+	// one goroutine drains sentenceCh so sentences are spoken in order, never overlapping
 	var sentenceCh chan string
 	if h.narrator != nil {
 		sentenceCh = make(chan string, 8)
@@ -183,6 +171,7 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 					h.broadcastAudio(chunk)
 				})
 				cancel()
+
 				if err != nil {
 					h.logf("Narrator: TTS error: %v", err)
 				}
@@ -193,8 +182,7 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// sentenceBuf accumulates tokens until a sentence boundary is detected.
-	// Tell is blocking and calls onChunk synchronously, so no mutex needed here.
+	// no mutex: Tell calls onChunk synchronously, so only this goroutine ever touches sentenceBuf
 	var sentenceBuf strings.Builder
 	_, err = h.storyteller.Tell(ctx, systemPrompt, userPrompt, func(chunk string) {
 		mu.Lock()
@@ -217,7 +205,7 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 
 	close(done)
 
-	// Flush any remaining text (last sentence without trailing punctuation)
+	// last sentence has no trailing punctuation, so nextSentence never caught it
 	if sentenceCh != nil {
 		if err == nil {
 			if remaining := strings.TrimSpace(sentenceBuf.String()); remaining != "" {
@@ -233,7 +221,6 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 		return
 	}
 
-	// Final flush with trimmed complete text
 	mu.Lock()
 	finalText := strings.TrimSpace(buf.String())
 	mu.Unlock()
@@ -248,8 +235,6 @@ func (h *Hub) streamStory(gameID int64, round int, phase string, actorPlayerID i
 	h.triggerBroadcast()
 }
 
-// maybeGenerateEnding generates a dramatic AI-written game summary and speaks it via TTS.
-// Falls back to a static maybeSpeakStory announcement if no storyteller is configured.
 func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 	if !h.aiEnabled(gameID) {
 		return
@@ -267,7 +252,7 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 	}
 
 	go func() {
-		// Fetch ALL actions — game is over, storyteller gets the full picture including private events
+		// no visibility filter: game's over, the storyteller gets the full picture
 		var descriptions []string
 		if err := h.db.Select(&descriptions, `
 			SELECT description FROM game_action
@@ -286,20 +271,17 @@ func (h *Hub) maybeGenerateEnding(gameID int64, round int, winner string) {
 		systemPrompt := h.buildGameSystemPrompt(gameID)
 		userPrompt := buildUserPrompt(descriptions, players, winner)
 
-		// players[0] satisfies the NOT NULL actor_player_id FK constraint.
 		h.streamStory(gameID, round, "finished", players[0].PlayerID, systemPrompt, userPrompt, 60*time.Second)
 	}()
 }
 
-// initStoryteller creates a Storyteller from config, or returns nil if disabled.
 func initStoryteller(cfg AppConfig) Storyteller {
 	if !cfg.Storyteller {
 		log.Printf("Storyteller: disabled")
 		return nil
 	}
 
-	// Default temperature: 1.2 (above average for more varied storytelling)
-	temperature := 1.2
+	temperature := 0.7
 	if cfg.StorytellerTemperature != "" {
 		if f, err := strconv.ParseFloat(cfg.StorytellerTemperature, 64); err == nil {
 			temperature = f
@@ -332,18 +314,13 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: cfg.OpenAIModel, temperature: temperature, maxTokens: maxTokens, extraParams: extraParams}
 }
 
-// ── Story generation ─────────────────────────────────────────────────────────
-
-// maybeGenerateStory asynchronously streams a story into the game history after a death.
-// Returns immediately; story tokens appear progressively via broadcastGameUpdate.
-// actorPlayerID must be a valid player rowid (typically the victim's ID).
+// maybeGenerateStory is fire-and-forget; story tokens appear progressively via broadcastGameUpdate.
 func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPlayerID int64) {
 	if h.storyteller == nil || !h.aiEnabled(gameID) {
 		return
 	}
 
 	go func() {
-		// Fetch all public history at this point in time
 		var descriptions []string
 		if err := h.db.Select(&descriptions, `
 			SELECT description FROM game_action
@@ -365,22 +342,24 @@ func (h *Hub) maybeGenerateStory(gameID int64, round int, phase string, actorPla
 	}()
 }
 
-// maybeSpeakStory asynchronously narrates text as audio streamed to all connected clients.
 func (h *Hub) maybeSpeakStory(gameID int64, text string) {
 	if h.narrator == nil || !h.aiEnabled(gameID) {
 		return
 	}
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		h.logf("Narrator: starting TTS for game %d", gameID)
+
 		err := h.narrator.Speak(ctx, text, func(chunk []byte) {
 			h.broadcastAudio(chunk)
 		})
 		if err != nil {
 			h.logf("Narrator: TTS error for game %d: %v", gameID, err)
-		} else {
-			h.logf("Narrator: TTS completed for game %d", gameID)
+			return
 		}
+
+		h.logf("Narrator: TTS completed for game %d", gameID)
 	}()
 }

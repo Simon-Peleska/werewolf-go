@@ -1,17 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"database/sql"
 	"math/big"
 )
 
-// LobbyData holds all data needed to render the lobby
 type LobbyData struct {
 	Players     []Player
 	RoleConfigs []RoleConfigDisplay
-	RoleCards   []PlayerCardData // pre-built role cards (with ± buttons)
+	RoleCards   []PlayerCardData
 	TotalRoles  int
 	PlayerCount int
 	CanStart    bool
@@ -44,7 +42,7 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 	roleID := msg.RoleID
 	delta := msg.Delta
 
-	// For additions, check that we haven't already filled all player slots
+	// reject role additions once slots already cover every player
 	if delta == "1" {
 		var totalRoles int
 		h.db.Get(&totalRoles, "SELECT COALESCE(SUM(count), 0) FROM game_role_config WHERE game_id = ?", game.ID)
@@ -56,7 +54,6 @@ func handleWSUpdateRole(client *Client, msg WSMessage) {
 		}
 	}
 
-	// Get current count
 	var current GameRoleConfig
 	err = h.db.Get(&current, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ? AND role_id = ?", game.ID, roleID)
 
@@ -103,7 +100,6 @@ func handleWSStartGame(client *Client) {
 		return
 	}
 
-	// Get players
 	players, err := getPlayersByGameId(h.db, game.ID)
 	if err != nil {
 		h.logError("handleWSStartGame: getPlayersByGameId", err)
@@ -112,7 +108,6 @@ func handleWSStartGame(client *Client) {
 	}
 	h.logf("Found %d players in game", len(players))
 
-	// Get role configuration
 	var roleConfigs []GameRoleConfig
 	err = h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 	if err != nil {
@@ -122,7 +117,6 @@ func handleWSStartGame(client *Client) {
 	}
 	h.logf("Found %d role configs", len(roleConfigs))
 
-	// Build role pool
 	var rolePool []int64
 	for _, rc := range roleConfigs {
 		for i := 0; i < rc.Count; i++ {
@@ -137,11 +131,10 @@ func handleWSStartGame(client *Client) {
 		return
 	}
 
-	// Shuffle role pool
 	shuffleRoles(rolePool)
 	h.logf("Roles shuffled, assigning to players...")
 
-	// Replace any Joker slots with a random role drawn from all non-Joker roles
+	// Joker is never seen in-game — replace each Joker slot with a random non-Joker role
 	var jokerRoleID int64
 	h.db.Get(&jokerRoleID, "SELECT rowid FROM role WHERE name = 'Joker'")
 	var allRoleIDs []int64
@@ -158,7 +151,6 @@ func handleWSStartGame(client *Client) {
 		}
 	}
 
-	// Assign roles to players
 	for i, gp := range players {
 		h.logf("Assigning role %d to player %d (game_player id=%d)", rolePool[i], gp.PlayerID, gp.ID)
 		_, err := h.db.Exec("UPDATE game_player SET role_id = ? WHERE rowid = ?", rolePool[i], gp.ID)
@@ -170,7 +162,6 @@ func handleWSStartGame(client *Client) {
 	}
 	h.logf("Roles assigned, updating game status...")
 
-	// Update game status and set night 1
 	_, err = h.db.Exec("UPDATE game SET status = 'night', round = 1 WHERE rowid = ?", game.ID)
 	if err != nil {
 		h.logError("handleWSStartGame: db.Exec update game status", err)
@@ -186,55 +177,11 @@ func handleWSStartGame(client *Client) {
 	h.logf("Game started successfully!")
 }
 
-// renderLobby renders the lobby component for a player
-func renderLobby(h *Hub, game Game, player Player, players []Player) (*bytes.Buffer, error) {
-	roles, _ := getRoles(h.db)
-
-	// Count players and total role slots
-	playerCount := len(players)
-	totalRoles := 0
-
-	// Get role configurations
-	var roleConfigs []GameRoleConfig
-	h.db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
-
-	// Build role config display
-	var roleConfigDisplay []RoleConfigDisplay
-	for _, rc := range roleConfigs {
-		totalRoles += rc.Count
-		var roleObj Role
-		for _, r := range roles {
-			if r.ID == rc.RoleID {
-				roleObj = r
-				break
-			}
-		}
-		roleConfigDisplay = append(roleConfigDisplay, RoleConfigDisplay{Role: roleObj, Count: rc.Count})
-	}
-
-	canStart := playerCount > 0 && playerCount == totalRoles
-
-	data := LobbyData{
-		Players:     players,
-		RoleConfigs: roleConfigDisplay,
-		TotalRoles:  totalRoles,
-		PlayerCount: playerCount,
-		CanStart:    canStart,
-		GameID:      game.ID,
-		GameStatus:  game.Status,
-	}
-
-	var buf bytes.Buffer
-	err := h.templates.ExecuteTemplate(&buf, "lobby.html", data)
-	return &buf, err
-}
-
-// shuffleRoles shuffles the role pool using crypto/rand
 func shuffleRoles(roles []int64) {
 	for i := len(roles) - 1; i > 0; i-- {
 		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
 		if err != nil {
-			// Fallback: just swap with previous element
+			// rand.Int essentially never fails; swap with the previous element rather than aborting the shuffle
 			roles[i], roles[i-1] = roles[i-1], roles[i]
 			continue
 		}

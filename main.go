@@ -102,8 +102,8 @@ type GameData struct {
 	HistoryHTML       template.HTML
 	TopbarHTML        template.HTML
 	Theme             string
-	StyleTag          template.HTML // inline <style>...</style> with all CSS
-	ScriptTag         template.HTML // inline <script>...</script> with all JS libs
+	StyleTag          template.HTML
+	ScriptTag         template.HTML // full bundle; index page uses the lighter indexScriptTag instead
 	SessionCookieName string
 	Lang              string
 }
@@ -114,9 +114,8 @@ type TopbarData struct {
 	Lang       string
 }
 
-// loadPageAssets reads CSS and JS files from the embedded static FS and builds
-// inlinable <style> and <script> blocks. Called once at startup.
-// Returns: styleTag (shared), gameScriptTag (all libs), indexScriptTag (htmx+idiomorph only).
+// Inlines assets directly into the page so it renders with zero extra requests.
+// indexScriptTag is a smaller bundle since the sign-in page has no WebSocket or player cards.
 func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, err error) {
 	picoCSS, err := staticFS.ReadFile("static/pico.css")
 	if err != nil {
@@ -203,9 +202,8 @@ func bgLQIPCSS() string {
 	return sb.String()
 }
 
-// addSealLQIPFuncs registers the blur-up template helpers onto an existing FuncMap:
-//   - sealLQIP "Wolf Cub" → the data URI for one seal (for an inline background-image)
-//   - sealLQIPJSON         → the whole map as JS, used to seed window.SEAL_LQIP
+// sealLQIP feeds an inline background-image url(); sealLQIPJSON seeds window.SEAL_LQIP
+// for client-side use without a separate fetch.
 func addSealLQIPFuncs(fm template.FuncMap) template.FuncMap {
 	// template.URL so html/template trusts the data: URI inside url(...) instead of
 	// rewriting it to #ZgotmplZ.
@@ -219,8 +217,6 @@ func addSealLQIPFuncs(fm template.FuncMap) template.FuncMap {
 	return fm
 }
 
-// gameTheme returns the correct CSS data-theme for the initial page render.
-// Day phase and villagers-win finished state use "light"; everything else is "dark".
 func gameTheme(db *sqlx.DB, game *Game) string {
 	if game.Status == "day" {
 		return "light"
@@ -362,12 +358,10 @@ func (app *App) handleCheckGame(w http.ResponseWriter, r *http.Request) {
 func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 	gameName := r.PathValue("name")
 
-	// If a ?name= parameter is present, treat this as an auto-join link.
-	// Clear any existing session first (so the link always switches identity),
-	// then either auto-create the player or redirect to the login page.
+	// ?name= signals an auto-join link. Clear any existing session first so the link
+	// always switches identity, even if a different player is currently logged in.
 	if playerName := r.URL.Query().Get("name"); playerName != "" {
-		// If the currently logged-in user already has this name, just drop the
-		// ?name= param and continue as normal — no session change needed.
+		// Already signed in as this name — skip the reset, no identity change needed.
 		if currentID, err := getPlayerIdFromSession(app.db, r); err == nil {
 			var currentName string
 			if err := app.db.Get(&currentName, "SELECT name FROM player WHERE rowid = ?", currentID); err == nil && currentName == playerName {
@@ -377,7 +371,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Different (or no) session — clear it before switching identity.
 		if cookie, err := r.Cookie(sessionCookieName); err == nil {
 			if token, err := strconv.ParseInt(cookie.Value, 10, 64); err == nil {
 				app.db.Exec("DELETE FROM session WHERE token = ?", token)
@@ -394,7 +387,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		var existing Player
 		err := app.db.Get(&existing, "SELECT rowid as id, name, secret_code FROM player WHERE name = ?", playerName)
 		if err == sql.ErrNoRows {
-			// Player doesn't exist — auto-create and log them in.
 			secretCode, err := generateSecretCode()
 			if err != nil {
 				hub := app.getOrCreateHub(gameName)
@@ -427,7 +419,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
 			return
 		}
-		// Player exists — redirect to login page with game and name pre-filled.
 		DebugLog("handleGame", "Player '%s' exists, redirecting to login with name+game prefilled", playerName)
 		http.Redirect(w, r, "/?game="+gameName+"&name="+playerName, http.StatusSeeOther)
 		return
@@ -449,7 +440,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get player info from player table
 	var player Player
 	err = app.db.Get(&player, "SELECT rowid as id, name, secret_code FROM player WHERE rowid = ?", playerID)
 	if err != nil {
@@ -481,7 +471,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check if player is in the game
 	isInGame := false
 	var gamePlayer Player
 	err = app.db.Get(&gamePlayer, `SELECT g.rowid as id,
@@ -504,7 +493,6 @@ func (app *App) handleGame(w http.ResponseWriter, r *http.Request) {
 		player.IsObserver = gamePlayer.IsObserver
 	}
 
-	// Get all players in the game
 	players, err := getPlayersByGameId(app.db, game.ID)
 	if err != nil {
 		hub.logError("handleGame: getPlayersByGameId", err)
@@ -567,13 +555,10 @@ type SidebarData struct {
 	LoverPartnerID int64 // player_id of the viewer's lover, 0 if not a lover
 	IsLobby        bool  // true during lobby: hide history, show players as unknown role/team
 	Lang           string
-	AIAvailable    bool             // true if a storyteller or narrator is configured: show the AI on/off switch
-	PlayerCards    []PlayerCardData // pre-built cards for the player list
+	AIAvailable    bool // true if a storyteller or narrator is configured: show the AI on/off switch
+	PlayerCards    []PlayerCardData
 }
 
-// buildSidebarCards builds the sidebar player-list cards from the (visibility-applied)
-// player list. The viewer's own card is expanded with an upload overlay; all others
-// start collapsed. During the lobby every card shows an unknown role/team.
 func buildSidebarCards(players []Player, viewer *Player, isLobby bool, lang string) []PlayerCardData {
 	cards := make([]PlayerCardData, 0, len(players))
 	for _, p := range players {
@@ -692,7 +677,6 @@ func isViewerLover(target, viewer Player) bool {
 	return target.Lover != 0 && target.Lover == viewer.ID
 }
 
-// selfFirstPlayers returns players sorted so the player with selfPlayerID is first.
 func selfFirstPlayers(players []Player, selfPlayerID int64) []Player {
 	out := make([]Player, 0, len(players))
 	for _, p := range players {
@@ -719,7 +703,7 @@ func getSeerInvestigated(db *sqlx.DB, gameID, playerID int64) map[int64]string {
 		JOIN game_player gp ON gp.game_id = ga.game_id AND gp.player_id = ga.target_player_id
 		JOIN role r ON r.rowid = gp.role_id
 		WHERE ga.game_id = ? AND ga.actor_player_id = ? AND ga.action_type = ?`,
-		gameID, playerID, ActionSeerInvestigate)
+		gameID, playerID, ActionSeerApplyInvestigate)
 	out := make(map[int64]string, len(rows))
 	for _, r := range rows {
 		out[r.TargetID] = r.Team
@@ -840,7 +824,6 @@ func buildHistoryEntries(db *sqlx.DB, playerID int64, game *Game, lang string) [
 			var args []interface{}
 			if row.DescriptionArgs != "" {
 				parts := strings.Split(row.DescriptionArgs, "\t")
-				// Translate role name args where needed
 				if indices, ok := roleNameArgKeys[row.DescriptionKey]; ok {
 					for _, idx := range indices {
 						if idx < len(parts) {
@@ -965,7 +948,6 @@ func handleWSMessage(client *Client, message []byte) {
 	}
 }
 
-// getGameComponent returns the HTML buffer for the current game state
 func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.Buffer, error) {
 	db := h.db
 	tmpl := h.templates
@@ -978,7 +960,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 	}
 
 	if game.Status == "lobby" {
-		// Get role configuration
 		var roleConfigs []GameRoleConfig
 		db.Select(&roleConfigs, "SELECT rowid as id, game_id, role_id, count FROM game_role_config WHERE game_id = ?", game.ID)
 
@@ -1028,7 +1009,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			return nil, err
 		}
 	} else if game.Status == "night" {
-		// Get the current player's info
 		player, err := getPlayerInGame(db, game.ID, playerID)
 		if err != nil {
 			h.logError("getGameComponent: getPlayerInGame", err)
@@ -1068,10 +1048,10 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			data.ShowSurvey = true
 			var submitted int
 			db.Get(&submitted, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND actor_player_id=?`,
-				game.ID, game.Round, ActionNightSurvey, player.PlayerID)
+				game.ID, game.Round, ActionNightSurveyApplySuspect, player.PlayerID)
 			data.HasSubmittedSurvey = submitted > 0
 			db.Get(&data.SurveyCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND action_type=?`,
-				game.ID, game.Round, ActionNightSurvey)
+				game.ID, game.Round, ActionNightSurveyApplySuspect)
 			data.AliveCount = len(aliveTargets)
 			data.SurveyTargets = aliveTargets
 			var suspectPlayer Player
@@ -1086,7 +1066,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 				JOIN role r ON r.rowid = gp.role_id
 				LEFT JOIN game_lovers l ON l.player1_id = p.rowid
 				WHERE ga.game_id=? AND ga.round=? AND ga.actor_player_id=? AND ga.action_type=?`,
-				game.ID, game.Round, player.PlayerID, ActionNightSurveySuspect); err == nil {
+				game.ID, game.Round, player.PlayerID, ActionNightSurveySelectSuspect); err == nil {
 				data.SurveySelectedSuspect = &suspectPlayer
 			}
 		}
@@ -1098,15 +1078,13 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			return nil, err
 		}
 	} else if game.Status == "day" {
-		// Get the current player's info
 		player, err := getPlayerInGame(db, game.ID, playerID)
 		if err != nil {
 			h.logError("getGameComponent: getPlayerInGame for day", err)
 			return nil, err
 		}
 
-		// Find all players killed last night (werewolf kill, Wolf Cub second kill, witch poison, heartbreak)
-		// Only includes players who are actually dead (protected players are excluded)
+		// is_alive=0 excludes players who were targeted but survived a protection.
 		var nightVictims []Player
 		db.Select(&nightVictims, `
 			SELECT DISTINCT gp.rowid as id,
@@ -1130,9 +1108,8 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			WHERE ga.game_id = ? AND ga.round = ? AND ga.phase = 'night'
 			    AND ga.action_type IN (?, ?, ?, ?)
 			    AND gp.is_alive = 0`,
-			game.ID, game.Round, ActionWerewolfKill, ActionWerewolfKill2, ActionWitchKill, ActionLoverHeartbreak)
+			game.ID, game.Round, ActionWerewolfSelectKill, ActionWerewolfSelectKill2, ActionWitchApplyKill, ActionLoverHeartbreak)
 
-		// Apply visibility rules to all players from this viewer's perspective
 		seerInvestigated := getSeerInvestigated(db, game.ID, playerID)
 		visiblePlayers := applyCardVisibility(player, players, seerInvestigated)
 
@@ -1159,19 +1136,18 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			db.Get(&revengeCount, `
 				SELECT COUNT(*) FROM game_action
 				WHERE game_id = ? AND actor_player_id = ? AND action_type = ?`,
-				game.ID, p.PlayerID, ActionHunterRevenge)
+				game.ID, p.PlayerID, ActionHunterApplyKill)
 			if revengeCount == 0 {
 				hunterRevengeNeeded = true
 				isTheHunter = (p.PlayerID == playerID)
 				hunterTargets = aliveTargets
-				// Check for pending selection from this hunter
 				if isTheHunter {
 					var selectAction GameAction
 					if db.Get(&selectAction, `
 						SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 						FROM game_action
 						WHERE game_id=? AND round=? AND actor_player_id=? AND action_type=?`,
-						game.ID, game.Round, playerID, ActionHunterSelect) == nil && selectAction.TargetPlayerID != nil {
+						game.ID, game.Round, playerID, ActionHunterSelectKill) == nil && selectAction.TargetPlayerID != nil {
 						hunterSelectedPlayer = getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, player, seerInvestigated)
 					}
 				}
@@ -1187,7 +1163,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 				FROM game_action
 				WHERE game_id = ? AND round = ? AND action_type = ?
 				ORDER BY rowid DESC LIMIT 1`,
-				game.ID, game.Round, ActionHunterRevenge)
+				game.ID, game.Round, ActionHunterApplyKill)
 			if err == nil && revengeAction.TargetPlayerID != nil {
 				hunterRevengeNeeded = true
 				hunterRevengeDone = true
@@ -1197,7 +1173,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			}
 		}
 
-		// Get current votes for this day
 		dayVoteCounts := map[int64]int{}
 		votersByTarget := map[int64][]VoterChip{}
 		var passVoters []string
@@ -1212,7 +1187,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			SELECT target_player_id, COUNT(*) as count FROM game_action
 			WHERE game_id=? AND round=? AND phase='day' AND action_type=? AND target_player_id IS NOT NULL
 			GROUP BY target_player_id`,
-			game.ID, game.Round, ActionDayVote)
+			game.ID, game.Round, ActionDaySelectKill)
 		for _, r := range dayCountRows {
 			dayVoteCounts[r.TargetPlayerID] = r.Count
 		}
@@ -1222,7 +1197,7 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 			FROM game_action
 			WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-			game.ID, game.Round, ActionDayVote)
+			game.ID, game.Round, ActionDaySelectKill)
 
 		for _, action := range actions {
 			var voterName string
@@ -1240,12 +1215,11 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 		// All-acted and has-voted checks for End Vote button
 		var totalDayActed int
 		db.Get(&totalDayActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ?`,
-			game.ID, game.Round, ActionDayVote)
+			game.ID, game.Round, ActionDaySelectKill)
 		var playerActed int
 		db.Get(&playerActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'day' AND action_type = ? AND actor_player_id = ?`,
-			game.ID, game.Round, ActionDayVote, playerID)
+			game.ID, game.Round, ActionDaySelectKill, playerID)
 
-		// Night-victim cards: forced role seal, start collapsed.
 		var nightVictimCards []PlayerCardData
 		for _, v := range nightVictims {
 			card := makePlayerCard(v, lang)
@@ -1255,7 +1229,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			nightVictimCards = append(nightVictimCards, card)
 		}
 
-		// Hunter revenge target cards: selectable, mark the pending selection.
 		var hunterTargetCards []PlayerCardData
 		for _, t := range hunterTargets {
 			card := makePlayerCard(t, lang)
@@ -1267,7 +1240,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 			hunterTargetCards = append(hunterTargetCards, card)
 		}
 
-		// Day vote target cards: selectable, with vote-count badge and pending selection.
 		var voteTargetCards []PlayerCardData
 		for _, t := range aliveTargets {
 			card := makePlayerCard(t, lang)
@@ -1354,7 +1326,6 @@ func getGameComponent(h *Hub, playerID int64, game *Game, lang string) (*bytes.B
 	return &buf, nil
 }
 
-// gzipResponseWriter wraps http.ResponseWriter to write gzip-compressed output.
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	gz *gzip.Writer
@@ -1366,8 +1337,7 @@ func (g *gzipResponseWriter) WriteHeader(code int) {
 	g.ResponseWriter.WriteHeader(code)
 }
 
-// withGzip wraps a handler with gzip compression for clients that support it.
-// Skips already-compressed image formats (.webp) and WebSocket upgrades.
+// .webp is already compressed and a WebSocket upgrade can't be gzip'd, so both are skipped.
 func withGzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".webp") ||
@@ -1415,7 +1385,6 @@ func main() {
 	devMode = cfg.Dev
 	cfg.logConfig()
 
-	// Set up logging to both stdout and file
 	logFile, err := os.OpenFile("werewolf.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		log.Fatal("Failed to open log file:", err)
@@ -1423,7 +1392,6 @@ func main() {
 	defer logFile.Close()
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
-	// Initialize application logger from config
 	logger, err := NewAppLogger(cfg.toLogConfig())
 	if err != nil {
 		log.Fatal("Failed to initialize logger:", err)
@@ -1486,7 +1454,6 @@ func main() {
 		pageIndexScriptTag: pageIndexScriptTag,
 	}
 
-	// Wrap handlers with compression, caching control, and optional logging
 	wrapHandler := func(pattern string, handler http.HandlerFunc) {
 		var hh http.Handler = handler
 		hh = withGzip(hh)

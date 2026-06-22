@@ -1,9 +1,8 @@
 package main
 
-// MasonNightData holds night-phase display data for Masons.
 type MasonNightData struct {
-	Masons     []Player         // other alive Masons (excluding self); full role visible
-	MasonCards []PlayerCardData // cards for the fellow masons
+	Masons     []Player // other alive Masons, excluding self
+	MasonCards []PlayerCardData
 }
 
 func buildMasonNightData(player Player, players []Player) MasonNightData {

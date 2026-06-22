@@ -14,10 +14,8 @@ import (
 )
 
 // Narrator streams TTS audio as raw PCM chunks (16-bit mono little-endian).
-// onChunk is called with each chunk of PCM bytes as they arrive.
 type Narrator interface {
 	Speak(ctx context.Context, text string, onChunk func([]byte)) error
-	// SampleRate returns the PCM sample rate in Hz (e.g. 24000).
 	SampleRate() int
 }
 
@@ -81,11 +79,10 @@ func (n *openaiNarrator) Speak(ctx context.Context, text string, onChunk func([]
 	return streamPCM(resp.Body, onChunk)
 }
 
-// elevenlabsNarrator streams PCM from the ElevenLabs TTS REST API.
 type elevenlabsNarrator struct {
 	apiKey       string
 	voiceID      string
-	outputFormat string // e.g. "pcm_24000"
+	outputFormat string
 	sampleRate   int
 }
 
@@ -121,7 +118,6 @@ func (n *elevenlabsNarrator) Speak(ctx context.Context, text string, onChunk fun
 	return streamPCM(resp.Body, onChunk)
 }
 
-// streamPCM reads raw PCM bytes from body and calls onChunk for each chunk.
 // Chunks are always an even number of bytes so Int16Array on the frontend
 // never straddles a sample boundary and causes misalignment static.
 func streamPCM(body io.Reader, onChunk func([]byte)) error {
@@ -161,7 +157,6 @@ func streamPCM(body io.Reader, onChunk func([]byte)) error {
 	}
 }
 
-// initNarrator creates a Narrator from config, or returns nil if disabled.
 func initNarrator(cfg AppConfig) Narrator {
 	sr := cfg.NarratorSampleRate
 	if sr == 0 {

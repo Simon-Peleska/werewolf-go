@@ -639,7 +639,6 @@ var translations = map[string]map[string]string{
 	},
 }
 
-// T looks up a translation key for the given language and optionally formats it.
 // Falls back to English, then to the key itself.
 func T(lang, key string, args ...interface{}) string {
 	lookup := func(l string) (string, bool) {
@@ -663,14 +662,12 @@ func T(lang, key string, args ...interface{}) string {
 	return s
 }
 
-// getLangFromCookie reads the "lang" cookie, falling back to Accept-Language.
-// Returns "en" or "de".
+// Falls back to Accept-Language. Returns "en" or "de".
 func getLangFromCookie(r *http.Request) string {
 	c, err := r.Cookie("lang")
 	if err == nil && (c.Value == "en" || c.Value == "de") {
 		return c.Value
 	}
-	// No valid cookie — detect from browser Accept-Language header.
 	for _, tag := range strings.Split(r.Header.Get("Accept-Language"), ",") {
 		lang := strings.ToLower(strings.TrimSpace(strings.SplitN(tag, ";", 2)[0]))
 		if strings.HasPrefix(lang, "de") {

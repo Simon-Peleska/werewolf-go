@@ -8,20 +8,19 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// WerewolfNightData holds night-phase display data for werewolf-team players.
 type WerewolfNightData struct {
 	WerewolfVoteCounts map[int64]int
-	VotersByTarget     map[int64][]VoterChip // who voted for each target — rendered as name chips
-	PassVoters         []string              // names of werewolves who passed this round
-	CurrentVotePlayer  *Player               // this wolf's current vote target (nil = none/pass)
+	VotersByTarget     map[int64][]VoterChip
+	PassVoters         []string
+	CurrentVotePlayer  *Player
 	WolfCubDoubleKill  bool
-	CurrentVotePlayer2 *Player // this wolf's second-kill vote (nil = none)
+	CurrentVotePlayer2 *Player
 	AllWolvesActed     bool
 	AllWolvesActed2    bool
 	WolfEndVoted       bool
 	WolfEndVoted2      bool
-	WolfTargetCards    []PlayerCardData // selectable kill-vote target cards (with vote counts)
-	WolfTargetCards2   []PlayerCardData // selectable second-kill (Wolf Cub) target cards
+	WolfTargetCards    []PlayerCardData
+	WolfTargetCards2   []PlayerCardData
 }
 
 func buildWerewolfNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string, aliveTargets []Player) WerewolfNightData {
@@ -38,7 +37,7 @@ func buildWerewolfNightData(db *sqlx.DB, game *Game, playerID int64, player Play
 SELECT target_player_id, COUNT(*) as count FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND action_type=? AND target_player_id IS NOT NULL
 GROUP BY target_player_id`,
-		game.ID, game.Round, ActionWerewolfKill)
+		game.ID, game.Round, ActionWerewolfSelectKill)
 	werewolfVoteCounts := map[int64]int{}
 	for _, r := range countRows {
 		werewolfVoteCounts[r.TargetPlayerID] = r.Count
@@ -49,7 +48,7 @@ GROUP BY target_player_id`,
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfKill)
+		game.ID, game.Round, ActionWerewolfSelectKill)
 
 	votersByTarget := map[int64][]VoterChip{}
 	var passVoters []string
@@ -76,9 +75,9 @@ SELECT COUNT(*) FROM game_action ga
 JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 JOIN role r ON gp.role_id = r.rowid
 WHERE ga.game_id = ? AND ga.round = ?
-AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+AND ga.action_type IN (?, ?, ?, ?)
 AND r.name = 'Wolf Cub'`,
-			game.ID, game.Round-1)
+			game.ID, game.Round-1, ActionWerewolfSelectKill, ActionDayApplyKill, ActionHunterApplyKill, ActionWitchApplyKill)
 		wolfCubDoubleKill = wolfCubDeathCount > 0
 
 		if wolfCubDoubleKill {
@@ -87,7 +86,7 @@ AND r.name = 'Wolf Cub'`,
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-				game.ID, game.Round, playerID, ActionWerewolfKill2)
+				game.ID, game.Round, playerID, ActionWerewolfSelectKill2)
 			if err == nil && vote2Action.TargetPlayerID != nil {
 				currentVotePlayer2 = getVisiblePlayer(db, game.ID, *vote2Action.TargetPlayerID, player, seerInvestigated)
 			}
@@ -101,23 +100,23 @@ WHERE gp.game_id = ? AND gp.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 	var voted1 int
 	db.Get(&voted1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfKill)
+		game.ID, game.Round, ActionWerewolfSelectKill)
 	allWolvesActed := voted1 >= werewolfCount
 
 	var endVote1 int
 	db.Get(&endVote1, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote)
+		game.ID, game.Round, ActionWerewolfApplyKill)
 	wolfEndVoted := endVote1 > 0
 
 	var allWolvesActed2, wolfEndVoted2 bool
 	if wolfCubDoubleKill {
 		var voted2 int
 		db.Get(&voted2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-			game.ID, game.Round, ActionWerewolfKill2)
+			game.ID, game.Round, ActionWerewolfSelectKill2)
 		allWolvesActed2 = voted2 >= werewolfCount
 		var endVote2 int
 		db.Get(&endVote2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-			game.ID, game.Round, ActionWerewolfEndVote2)
+			game.ID, game.Round, ActionWerewolfApplyKill2)
 		wolfEndVoted2 = endVote2 > 0
 	}
 
@@ -169,7 +168,7 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 
 	var endVoteCount int
 	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote)
+		game.ID, game.Round, ActionWerewolfApplyKill)
 	if endVoteCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_vote_locked"))
 		return
@@ -192,13 +191,13 @@ func handleWSWerewolfVote(client *Client, msg WSMessage) {
 		return
 	}
 
-	// Toggle: if already voted for this target, unselect (delete the vote)
+	// voting the same target again retracts the vote
 	var existingTarget sql.NullInt64
 	h.db.Get(&existingTarget, `SELECT target_player_id FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill)
+		game.ID, game.Round, client.playerID, ActionWerewolfSelectKill)
 	if existingTarget.Valid && existingTarget.Int64 == targetID {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-			game.ID, game.Round, client.playerID, ActionWerewolfKill)
+			game.ID, game.Round, client.playerID, ActionWerewolfSelectKill)
 		if err != nil {
 			h.logError("handleWSWerewolfVote: db.Exec delete vote", err)
 			h.sendErrorToast(client.playerID, T(lang, "err_failed_clear_vote"))
@@ -216,7 +215,7 @@ INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, ta
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill, targetID, VisibilityTeamWerewolf, description, dKey, dArgs, targetID, description, dKey, dArgs)
+		game.ID, game.Round, client.playerID, ActionWerewolfSelectKill, targetID, VisibilityTeamWerewolf, description, dKey, dArgs, targetID, description, dKey, dArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfVote: db.Exec insert vote", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote"))
@@ -272,9 +271,9 @@ SELECT COUNT(*) FROM game_action ga
 JOIN game_player gp ON ga.target_player_id = gp.player_id AND gp.game_id = ga.game_id
 JOIN role r ON gp.role_id = r.rowid
 WHERE ga.game_id = ? AND ga.round = ?
-AND ga.action_type IN ('werewolf_kill', 'elimination', 'hunter_revenge', 'witch_kill')
+AND ga.action_type IN (?, ?, ?, ?)
 AND r.name = 'Wolf Cub'`,
-		game.ID, game.Round-1)
+		game.ID, game.Round-1, ActionWerewolfSelectKill, ActionDayApplyKill, ActionHunterApplyKill, ActionWitchApplyKill)
 	if wolfCubDeathCount == 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_wolfcub_not_active"))
 		return
@@ -282,7 +281,7 @@ AND r.name = 'Wolf Cub'`,
 
 	var endVote2Count int
 	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote2)
+		game.ID, game.Round, ActionWerewolfApplyKill2)
 	if endVote2Count > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_vote2_locked"))
 		return
@@ -312,7 +311,7 @@ INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, ta
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 DO UPDATE SET target_player_id = ?, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill2, targetID, VisibilityTeamWerewolf, description2, dKey2, dArgs2, targetID, description2, dKey2, dArgs2)
+		game.ID, game.Round, client.playerID, ActionWerewolfSelectKill2, targetID, VisibilityTeamWerewolf, description2, dKey2, dArgs2, targetID, description2, dKey2, dArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfVote2: db.Exec insert vote2", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_vote2"))
@@ -355,7 +354,7 @@ func handleWSWerewolfPass(client *Client, msg WSMessage) {
 	}
 	var endVoteCount int
 	h.db.Get(&endVoteCount, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote)
+		game.ID, game.Round, ActionWerewolfApplyKill)
 	if endVoteCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_vote_locked"))
 		return
@@ -367,7 +366,7 @@ INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, ta
 VALUES (?, ?, 'night', ?, ?, NULL, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill, VisibilityTeamWerewolf, passDesc, passKey, passArgs, passDesc, passKey, passArgs)
+		game.ID, game.Round, client.playerID, ActionWerewolfSelectKill, VisibilityTeamWerewolf, passDesc, passKey, passArgs, passDesc, passKey, passArgs)
 	if err != nil {
 		h.logError("handleWSWerewolfPass: db.Exec", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
@@ -406,7 +405,7 @@ func handleWSWerewolfPass2(client *Client, msg WSMessage) {
 	}
 	var endVote2Count int
 	h.db.Get(&endVote2Count, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfEndVote2)
+		game.ID, game.Round, ActionWerewolfApplyKill2)
 	if endVote2Count > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_vote2_locked"))
 		return
@@ -418,7 +417,7 @@ INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, ta
 VALUES (?, ?, 'night', ?, ?, NULL, ?, ?, ?, ?)
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 DO UPDATE SET target_player_id = NULL, description = ?, description_key = ?, description_args = ?`,
-		game.ID, game.Round, client.playerID, ActionWerewolfKill2, VisibilityTeamWerewolf, passDesc, passKey2, passArgs2, passDesc, passKey2, passArgs2)
+		game.ID, game.Round, client.playerID, ActionWerewolfSelectKill2, VisibilityTeamWerewolf, passDesc, passKey2, passArgs2, passDesc, passKey2, passArgs2)
 	if err != nil {
 		h.logError("handleWSWerewolfPass2: db.Exec", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_pass"))
@@ -462,7 +461,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 	var totalActed int
 	h.db.Get(&totalActed, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfKill)
+		game.ID, game.Round, ActionWerewolfSelectKill)
 
 	if totalActed < len(werewolves) {
 		h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_done", totalActed, len(werewolves)))
@@ -470,7 +469,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 	}
 
 	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
-		game.ID, game.Round, client.playerID, ActionWerewolfEndVote, VisibilityTeamWerewolf)
+		game.ID, game.Round, client.playerID, ActionWerewolfApplyKill, VisibilityTeamWerewolf)
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote: record end vote", err)
 	}
@@ -519,7 +518,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 
 	var totalActed2 int
 	h.db.Get(&totalActed2, `SELECT COUNT(*) FROM game_action WHERE game_id = ? AND round = ? AND phase = 'night' AND action_type = ?`,
-		game.ID, game.Round, ActionWerewolfKill2)
+		game.ID, game.Round, ActionWerewolfSelectKill2)
 
 	if totalActed2 < len(werewolves) {
 		h.sendErrorToast(client.playerID, T(lang, "err_werewolves_not_done_second", totalActed2, len(werewolves)))
@@ -527,7 +526,7 @@ WHERE g.game_id = ? AND g.is_alive = 1 AND r.team = 'werewolf'`, game.ID)
 	}
 
 	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, NULL, ?, '')`,
-		game.ID, game.Round, client.playerID, ActionWerewolfEndVote2, VisibilityTeamWerewolf)
+		game.ID, game.Round, client.playerID, ActionWerewolfApplyKill2, VisibilityTeamWerewolf)
 	if err != nil {
 		h.logError("handleWSWerewolfEndVote2: record end vote 2", err)
 	}

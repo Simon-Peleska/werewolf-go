@@ -7,12 +7,11 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// SeerNightData holds night-phase display data for the Seer.
 type SeerNightData struct {
 	HasInvestigated    bool
-	SeerSelectedPlayer *Player          // confirmed target (after investigate) or pending selection
-	SeerResultCard     *PlayerCardData  // card shown after investigating
-	SeerTargetCards    []PlayerCardData // selectable target cards
+	SeerSelectedPlayer *Player // pending, or confirmed once investigated
+	SeerResultCard     *PlayerCardData
+	SeerTargetCards    []PlayerCardData
 }
 
 func buildSeerNightData(db *sqlx.DB, game *Game, playerID int64, player Player, seerInvestigated map[int64]string) SeerNightData {
@@ -25,7 +24,7 @@ func buildSeerNightData(db *sqlx.DB, game *Game, playerID int64, player Player, 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, playerID, ActionSeerInvestigate)
+		game.ID, game.Round, playerID, ActionSeerApplyInvestigate)
 
 	if err == nil && action.TargetPlayerID != nil {
 		return SeerNightData{
@@ -34,13 +33,12 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 		}
 	}
 
-	// Pending selection (not yet confirmed)
 	var selectAction GameAction
 	if db.Get(&selectAction, `
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, playerID, ActionSeerSelect) == nil && selectAction.TargetPlayerID != nil {
+		game.ID, game.Round, playerID, ActionSeerSelectInvestigate) == nil && selectAction.TargetPlayerID != nil {
 		return SeerNightData{
 			SeerSelectedPlayer: getVisiblePlayer(db, game.ID, *selectAction.TargetPlayerID, player, seerInvestigated),
 		}
@@ -49,8 +47,6 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	return SeerNightData{}
 }
 
-// handleWSSeerSelect toggles the seer's pending investigation selection.
-// Clicking the same player again deselects; clicking a different player replaces the selection.
 func handleWSSeerSelect(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
@@ -80,7 +76,7 @@ func handleWSSeerSelect(client *Client, msg WSMessage) {
 	}
 	var existingCount int
 	h.db.Get(&existingCount, `SELECT COUNT(*) FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
+		game.ID, game.Round, client.playerID, ActionSeerApplyInvestigate)
 	if existingCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_investigated"))
 		return
@@ -102,14 +98,15 @@ func handleWSSeerSelect(client *Client, msg WSMessage) {
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionSeerSelect)
+		game.ID, game.Round, client.playerID, ActionSeerSelectInvestigate)
 	if selectErr == nil && existing.TargetPlayerID != nil && *existing.TargetPlayerID == targetID {
+		// clicking the same target again deselects it
 		h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-			game.ID, game.Round, client.playerID, ActionSeerSelect)
+			game.ID, game.Round, client.playerID, ActionSeerSelectInvestigate)
 		h.logf("Seer '%s' deselected investigation target", investigator.Name)
 	} else {
 		h.db.Exec(`INSERT OR REPLACE INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description) VALUES (?, ?, 'night', ?, ?, ?, ?, '')`,
-			game.ID, game.Round, client.playerID, ActionSeerSelect, targetID, VisibilityActor)
+			game.ID, game.Round, client.playerID, ActionSeerSelectInvestigate, targetID, VisibilityActor)
 		h.logf("Seer '%s' selected investigation target %d", investigator.Name, targetID)
 	}
 
@@ -152,7 +149,7 @@ func handleWSSeerInvestigate(client *Client, msg WSMessage) {
 	h.db.Get(&existingCount, `
 SELECT COUNT(*) FROM game_action
 WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND action_type = ?`,
-		game.ID, game.Round, client.playerID, ActionSeerInvestigate)
+		game.ID, game.Round, client.playerID, ActionSeerApplyInvestigate)
 	if existingCount > 0 {
 		h.sendErrorToast(client.playerID, T(lang, "err_already_investigated"))
 		return
@@ -163,7 +160,7 @@ WHERE game_id = ? AND round = ? AND phase = 'night' AND actor_player_id = ? AND 
 SELECT rowid as id, game_id, round, phase, actor_player_id, action_type, target_player_id, visibility
 FROM game_action
 WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionSeerSelect); err != nil || selectAction.TargetPlayerID == nil {
+		game.ID, game.Round, client.playerID, ActionSeerSelectInvestigate); err != nil || selectAction.TargetPlayerID == nil {
 		h.sendErrorToast(client.playerID, T(lang, "err_select_investigate_first"))
 		return
 	}
@@ -181,7 +178,7 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	}
 
 	h.db.Exec(`DELETE FROM game_action WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_type=?`,
-		game.ID, game.Round, client.playerID, ActionSeerSelect)
+		game.ID, game.Round, client.playerID, ActionSeerSelectInvestigate)
 
 	seerKey := "hist_seer_not_wolf"
 	result := "not a werewolf"
@@ -193,7 +190,7 @@ WHERE game_id=? AND round=? AND phase='night' AND actor_player_id=? AND action_t
 	_, err = h.db.Exec(`
 INSERT INTO game_action (game_id, round, phase, actor_player_id, action_type, target_player_id, visibility, description, description_key, description_args)
 VALUES (?, ?, 'night', ?, ?, ?, ?, ?, ?, ?)`,
-		game.ID, game.Round, client.playerID, ActionSeerInvestigate, targetID, VisibilityActor, seerDesc, seerKey, histArgs(game.Round, target.Name))
+		game.ID, game.Round, client.playerID, ActionSeerApplyInvestigate, targetID, VisibilityActor, seerDesc, seerKey, histArgs(game.Round, target.Name))
 	if err != nil {
 		h.logError("handleWSSeerInvestigate: db.Exec insert investigation", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_investigation"))
