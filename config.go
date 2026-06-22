@@ -10,20 +10,15 @@ import (
 
 // Priority (lowest → highest): defaults < env vars < JSON config file < CLI flags.
 type AppConfig struct {
-	// Server
-	DB   string `json:"db"`
-	Dev  bool   `json:"dev"` // verbose logging, db dumps on errors
-	Addr string `json:"addr"`
-
-	// Logging (extended diagnostics, off by default)
-	LogOutputDir string `json:"log_output_dir"`
-	LogRequests  bool   `json:"log_requests"`
-	LogHTML      bool   `json:"log_html"`
-	LogDB        bool   `json:"log_db"`
-	LogWS        bool   `json:"log_ws"`
-	LogDebug     bool   `json:"log_debug"`
-
-	// AI Storyteller
+	DB                     string `json:"db"`
+	Dev                    bool   `json:"dev"` // verbose logging, db dumps on errors
+	Addr                   string `json:"addr"`
+	LogOutputDir           string `json:"log_output_dir"`
+	LogRequests            bool   `json:"log_requests"`
+	LogHTML                bool   `json:"log_html"`
+	LogDB                  bool   `json:"log_db"`
+	LogWS                  bool   `json:"log_ws"`
+	LogDebug               bool   `json:"log_debug"`
 	Storyteller            bool   `json:"storyteller"`
 	OpenAIModel            string `json:"openai_model"`
 	OpenAIAPIBase          string `json:"openai_api_base"` // default: https://api.openai.com/v1
@@ -32,14 +27,12 @@ type AppConfig struct {
 	StorytellerTemperature string `json:"storyteller_temperature"`  // float 0-2 as string (default 1.2)
 	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`   // default 600
 	StorytellerExtraParams string `json:"storyteller_extra_params"` // raw JSON object merged into every chat completion request body
-
-	// AI Narrator (TTS)
-	NarratorProvider   string `json:"narrator_provider"` // openai | openai-compatible | elevenlabs
-	NarratorModel      string `json:"narrator_model"`
-	NarratorVoice      string `json:"narrator_voice"`
-	NarratorAPIKey     string `json:"narrator_api_key"`
-	NarratorURL        string `json:"narrator_url"`         // base URL for openai-compatible
-	NarratorSampleRate int    `json:"narrator_sample_rate"` // Hz, default 24000
+	NarratorProvider       string `json:"narrator_provider"`        // openai | openai-compatible | elevenlabs
+	NarratorModel          string `json:"narrator_model"`
+	NarratorVoice          string `json:"narrator_voice"`
+	NarratorAPIKey         string `json:"narrator_api_key"`
+	NarratorURL            string `json:"narrator_url"`         // base URL for openai-compatible
+	NarratorSampleRate     int    `json:"narrator_sample_rate"` // Hz, default 24000
 }
 
 func (cfg AppConfig) toLogConfig() LogConfig {
@@ -169,7 +162,6 @@ func loadConfig(configPath string) AppConfig {
 	return cfg
 }
 
-// censor returns "****" if a secret is set, or "" if empty.
 func censor(s string) string {
 	if s == "" {
 		return ""
@@ -177,7 +169,6 @@ func censor(s string) string {
 	return "****"
 }
 
-// logConfig prints all configuration settings, censoring secrets.
 func (cfg AppConfig) logConfig() {
 	log.Println("=== Configuration ===")
 	log.Printf("  db:                            %s", cfg.DB)
@@ -206,7 +197,6 @@ func (cfg AppConfig) logConfig() {
 	log.Println("=====================")
 }
 
-// applyJSONOverlay only sets fields that are explicitly present in the JSON map.
 func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	str := func(key string, dst *string) {
 		if v, ok := m[key]; ok {
@@ -274,7 +264,6 @@ type flagValues struct {
 	narratorSampleRate     *int
 }
 
-// Call flag.Parse() after this, then applyTo to layer the flags over the loaded config.
 func registerFlags() flagValues {
 	return flagValues{
 		configPath:             flag.String("config", "/etc/werewolf/config.json", "path to JSON config file"),

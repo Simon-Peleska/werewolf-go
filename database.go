@@ -10,10 +10,10 @@ import (
 type Game struct {
 	ID        int64   `db:"id"`
 	Name      string  `db:"name"`
-	Status    string  `db:"status"` // lobby, night, day, finished
+	Status    string  `db:"status"`
 	Round     int     `db:"round"`
-	AIEnabled bool    `db:"ai_enabled"` // true = AI storyteller + narrator active for this game (default on)
-	Winner    *string `db:"winner"`     // nil until finished; then "villagers", "werewolves", or "lovers"
+	AIEnabled bool    `db:"ai_enabled"` // default true = AI storyteller + narrator active
+	Winner    *string `db:"winner"`
 }
 
 type GameRoleConfig struct {
@@ -36,8 +36,8 @@ type Player struct {
 	IsAlive         bool   `db:"is_alive"`
 	IsObserver      bool   `db:"is_observer"`
 	Lover           int64  `db:"lover"`
-	IsDoppelganger  bool   `db:"is_doppelganger"`  // true if player was originally a Doppelganger who has copied a role
-	ProfileImageID  *int64 `db:"profile_image_id"` // nil = no image; rowid of player_image row (changes per upload → cache-buster)
+	IsDoppelganger  bool   `db:"is_doppelganger"` // player was originally
+	ProfileImageID  *int64 `db:"profile_image_id"`
 }
 
 func getPlayerInGame(db *sqlx.DB, gameID, playerID int64) (Player, error) {
@@ -129,31 +129,18 @@ func getRoles(db *sqlx.DB) ([]Role, error) {
 	return roles, err
 }
 
-// Visibility determines who can see this action:
-//   - "public": everyone can see
-//   - "team:werewolf": only werewolf team can see
-//   - "team:villager": only villager team can see
-//   - "actor": only the actor can see
-//   - "resolved": hidden until phase ends, then becomes public
 type GameAction struct {
 	ID             int64  `db:"id"`
 	GameID         int64  `db:"game_id"`
 	Round          int    `db:"round"`
-	Phase          string `db:"phase"` // "night" or "day"
+	Phase          string `db:"phase"`
 	ActorPlayerID  int64  `db:"actor_player_id"`
 	ActionType     string `db:"action_type"`
 	TargetPlayerID *int64 `db:"target_player_id"`
 	Visibility     string `db:"visibility"`
-	Description    string `db:"description"` // human-readable history entry; empty = hidden
+	Description    string `db:"description"`
 }
 
-// Action types
-//
-// Two-stage actor actions follow <subject>_select_<effect> / <subject>_apply_<effect>:
-// "select" is the mutable, re-toggleable pick; "apply" is the row written once the
-// player commits (Investigate/Protect/Shoot/Apply/Become/etc.), always with the same
-// effect word as its select counterpart. The witch's heal potion protects the victim
-// from the werewolf kill, so it uses "protect" like Doctor/Guard rather than "heal".
 const (
 	ActionSeerSelectInvestigate    = "seer_select_investigate"
 	ActionSeerApplyInvestigate     = "seer_apply_investigate"
@@ -167,12 +154,12 @@ const (
 	ActionWitchApplyProtect        = "witch_apply_protect"
 	ActionWitchSelectKill          = "witch_select_kill"
 	ActionWitchApplyKill           = "witch_apply_kill"
-	ActionWitchApply               = "witch_apply" // turn-done marker; covers protect/kill/neither, so no single effect word fits
+	ActionWitchApply               = "witch_apply"
 	ActionDoppelgangerSelectCopy   = "doppelganger_select_copy"
 	ActionDoppelgangerApplyCopy    = "doppelganger_apply_copy"
 	ActionWerewolfSelectKill       = "werewolf_select_kill"
 	ActionWerewolfApplyKill        = "werewolf_apply_kill"
-	ActionWerewolfSelectKill2      = "werewolf_select_kill_2" // second kill on Wolf Cub death night
+	ActionWerewolfSelectKill2      = "werewolf_select_kill_2"
 	ActionWerewolfApplyKill2       = "werewolf_apply_kill_2"
 	ActionNightSurveySelectSuspect = "night_survey_select_suspect"
 	ActionNightSurveyApplySuspect  = "night_survey_apply_suspect"
@@ -180,8 +167,7 @@ const (
 	ActionDayApplyKill             = "day_apply_kill"
 	ActionNightApplyKill           = "night_apply_kill"
 
-	// Cupid has no apply stage: "Link" mutates the same select row instead of writing a
-	// second one, so there's no <subject>_apply_<effect> to name.
+	// Cupid has no apply stage
 	ActionCupidSelectLink1 = "cupid_select_link_1"
 	ActionCupidSelectLink2 = "cupid_select_link_2"
 
@@ -189,7 +175,6 @@ const (
 	ActionStory           = "story"
 )
 
-// Visibility types
 const (
 	VisibilityPublic       = "public"
 	VisibilityTeamWerewolf = "team:werewolf"
@@ -242,8 +227,6 @@ func getVoteCounts(db *sqlx.DB, gameID int64, round int, phase string, actionTyp
 	return voteCounts, len(actions), nil
 }
 
-// Returns 0 if playerID is not a lover (or Cupid hasn't linked anyone yet).
-// Both directions are stored in game_lovers, so this is a simple lookup.
 func getLoverPartner(db *sqlx.DB, gameID, playerID int64) int64 {
 	var partnerID int64
 	db.Get(&partnerID, `SELECT player2_id FROM game_lovers WHERE game_id = ? AND player1_id = ?`, gameID, playerID)
@@ -369,20 +352,16 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
-	// original_role_id holds the role a Doppelganger started as, so is_doppelganger
-	// can be derived as "has this player copied a role yet?"
 	if err := addColumnIfNotExists(db, "game_player", "original_role_id", "INTEGER REFERENCES role(rowid)"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}
 
-	// lets players switch AI features on/off per game
 	if err := addColumnIfNotExists(db, "game", "ai_enabled", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
 	}
 
-	// description_key/description_args back the i18n'd history entries alongside description
 	if err := addColumnIfNotExists(db, "game_action", "description_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
@@ -392,7 +371,6 @@ func initDB(db *sqlx.DB, logfn func(string, ...any)) error {
 		return err
 	}
 
-	// nil until the game ends, then the winning faction
 	if err := addColumnIfNotExists(db, "game", "winner", "TEXT"); err != nil {
 		logfn("initDB migration error: %v", err)
 		return err
@@ -407,6 +385,7 @@ func addColumnIfNotExists(db *sqlx.DB, table, column, definition string) error {
 	if err != nil && strings.Contains(err.Error(), "duplicate column name") {
 		return nil
 	}
+
 	return err
 }
 
@@ -428,16 +407,20 @@ func savePlayerImage(db *sqlx.DB, playerID int64, data []byte, mimeType string) 
 	if err != nil {
 		return 0, err
 	}
+
 	imageID, err := result.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
+
 	if _, err = db.Exec(`UPDATE player SET profile_image_id = ? WHERE rowid = ?`, imageID, playerID); err != nil {
 		return 0, err
 	}
+
 	if oldImageID != nil {
 		db.Exec(`DELETE FROM player_image WHERE rowid = ?`, *oldImageID)
 	}
+
 	return imageID, nil
 }
 
@@ -447,19 +430,22 @@ func getPlayerImage(db *sqlx.DB, imageID int64) ([]byte, string, error) {
 		MimeType string `db:"mime_type"`
 	}
 	err := db.Get(&row, `SELECT image_data, mime_type FROM player_image WHERE rowid = ?`, imageID)
+
 	return row.Data, row.MimeType, err
 }
 
 func getOrCreateGameByName(db *sqlx.DB, name string) (*Game, error) {
 	db.Exec("INSERT OR IGNORE INTO game (name, status, round) VALUES (?, 'lobby', 0)", name)
+
 	var game Game
 	err := db.Get(&game, "SELECT rowid as id, name, status, round, ai_enabled, winner FROM game WHERE name = ?", name)
+
 	return &game, err
 }
 
 type PlayerGame struct {
 	Name        string `db:"name"`
-	Status      string `db:"status"` // lobby, night, day, finished
+	Status      string `db:"status"`
 	Round       int    `db:"round"`
 	Winner      string `db:"winner"`
 	PlayerTeam  string `db:"player_team"`
@@ -467,8 +453,6 @@ type PlayerGame struct {
 	Won         bool
 }
 
-// Newest game first. Won is derived from the persisted winner faction (set once by
-// endGame) plus the player's own team (or survival, for the lovers win).
 func getPlayerGames(db *sqlx.DB, playerID int64) ([]PlayerGame, error) {
 	var games []PlayerGame
 	err := db.Select(&games, `

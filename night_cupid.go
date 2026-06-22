@@ -25,6 +25,7 @@ func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 	var cupidChosen1ID, cupidChosen2ID int64
 	var finalized int
 	db.Get(&finalized, `SELECT COUNT(*) FROM game_lovers WHERE game_id = ?`, game.ID)
+
 	if finalized > 0 {
 		d.CupidLinked = true
 		db.Get(&cupidChosen1ID, `SELECT player1_id FROM game_lovers WHERE game_id = ? LIMIT 1`, game.ID)
@@ -35,12 +36,15 @@ func buildCupidNightData(db *sqlx.DB, game *Game, playerID int64, player Player,
 		db.Get(&cupidChosen2ID, `SELECT COALESCE(target_player_id, 0) FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 			game.ID, playerID, ActionCupidSelectLink2)
 	}
+
 	if cupidChosen1ID != 0 {
 		d.CupidChosen1Player = getVisiblePlayer(db, game.ID, cupidChosen1ID, player, seerInvestigated)
 	}
+
 	if cupidChosen2ID != 0 {
 		d.CupidChosen2Player = getVisiblePlayer(db, game.ID, cupidChosen2ID, player, seerInvestigated)
 	}
+
 	return d
 }
 
@@ -48,6 +52,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
 	game, err := h.getGame()
+
 	if err != nil {
 		h.logError("handleWSCupidChoose: getOrCreateCurrentGame", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_get_game"))
@@ -83,6 +88,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
 		return
 	}
+
 	target, err := getPlayerInGame(h.db, game.ID, targetID)
 	if err != nil || !target.IsAlive {
 		h.sendErrorToast(client.playerID, T(lang, "err_invalid_target"))
@@ -107,6 +113,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 		h.triggerBroadcast()
 		return
 	}
+
 	if inSlot2 > 0 {
 		_, err = h.db.Exec(`DELETE FROM game_action WHERE game_id = ? AND round = 1 AND actor_player_id = ? AND action_type = ?`,
 			game.ID, client.playerID, ActionCupidSelectLink2)
@@ -138,6 +145,7 @@ func handleWSCupidChoose(client *Client, msg WSMessage) {
 			h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 			return
 		}
+
 		fillType = ActionCupidSelectLink2
 	} else {
 		// Both filled — replace slot 2
@@ -154,11 +162,13 @@ VALUES (?, 1, 'night', ?, ?, ?, ?, '')
 ON CONFLICT(game_id, round, phase, actor_player_id, action_type)
 DO UPDATE SET target_player_id = ?, description = ''`,
 		game.ID, client.playerID, fillType, targetID, VisibilityActor, targetID)
+
 	if err != nil {
 		h.logError("handleWSCupidChoose: insert", err)
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_record_choice"))
 		return
 	}
+
 	h.logf("Cupid '%s' chose lover '%s' (slot: %s)", cupid.Name, target.Name, fillType)
 	h.triggerBroadcast()
 }
@@ -166,6 +176,7 @@ DO UPDATE SET target_player_id = ?, description = ''`,
 func handleWSCupidLink(client *Client) {
 	h := client.hub
 	lang := h.getPlayerLang(client.playerID)
+
 	game, err := h.getGame()
 	if err != nil {
 		h.logError("handleWSCupidLink: getOrCreateCurrentGame", err)
@@ -208,6 +219,7 @@ func handleWSCupidLink(client *Client) {
 		h.sendErrorToast(client.playerID, T(lang, "err_choose_two_lovers_first"))
 		return
 	}
+
 	if firstLoverID == secondLoverID {
 		h.sendErrorToast(client.playerID, T(lang, "err_lovers_must_differ"))
 		return
@@ -220,6 +232,7 @@ func handleWSCupidLink(client *Client) {
 		h.sendErrorToast(client.playerID, T(lang, "err_first_lover_invalid"))
 		return
 	}
+
 	second, err = getPlayerInGame(h.db, game.ID, secondLoverID)
 	if err != nil || !second.IsAlive {
 		h.sendErrorToast(client.playerID, T(lang, "err_second_lover_invalid"))
@@ -233,6 +246,7 @@ func handleWSCupidLink(client *Client) {
 		h.sendErrorToast(client.playerID, T(lang, "err_failed_link_lovers"))
 		return
 	}
+
 	_, err = h.db.Exec(`INSERT OR IGNORE INTO game_lovers (game_id, player1_id, player2_id) VALUES (?, ?, ?)`,
 		game.ID, secondLoverID, firstLoverID)
 	if err != nil {

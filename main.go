@@ -76,18 +76,25 @@ func (app *App) getOrCreateHub(gameName string) *Hub {
 	app.hubsMu.RLock()
 	h, ok := app.hubs[gameName]
 	app.hubsMu.RUnlock()
+
 	if ok {
 		return h
 	}
+
 	app.hubsMu.Lock()
 	defer app.hubsMu.Unlock()
+
 	if h, ok = app.hubs[gameName]; ok {
 		return h
 	}
+
 	h = newHub(app.db, app.templates, app.storyteller, app.narrator, gameName)
 	h.storytellerLang = app.storytellerLang
+
 	go h.run()
+
 	app.hubs[gameName] = h
+
 	return h
 }
 
@@ -121,10 +128,12 @@ func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, er
 	if err != nil {
 		return "", "", "", err
 	}
+
 	styleCSS, err := staticFS.ReadFile("static/style.css")
 	if err != nil {
 		return "", "", "", err
 	}
+
 	// Drop the @import so we can prepend pico.css content directly.
 	styleCSSStr := strings.Replace(string(styleCSS), `@import url("../static/pico.css");`, "", 1)
 	css := string(picoCSS) + "\n" + styleCSSStr + "\n" + bgLQIPCSS()
@@ -136,10 +145,12 @@ func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, er
 			if err != nil {
 				return "", err
 			}
+
 			buf.WriteString("<script>")
 			buf.Write(b)
 			buf.WriteString("</script>\n")
 		}
+
 		return template.HTML(buf.String()), nil
 	}
 
@@ -147,6 +158,7 @@ func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, er
 	if err != nil {
 		return "", "", "", err
 	}
+
 	indexScriptTag, err = inlineScripts([]string{"static/htmx.js", "static/idiomorph-ext.js"})
 	if err != nil {
 		return "", "", "", err
@@ -167,9 +179,11 @@ func loadSealLQIP() map[string]string {
 		log.Printf("seal placeholders unavailable (run tools/gen_seals.sh): %v", err)
 		return m
 	}
+
 	if err := json.Unmarshal(b, &m); err != nil {
 		log.Printf("seal placeholders malformed: %v", err)
 	}
+
 	return m
 }
 

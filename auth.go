@@ -294,23 +294,29 @@ func processProfileImage(data []byte) ([]byte, error) {
 	if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: 85}); err != nil {
 		return nil, fmt.Errorf("encode jpeg: %w", err)
 	}
+
 	return buf.Bytes(), nil
 }
 
 func centerCropSquare(src image.Image) image.Image {
 	b := src.Bounds()
+
 	w, h := b.Dx(), b.Dy()
 	if w == h {
 		return src
 	}
+
 	size := w
 	if h < w {
 		size = h
 	}
+
 	x0 := b.Min.X + (w-size)/2
 	y0 := b.Min.Y + (h-size)/2
+
 	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
 	draw.Draw(dst, dst.Bounds(), src, image.Pt(x0, y0), draw.Src)
+
 	return dst
 }
 
@@ -318,6 +324,7 @@ func resizeNearest(src image.Image, width, height int) image.Image {
 	sb := src.Bounds()
 	sw, sh := sb.Dx(), sb.Dy()
 	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			sx := sb.Min.X + x*sw/width
@@ -325,5 +332,6 @@ func resizeNearest(src image.Image, width, height int) image.Image {
 			dst.Set(x, y, src.At(sx, sy))
 		}
 	}
+
 	return dst
 }
