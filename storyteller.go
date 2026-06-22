@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ type openaiStoryteller struct {
 	model       string
 	temperature float64
 	maxTokens   int
+	extraParams map[string]any // additional JSON fields merged into every request body (e.g. OpenRouter's "provider", "top_p")
 }
 
 func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt string, onChunk func(string)) (string, error) {
@@ -39,15 +41,15 @@ func (s *openaiStoryteller) Tell(ctx context.Context, systemPrompt, userPrompt s
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
-	body := map[string]any{
-		"model":       s.model,
-		"stream":      true,
-		"temperature": s.temperature,
-		"max_tokens":  s.maxTokens,
-		"messages": []message{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
+	body := map[string]any{}
+	maps.Copy(body, s.extraParams)
+	body["model"] = s.model
+	body["stream"] = true
+	body["temperature"] = s.temperature
+	body["max_tokens"] = s.maxTokens
+	body["messages"] = []message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
 	}
 
 	data, _ := json.Marshal(body)
@@ -306,6 +308,16 @@ func initStoryteller(cfg AppConfig) Storyteller {
 		}
 	}
 
+	var extraParams map[string]any
+	if cfg.StorytellerExtraParams != "" {
+		if err := json.Unmarshal([]byte(cfg.StorytellerExtraParams), &extraParams); err != nil {
+			log.Printf("Storyteller: invalid storyteller_extra_params JSON, ignoring: %v", err)
+			extraParams = nil
+		} else {
+			log.Printf("Storyteller: extra params: %s", cfg.StorytellerExtraParams)
+		}
+	}
+
 	baseURL := strings.TrimRight(cfg.OpenAIAPIBase, "/")
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
@@ -317,7 +329,7 @@ func initStoryteller(cfg AppConfig) Storyteller {
 	}
 
 	log.Printf("Storyteller: model=%s url=%s temperature=%.2f max_tokens=%d", cfg.OpenAIModel, baseURL, temperature, maxTokens)
-	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: cfg.OpenAIModel, temperature: temperature, maxTokens: maxTokens}
+	return &openaiStoryteller{baseURL: baseURL, apiKey: cfg.OpenAIAPIKey, model: cfg.OpenAIModel, temperature: temperature, maxTokens: maxTokens, extraParams: extraParams}
 }
 
 // ── Story generation ─────────────────────────────────────────────────────────

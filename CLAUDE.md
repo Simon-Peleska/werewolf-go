@@ -367,6 +367,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Language | `STORYTELLER_LANGUAGE` | `storyteller_language` | `-storyteller-language` | `en` | Prompt language: `en` or `de` |
 | Temperature | `STORYTELLER_TEMPERATURE` | `storyteller_temperature` | `-storyteller-temperature` | — | Sampling temperature (0–1) |
 | Storyteller max tokens | `STORYTELLER_MAX_TOKENS` | `storyteller_max_tokens` | `-storyteller-max-tokens` | `600` | Max tokens per storyteller completion |
+| Storyteller extra params | `STORYTELLER_EXTRA_PARAMS` | `storyteller_extra_params` | `-storyteller-extra-params` | — | Raw JSON object merged into every chat completion request body (e.g. OpenRouter's `provider`, `top_p`, `transforms`) |
 | Narrator provider | `NARRATOR_PROVIDER` | `narrator_provider` | `-narrator-provider` | — | `openai\|openai-compatible\|elevenlabs` |
 | Narrator model | `NARRATOR_MODEL` | `narrator_model` | `-narrator-model` | `tts-1` | TTS model name |
 | Narrator voice | `NARRATOR_VOICE` | `narrator_voice` | `-narrator-voice` | `onyx` | Voice name or ElevenLabs voice ID |
@@ -545,7 +546,8 @@ Test files are organized by feature and contain all tests and helpers for that f
 ### Storyteller (`storyteller.go`)
 - `Storyteller` interface: `Tell(ctx, systemPrompt, userPrompt string, onChunk func(string)) (string, error)`
 - System prompt is **built per-call** in `prompt.go` (`buildGameSystemPrompt`): static base prose + dynamic sections for roles in play + the live player roster. A `finished` game automatically gets the closing-narration prose appended — callers just request a system prompt and never deal with a separate ending prompt.
-- OpenAI-compatible provider (direct HTTP, no library): POST `/chat/completions` SSE. Covers OpenAI, Ollama, Groq, etc. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
+- OpenAI-compatible provider: POST `/chat/completions` SSE. Set `STORYTELLER_URL` to override base URL (default: `https://api.openai.com/v1`).
+- `storyteller_extra_params` (config) holds a raw JSON object merged into every request body — lets provider-specific fields (OpenRouter's `provider`, `top_p`, `transforms`, etc., see https://openrouter.ai/openapi.json) pass through without dedicated config fields. Merged first so `model`/`stream`/`messages`/`temperature` always win.
 - `maybeGenerateStory(gameID, round, phase, actorPlayerID)` — called after night kills, day eliminations, hunter revenge
 - Tokens streamed into `game_action.description` via 300ms DB flush ticker, so history updates progressively in the UI
 - **Sentence-pipelined TTS**: as LLM tokens arrive, `nextSentence()` detects sentence boundaries (`.` `!` `?` + whitespace/end). Each complete sentence is sent to a `sentenceCh` channel; a single TTS goroutine drains it sequentially so audio starts before the LLM finishes and sentences never overlap.

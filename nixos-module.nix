@@ -72,6 +72,14 @@ in {
       default = null;
       description = "Max tokens per storyteller completion (default 600).";
     };
+    storytellerExtraParams = lib.mkOption {
+      type    = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Raw JSON object merged into every chat completion request body, e.g. for
+        OpenRouter-specific fields: '{"provider":{"order":["Anthropic"]},"top_p":0.9}'.
+      '';
+    };
 
     # ── Narrator (TTS) ────────────────────────────────────────────────────────
     narratorProvider = lib.mkOption {
@@ -128,6 +136,7 @@ in {
       // optionalEnv "STORYTELLER_LANGUAGE"      cfg.storytellerLanguage
       // optionalEnv "STORYTELLER_TEMPERATURE"   cfg.storytellerTemperature
       // optionalEnv "STORYTELLER_MAX_TOKENS"    cfg.storytellerMaxTokens
+      // optionalEnv "STORYTELLER_EXTRA_PARAMS"  cfg.storytellerExtraParams
       // optionalEnv "NARRATOR_PROVIDER"       cfg.narratorProvider
       // optionalEnv "NARRATOR_MODEL"          cfg.narratorModel
       // optionalEnv "NARRATOR_VOICE"          cfg.narratorVoice

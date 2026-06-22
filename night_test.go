@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -437,6 +439,51 @@ func TestAIStoryteller(t *testing.T) {
 	}
 
 	ctx.logger.Debug("=== TestAIStoryteller passed ===")
+}
+
+// TestStorytellerExtraParams verifies storyteller_extra_params is merged into
+// the chat completion request body (e.g. OpenRouter's "provider", "top_p"),
+// and that it cannot clobber the fields the storyteller itself controls.
+func TestStorytellerExtraParams(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	fakeOpenAi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &gotBody); err != nil {
+			t.Errorf("fake server: invalid request JSON: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer fakeOpenAi.Close()
+
+	storyteller := initStoryteller(AppConfig{
+		Storyteller:   true,
+		OpenAIModel:   "llm-1",
+		OpenAIAPIBase: fakeOpenAi.URL + "/v1",
+		OpenAIAPIKey:  "test-key",
+		StorytellerExtraParams: `{
+			"top_p": 0.9,
+			"provider": {"order": ["Anthropic"]},
+			"model": "should-not-win"
+		}`,
+	})
+
+	if _, err := storyteller.Tell(context.Background(), "system", "hello", nil); err != nil {
+		t.Fatalf("Tell failed: %v", err)
+	}
+
+	if gotBody["top_p"] != 0.9 {
+		t.Errorf("expected top_p 0.9 to pass through, got %v", gotBody["top_p"])
+	}
+	provider, ok := gotBody["provider"].(map[string]any)
+	if !ok || provider["order"].([]any)[0] != "Anthropic" {
+		t.Errorf("expected provider.order [Anthropic] to pass through, got %v", gotBody["provider"])
+	}
+	if gotBody["model"] != "llm-1" {
+		t.Errorf("extra params must not override model, got %v", gotBody["model"])
+	}
 }
 
 // TestAISwitchDisablesStoryteller verifies the sidebar AI switch suppresses

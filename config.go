@@ -25,13 +25,14 @@ type AppConfig struct {
 	LogDebug     bool   `json:"log_debug"`
 
 	// AI Storyteller
-	Storyteller            bool   `json:"storyteller"`             // enable AI storyteller
-	OpenAIModel            string `json:"openai_model"`            // model name
-	OpenAIAPIBase          string `json:"openai_api_base"`         // base URL (default: https://api.openai.com/v1)
-	OpenAIAPIKey           string `json:"openai_api_key"`          // API key
-	StorytellerLanguage    string `json:"storyteller_language"`    // language for built-in prompts: "en" (default) or "de"
-	StorytellerTemperature string `json:"storyteller_temperature"` // float 0-2 as string (default 1.2)
-	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`  // max tokens per completion (default 600)
+	Storyteller            bool   `json:"storyteller"`              // enable AI storyteller
+	OpenAIModel            string `json:"openai_model"`             // model name
+	OpenAIAPIBase          string `json:"openai_api_base"`          // base URL (default: https://api.openai.com/v1)
+	OpenAIAPIKey           string `json:"openai_api_key"`           // API key
+	StorytellerLanguage    string `json:"storyteller_language"`     // language for built-in prompts: "en" (default) or "de"
+	StorytellerTemperature string `json:"storyteller_temperature"`  // float 0-2 as string (default 1.2)
+	StorytellerMaxTokens   int    `json:"storyteller_max_tokens"`   // max tokens per completion (default 600)
+	StorytellerExtraParams string `json:"storyteller_extra_params"` // raw JSON object merged into every chat completion request body (e.g. OpenRouter's "provider", "top_p")
 
 	// AI Narrator (TTS)
 	NarratorProvider   string `json:"narrator_provider"`    // openai | openai-compatible | elevenlabs
@@ -127,6 +128,9 @@ func loadConfig(configPath string) AppConfig {
 			cfg.StorytellerMaxTokens = n
 		}
 	}
+	if v := envStr("STORYTELLER_EXTRA_PARAMS"); v != "" {
+		cfg.StorytellerExtraParams = v
+	}
 	if v := envStr("NARRATOR_PROVIDER"); v != "" {
 		cfg.NarratorProvider = v
 	}
@@ -193,6 +197,7 @@ func (cfg AppConfig) logConfig() {
 	log.Printf("  storyteller_language:          %s", cfg.StorytellerLanguage)
 	log.Printf("  storyteller_temperature:       %s", cfg.StorytellerTemperature)
 	log.Printf("  storyteller_max_tokens:        %d", cfg.StorytellerMaxTokens)
+	log.Printf("  storyteller_extra_params:      %s", cfg.StorytellerExtraParams)
 	log.Printf("  narrator_provider:             %s", cfg.NarratorProvider)
 	log.Printf("  narrator_model:                %s", cfg.NarratorModel)
 	log.Printf("  narrator_voice:                %s", cfg.NarratorVoice)
@@ -232,6 +237,7 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	if v, ok := m["storyteller_max_tokens"]; ok {
 		json.Unmarshal(v, &cfg.StorytellerMaxTokens)
 	}
+	str("storyteller_extra_params", &cfg.StorytellerExtraParams)
 	str("narrator_provider", &cfg.NarratorProvider)
 	str("narrator_model", &cfg.NarratorModel)
 	str("narrator_voice", &cfg.NarratorVoice)
@@ -261,6 +267,7 @@ type flagValues struct {
 	storytellerLanguage    *string
 	storytellerTemperature *string
 	storytellerMaxTokens   *int
+	storytellerExtraParams *string
 	narratorProvider       *string
 	narratorModel          *string
 	narratorVoice          *string
@@ -290,6 +297,7 @@ func registerFlags() flagValues {
 		storytellerLanguage:    flag.String("storyteller-language", "", `language for built-in prompts: "en" (default) or "de"`),
 		storytellerTemperature: flag.String("storyteller-temperature", "", "sampling temperature 0-2 (default 1.2)"),
 		storytellerMaxTokens:   flag.Int("storyteller-max-tokens", 0, "max tokens per storyteller completion (default 600)"),
+		storytellerExtraParams: flag.String("storyteller-extra-params", "", `raw JSON object merged into every chat completion request body, e.g. '{"top_p":0.9,"provider":{"order":["Anthropic"]}}'`),
 		narratorProvider:       flag.String("narrator-provider", "", "TTS narrator provider (openai|openai-compatible|elevenlabs)"),
 		narratorModel:          flag.String("narrator-model", "", "TTS model name (e.g. tts-1)"),
 		narratorVoice:          flag.String("narrator-voice", "", "TTS voice (e.g. onyx, alloy, or ElevenLabs voice ID)"),
@@ -336,6 +344,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.StorytellerTemperature = *fv.storytellerTemperature
 		case "storyteller-max-tokens":
 			cfg.StorytellerMaxTokens = *fv.storytellerMaxTokens
+		case "storyteller-extra-params":
+			cfg.StorytellerExtraParams = *fv.storytellerExtraParams
 		case "narrator-provider":
 			cfg.NarratorProvider = *fv.narratorProvider
 		case "narrator-model":
