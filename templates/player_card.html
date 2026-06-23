@@ -15,19 +15,19 @@
 
   <!-- EXPANDED layer -->
   <div class="pc-layer pc-exp{{if $d.Collapsed}} pc-inactive{{else}} pc-active{{end}}">
+    {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
     <div class="pc-seal-wrap">
-      {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
       <img class="pc-seal pc-seal-profile" src="{{$d.ProfileImage}}"
            onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
            alt="{{$d.RoleName}}">
-      {{else}}
+    {{else}}
+    <div class="pc-seal-wrap lqip" style="--lqip-bg:url({{sealLQIP (roleSealName $d.RoleName)}})">
       <picture>
         <source srcset="{{roleSealAvif $d.RoleName}}" type="image/avif">
-        <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
-             src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
-             alt="{{$d.RoleName}}">
+        <img class="pc-seal" src="{{roleSeal $d.RoleName}}"
+             onload="this.closest('.pc-seal-wrap').classList.add('seal-loaded')" alt="{{$d.RoleName}}">
       </picture>
-      {{end}}
+    {{end}}
       {{if $d.OwnCard}}<div class="pc-upload-overlay" onclick="event.stopPropagation();pcUploadClick(this)">📷</div>{{end}}
       {{if $d.IsLobby}}
         <div class="pc-btn-wrap pc-btn-minus">
@@ -71,19 +71,19 @@
   <!-- COLLAPSED layer -->
   <div class="pc-layer pc-col{{if $d.Collapsed}} pc-active{{else}} pc-inactive{{end}}"
        {{if and $d.Collapsible (not $d.Selectable)}}onclick="pcToggle(this)"{{end}}>
+    {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
     <div class="pc-seal-wrap">
-      {{if and $d.ProfileImage (not $d.ShowRoleSeal)}}
       <img class="pc-seal pc-seal-profile" src="{{$d.ProfileImage}}"
            onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
            alt="{{$d.RoleName}}">
-      {{else}}
+    {{else}}
+    <div class="pc-seal-wrap lqip" style="--lqip-bg:url({{sealLQIP (roleSealName $d.RoleName)}})">
       <picture>
         <source srcset="{{roleSealAvif $d.RoleName}}" type="image/avif">
-        <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
-             src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
-             alt="{{$d.RoleName}}">
+        <img class="pc-seal" src="{{roleSeal $d.RoleName}}"
+             onload="this.closest('.pc-seal-wrap').classList.add('seal-loaded')" alt="{{$d.RoleName}}">
       </picture>
-      {{end}}
+    {{end}}
     </div>
     <span class="pc-info">
       {{if $d.PlayerName}}<span class="pc-name">{{$d.PlayerName}}</span>{{end}}

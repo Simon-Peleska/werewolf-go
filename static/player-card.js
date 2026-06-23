@@ -76,11 +76,17 @@
           const url = '/player-image/' + data.image_id;
           card.setAttribute('profile-image', url);
           // Swap every seal img (both layers) over to the new profile image.
+          // pc-seal-profile forces opacity:1 unconditionally, so the wrapper's
+          // lqip/seal-loaded state no longer matters visually — clear it anyway
+          // so a later role reveal doesn't inherit a stale placeholder.
           card.querySelectorAll('.pc-seal').forEach(function (img) {
             img.src = url;
             img.classList.add('pc-seal-profile');
-            img.classList.remove('lqip', 'seal-loaded');
-            img.style.backgroundImage = '';
+            var wrap = img.closest('.pc-seal-wrap');
+            if (wrap) {
+              wrap.classList.remove('lqip', 'seal-loaded');
+              wrap.style.backgroundImage = '';
+            }
           });
         }
       })
@@ -88,8 +94,16 @@
     input.value = '';
   }
 
-  // For cached images onload never fires — check .complete on every render.
+  // For cached images onload never fires, and idiomorph re-renders (e.g. a lobby
+  // role-count change) reset the wrapper's class to the server's markup even when
+  // the image itself was preserved/already loaded — check .complete on every render.
   function pcFixSealLqip() {
+    document.querySelectorAll('.pc-seal-wrap.lqip').forEach(function (wrap) {
+      var img = wrap.querySelector('img.pc-seal');
+      if (img && img.complete) wrap.classList.add('seal-loaded');
+    });
+    // game-card-seal (index.html "your games" list) still uses the single-element
+    // background-image technique, so the .lqip/.seal-loaded pair lives on the img itself.
     document.querySelectorAll('img.lqip').forEach(function (img) {
       if (img.complete) img.classList.add('seal-loaded');
     });

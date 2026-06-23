@@ -937,32 +937,50 @@ card-list > form, .card-list > form { display: contents; }
 }
 .pc-seal {
   width: 100%; height: 100%;
-  transition: filter 0.15s;
+  position: relative; z-index: 1;
+  opacity: 0;
+  transition: filter 0.15s, opacity 0.2s ease;
   object-fit: contain; display: block;
+  filter: var(--seal-filter, none);
 }
-.pc-seal.lqip {
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-.pc-seal.seal-loaded { background-image: none !important; }
+.pc-seal-wrap.seal-loaded .pc-seal { opacity: 1; }
 .pc-seal.pc-seal-profile {
   object-fit: cover;
   aspect-ratio: 1 / 1;
   height: auto;
   border-radius: 50%;
+  opacity: 1; /* no AVIF/lqip pipeline for user-uploaded profile images */
 }
-.player-card.team-villager .pc-seal {
-  filter: drop-shadow(0 0 4px var(--c-seal-ring)) drop-shadow(0 0 8px var(--c-seal-ring)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+/* The lqip placeholder lives on a ::before behind the seal, not on the seal itself, so its
+   own (always-on) shadow and the real seal's shadow never get flattened into one filter
+   pass — only one of the two is ever visible at a time, so the shadow never doubles up
+   while a progressive AVIF streams in.
+   The thumbnail is passed in as --lqip-bg (a custom property, not background-image) so the
+   wrap itself never has its own background to paint — otherwise it'd render at the browser's
+   default size/position/repeat and peek through the seal artwork's transparent square corners
+   as a tiny stray copy of the logo. */
+.pc-seal-wrap.lqip::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: var(--lqip-bg);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: var(--seal-filter, none);
+  transition: opacity 0.2s ease;
 }
-.player-card.team-villager:hover .pc-seal {
-  filter: drop-shadow(0 0 5px var(--c-seal-ring-hover)) drop-shadow(0 0 10px var(--c-seal-ring-hover)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
+.pc-seal-wrap.seal-loaded::before { opacity: 0; }
+.player-card.team-villager .pc-seal-wrap {
+  --seal-filter: drop-shadow(0 0 4px var(--c-seal-ring)) drop-shadow(0 0 8px var(--c-seal-ring)) drop-shadow(0 5px 12px var(--c-seal-shadow));
 }
-.player-card.team-werewolf .pc-seal {
-  filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-danger)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+.player-card.team-villager:hover .pc-seal-wrap {
+  --seal-filter: drop-shadow(0 0 5px var(--c-seal-ring-hover)) drop-shadow(0 0 10px var(--c-seal-ring-hover)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
 }
-.player-card.team-werewolf:hover .pc-seal {
-  filter: drop-shadow(0 0 6px var(--c-danger)) drop-shadow(0 0 12px var(--c-danger)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
+.player-card.team-werewolf .pc-seal-wrap {
+  --seal-filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-danger)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+}
+.player-card.team-werewolf:hover .pc-seal-wrap {
+  --seal-filter: drop-shadow(0 0 6px var(--c-danger)) drop-shadow(0 0 12px var(--c-danger)) drop-shadow(0 7px 16px var(--c-seal-shadow-hover));
 }
 
 /* ── Count badge — top-left of seal wrap, expanded only ────────────────────── */
@@ -986,6 +1004,10 @@ card-list > form, .card-list > form { display: contents; }
   background: var(--c-surface-2);
   display: flex; align-items: center; justify-content: center;
   transition: background 0.1s, border-color 0.1s;
+  /* .pc-seal has z-index:1 so it stacks above its own ::before placeholder — without
+     this these overlays (later in the DOM, but z-index:auto) lose that stacking fight
+     and the seal image swallows their clicks. */
+  z-index: 2;
 }
 .pc-btn-minus { left: 0; }
 .pc-btn-plus  { right: 0; }

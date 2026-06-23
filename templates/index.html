@@ -102,13 +102,36 @@
             overflow: visible;
             z-index: 101;
         }
-        .header-logo {
+        .header-logo-wrap {
+            position: relative;
+            display: inline-block;
             width: 15rem;
             height: 15rem;
-            object-fit: cover;
-            filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-seal-ring-hover)) drop-shadow(0 5px 12px var(--c-seal-shadow));
             overflow: visible;
         }
+        .header-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-seal-ring-hover)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+        }
+        .header-logo-wrap.seal-loaded .header-logo { opacity: 1; }
+        /* Placeholder sits behind the real logo with its own (always-on) shadow, so the
+           shadow never doubles up while a progressive AVIF streams in — see static/style.css
+           for the same pattern on player card seals. */
+        .header-logo-wrap::before {
+            content: '';
+            position: absolute; inset: 0;
+            background-image: var(--lqip-bg);
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: drop-shadow(0 0 4px var(--c-danger)) drop-shadow(0 0 8px var(--c-seal-ring-hover)) drop-shadow(0 5px 12px var(--c-seal-shadow));
+            transition: opacity 0.2s ease;
+        }
+        .header-logo-wrap.seal-loaded::before { opacity: 0; }
         .lang-switcher {
             position: absolute;
             right: 0;
@@ -203,10 +226,12 @@
     <main class="container">
         <div class="page-header">
             <div class="header-brand">
-                <picture>
-                    <source srcset="/static/seals/Werewolf.avif" type="image/avif">
-                    <img src="/static/seals/Werewolf.webp" alt="Werewolf" class="header-logo lqip" style="background-image:url({{sealLQIP "Werewolf"}})" onload="this.classList.add('seal-loaded')" title="{{.BuildVersion}}">
-                </picture>
+                <div class="header-logo-wrap" style="--lqip-bg:url({{sealLQIP "Werewolf"}})">
+                    <picture>
+                        <source srcset="/static/seals/Werewolf.avif" type="image/avif">
+                        <img src="/static/seals/Werewolf.webp" alt="Werewolf" class="header-logo" onload="this.closest('.header-logo-wrap').classList.add('seal-loaded')" title="{{.BuildVersion}}">
+                    </picture>
+                </div>
                 <h1 title="{{.BuildVersion}}">{{T .Lang "brand_name"}}</h1>
             </div>
             <div class="lang-switcher">
