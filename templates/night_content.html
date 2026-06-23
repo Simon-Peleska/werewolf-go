@@ -7,7 +7,10 @@
 
         <!-- Submitted survey — waiting message -->
         <div id="survey-waiting" class="night-sleeping">
-            <img class="night-seal-pulse lqip" style="background-image:url({{sealLQIP "Night"}})" src="/static/seals/Night.webp" alt="Night" onload="this.classList.add('seal-loaded')">
+            <picture>
+                <source srcset="/static/seals/Night.avif" type="image/avif">
+                <img class="night-seal-pulse lqip" style="background-image:url({{sealLQIP "Night"}})" src="/static/seals/Night.webp" alt="Night" onload="this.classList.add('seal-loaded')">
+            </picture>
             <p><em>{{T .Lang "waiting_for_players" (subtract .AliveCount .SurveyCount)}}</em></p>
         </div>
 
@@ -46,7 +49,10 @@
             {{else}}
             <!-- Sleeping villager (no special role) -->
             <div class="night-sleeping">
+                <picture>
+                <source srcset="/static/seals/Night.avif" type="image/avif">
                 <img class="night-seal-pulse lqip" style="background-image:url({{sealLQIP "Night"}})" src="/static/seals/Night.webp" alt="Night" onload="this.classList.add('seal-loaded')">
+            </picture>
                 <p>{{T .Lang "village_sleeps"}}</p>
                 <p><em>{{T .Lang "close_eyes"}}</em></p>
             </div>

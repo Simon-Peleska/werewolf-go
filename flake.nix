@@ -119,8 +119,9 @@
             # AST-based code search and rewrite
             ast-grep
 
-            # Image encoding for gen_seals.sh (cwebp / dwebp)
+            # Image encoding for gen_seals.sh (cwebp / dwebp, avifenc / avifdec)
             libwebp
+            libavif
 
             # Bash completions for tools/*.sh and go-test-tui
             tools-completions

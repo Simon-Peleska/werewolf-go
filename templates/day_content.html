@@ -24,7 +24,10 @@
                     </div>
                     {{else if eq .Player.RoleName "Hunter"}}
                     <div class="phase-heading" style="margin-bottom:0.75rem">
-                        <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
+                        <picture>
+                            <source srcset="/static/seals/Hunter.avif" type="image/avif">
+                            <img class="seal seal-sm" src="/static/seals/Hunter.webp" alt="Hunter">
+                        </picture>
                         <h3 style="margin:0">{{T .Lang "hunter_last_shot"}}</h3>
                     </div>
                     <p>{{T .Lang "hunter_eliminated_desc"}}</p>

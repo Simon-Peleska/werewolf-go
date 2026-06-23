@@ -361,7 +361,8 @@ html::before {
   z-index: 0;
   /* gradient overlay, full image, then the inlined blur-up placeholder behind it */
   background-image: linear-gradient(rgba(7, 8, 13, 0.4), rgba(7, 8, 13, 0.7)),
-                    url('/static/backgrounds/background_night.webp'),
+                    image-set(url('/static/backgrounds/background_night.avif') type('image/avif'),
+                              url('/static/backgrounds/background_night.webp') type('image/webp')),
                     var(--bg-night-lqip, none);
   background-size: cover;
   background-position: center;
@@ -378,7 +379,8 @@ html::after {
   height: 100lvh;
   z-index: 0;
   background-image: linear-gradient(rgba(242, 234, 214, 0.2), rgba(242, 234, 214, 0.5)),
-                    url('/static/backgrounds/background_day.webp'),
+                    image-set(url('/static/backgrounds/background_day.avif') type('image/avif'),
+                              url('/static/backgrounds/background_day.webp') type('image/webp')),
                     var(--bg-day-lqip, none);
   background-size: cover;
   background-position: center;
@@ -393,7 +395,8 @@ html::after {
 /* Lovers win — replace the after layer with the lovers background */
 :root[data-winner=lovers]::after {
   background-image: linear-gradient(rgba(20, 8, 16, 0.3), rgba(20, 8, 16, 0.3)),
-                    url('/static/backgrounds/background_lovers.webp'),
+                    image-set(url('/static/backgrounds/background_lovers.avif') type('image/avif'),
+                              url('/static/backgrounds/background_lovers.webp') type('image/webp')),
                     var(--bg-lovers-lqip, none);
   opacity: 1;
 }

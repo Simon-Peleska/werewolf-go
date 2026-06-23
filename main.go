@@ -1351,10 +1351,10 @@ func (g *gzipResponseWriter) WriteHeader(code int) {
 	g.ResponseWriter.WriteHeader(code)
 }
 
-// .webp is already compressed and a WebSocket upgrade can't be gzip'd, so both are skipped.
 func withGzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".webp") ||
+			strings.HasSuffix(r.URL.Path, ".avif") ||
 			r.Header.Get("Upgrade") == "websocket" ||
 			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
@@ -1437,6 +1437,10 @@ func main() {
 		// roleSeal maps a role name to its webp seal path, e.g. "Wolf Cub" → "/static/seals/Wolf_Cub.webp"
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
+		},
+		// roleSealAvif is roleSeal's AVIF counterpart, used as the <picture> source.
+		"roleSealAvif": func(name string) string {
+			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".avif"
 		},
 		// roleSealName converts a role name to its underscore-joined seal/LQIP key, e.g. "Wolf Cub" → "Wolf_Cub"
 		"roleSealName": func(name string) string {

@@ -29,7 +29,10 @@
 {{if .WolfCubDoubleKill}}
 <div id="wolf-cub-vote-section" class="night-wolf-cub-section">
     <div class="phase-heading" style="margin-bottom:0.5rem">
-        <img class="seal seal-sm" src="/static/seals/Wolf_Cub.webp" alt="Wolf Cub">
+        <picture>
+            <source srcset="/static/seals/Wolf_Cub.avif" type="image/avif">
+            <img class="seal seal-sm" src="/static/seals/Wolf_Cub.webp" alt="Wolf Cub">
+        </picture>
         <h4 style="margin:0">{{T .Lang "wolf_cub_title"}}</h4>
     </div>
     {{if .WolfEndVoted2}}

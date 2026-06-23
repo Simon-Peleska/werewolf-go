@@ -619,6 +619,9 @@ func newTestContext(t *testing.T) *TestContext {
 		"roleSeal": func(name string) string {
 			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".webp"
 		},
+		"roleSealAvif": func(name string) string {
+			return "/static/seals/" + strings.ReplaceAll(name, " ", "_") + ".avif"
+		},
 		"roleSealName": func(name string) string {
 			return strings.ReplaceAll(name, " ", "_")
 		},

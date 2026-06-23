@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="htmx-config" content='{"historyCacheSize": 0}'>
   <title>{{T .Lang "page_title_game"}}</title>
+  <link rel="icon" type="image/avif" href="/static/seals/Werewolf.avif">
   <link rel="icon" type="image/webp" href="/static/seals/Werewolf.webp">
   <!-- Preload the two main fonts so they fetch in parallel with the big inlined CSS
        (font-display: swap still paints text in the fallback first). crossorigin is
@@ -13,24 +14,26 @@
   <link rel="preload" href="/static/fonts/MetalMania-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/IMFellGreatPrimer-Regular.woff2" as="font" type="font/woff2" crossorigin>
   {{.StyleTag}}
-  <link rel="prefetch" href="/static/seals/Villager.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Werewolf.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Seer.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Doctor.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Witch.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Hunter.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Cupid.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Guard.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Mason.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Wolf_Cub.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Doppelganger.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Joker.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Night.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Day.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Unknown.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Villagers_win.webp" as="image">
-  <link rel="prefetch" href="/static/seals/Werewolves_win.webp" as="image">
-  <link rel="prefetch" href="/static/seals/lovers_win.webp" as="image">
+  <link rel="prefetch" href="/static/seals/Villager.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Werewolf.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Seer.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Doctor.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Witch.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Hunter.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Cupid.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Guard.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Mason.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Wolf_Cub.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Doppelganger.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Joker.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Night.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Day.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Unknown.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Villagers_win.avif" as="image">
+  <link rel="prefetch" href="/static/seals/Werewolves_win.avif" as="image">
+  <link rel="prefetch" href="/static/seals/lovers_win.avif" as="image">
+  <link rel="prefetch" href="/static/backgrounds/background_day.avif" as="image">
+  <link rel="prefetch" href="/static/backgrounds/background_lovers.avif" as="image">
   {{.ScriptTag}}
   <script>
     window.i18n = {

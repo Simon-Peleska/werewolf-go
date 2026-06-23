@@ -5,11 +5,20 @@
     <!-- Hero: big centered win seal -->
     <section id="phase-main-section" class="win-hero">
         {{if eq .Winner "villagers"}}
-        <img class="win-seal-glow win-seal-villagers lqip" style="background-image:url({{sealLQIP "Villagers_win"}})" src="/static/seals/Villagers_win.webp" alt="{{T .Lang "villagers_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        <picture>
+            <source srcset="/static/seals/Villagers_win.avif" type="image/avif">
+            <img class="win-seal-glow win-seal-villagers lqip" style="background-image:url({{sealLQIP "Villagers_win"}})" src="/static/seals/Villagers_win.webp" alt="{{T .Lang "villagers_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        </picture>
         {{else if eq .Winner "lovers"}}
-        <img class="win-seal-glow win-seal-lovers lqip" style="background-image:url({{sealLQIP "lovers_win"}})" src="/static/seals/lovers_win.webp" alt="{{T .Lang "lovers_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        <picture>
+            <source srcset="/static/seals/lovers_win.avif" type="image/avif">
+            <img class="win-seal-glow win-seal-lovers lqip" style="background-image:url({{sealLQIP "lovers_win"}})" src="/static/seals/lovers_win.webp" alt="{{T .Lang "lovers_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        </picture>
         {{else}}
-        <img class="win-seal-glow win-seal-werewolves lqip" style="background-image:url({{sealLQIP "Werewolves_win"}})" src="/static/seals/Werewolves_win.webp" alt="{{T .Lang "werewolves_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        <picture>
+            <source srcset="/static/seals/Werewolves_win.avif" type="image/avif">
+            <img class="win-seal-glow win-seal-werewolves lqip" style="background-image:url({{sealLQIP "Werewolves_win"}})" src="/static/seals/Werewolves_win.webp" alt="{{T .Lang "werewolves_win_alt"}}" onload="this.classList.add('seal-loaded')">
+        </picture>
         {{end}}
     </section>
 

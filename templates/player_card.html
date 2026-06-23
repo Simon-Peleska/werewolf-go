@@ -21,9 +21,12 @@
            onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
            alt="{{$d.RoleName}}">
       {{else}}
-      <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
-           src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
-           alt="{{$d.RoleName}}">
+      <picture>
+        <source srcset="{{roleSealAvif $d.RoleName}}" type="image/avif">
+        <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
+             src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
+             alt="{{$d.RoleName}}">
+      </picture>
       {{end}}
       {{if $d.OwnCard}}<div class="pc-upload-overlay" onclick="event.stopPropagation();pcUploadClick(this)">📷</div>{{end}}
       {{if $d.IsLobby}}
@@ -74,9 +77,12 @@
            onerror="this.onerror=null;this.src='{{roleSeal $d.RoleName}}';this.classList.remove('pc-seal-profile')"
            alt="{{$d.RoleName}}">
       {{else}}
-      <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
-           src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
-           alt="{{$d.RoleName}}">
+      <picture>
+        <source srcset="{{roleSealAvif $d.RoleName}}" type="image/avif">
+        <img class="pc-seal lqip" style="background-image:url({{sealLQIP (roleSealName $d.RoleName)}})"
+             src="{{roleSeal $d.RoleName}}" onload="this.classList.add('seal-loaded')"
+             alt="{{$d.RoleName}}">
+      </picture>
       {{end}}
     </div>
     <span class="pc-info">
