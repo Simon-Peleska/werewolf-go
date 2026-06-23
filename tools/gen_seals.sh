@@ -24,8 +24,8 @@
 # WebP has no progressive decoding, so we fake "load a compressed version first" with a
 # tiny placeholder that the frontend scales up + blurs, then swaps for the full image.
 #
-# Requires libwebp (cwebp/dwebp) and libavif (avifenc). Run via nix if not on PATH:
-#   nix shell nixpkgs#libwebp nixpkgs#libavif -c ./tools/gen_seals.sh
+# Requires libwebp (cwebp/dwebp) and libavif (avifenc) — both are in flake.nix's devShell,
+# so they're already on PATH via `nix develop` / direnv.
 #
 set -euo pipefail
 
@@ -35,8 +35,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FULL_SIZE=1024
 FULL_Q=80
 # AVIF quality is on the same 0-100 scale, but AVIF reaches comparable quality at lower
-# numbers than WebP (~30% smaller files at this setting, checked by eye against FULL_Q).
-AVIF_Q=58
+# numbers than WebP. Tuned by eye + measured against the project's pinned libavif (1.3.0/
+# aom 3.12.1) with --progressive: q40 stays visually clean and is reliably smaller than the
+# WebP equivalent (~30-50% smaller; margin shrinks at higher q, e.g. q58 was LARGER than WebP).
+AVIF_Q=40
 # Placeholder: tiny + low quality; the frontend blurs it, so detail is wasted bytes.
 LQIP_SIZE=32
 LQIP_Q=40
@@ -51,6 +53,18 @@ lqip_data_uri() {
     cwebp -quiet -q "$LQIP_Q" -resize "$LQIP_SIZE" 0 "$png" -o "$tiny"
     # base64 alphabet (A-Za-z0-9+/=) needs no JSON escaping.
     echo "data:image/webp;base64,$(base64 -w0 "$tiny")"
+}
+
+# encode_avif <quality> <in.png> <out.avif> — wraps avifenc with --progressive and verifies
+# the progressive layer was actually written, so a regression never ships silently.
+encode_avif() {
+    local q="$1" png="$2" out="$3" log
+    log="$(avifenc -q "$q" --progressive "$png" "$out")"
+    if ! grep -q "Progressive    : Available" <<<"$log"; then
+        echo "FATAL: $out did not encode as progressive:" >&2
+        echo "$log" >&2
+        exit 1
+    fi
 }
 
 # write_json <out.json> <entry...> — emit { "k": "v", ... } from "  \"k\": \"v\"" lines.
@@ -76,7 +90,9 @@ for src in "$ROOT"/originals/seals/*.orig.webp; do
     # Re-decode the just-written (already resized) WebP so avifenc encodes at the same
     # dimensions without a separate resize step.
     dwebp -quiet "$ROOT/static/seals/$name.webp" -o "$full_png"
-    avifenc -q "$AVIF_Q" "$full_png" "$ROOT/static/seals/$name.avif" >/dev/null
+    # Progressive AVIF: supporting browsers (Chrome 123+) paint a low-res pass as bytes
+    # stream in, instead of waiting for the whole file (~15-20% bigger than non-progressive).
+    encode_avif "$AVIF_Q" "$full_png" "$ROOT/static/seals/$name.avif"
     seal_entries+=("  \"$name\": \"$(lqip_data_uri "$src")\"")
     echo "  seal $name: $(stat -c%s "$ROOT/static/seals/$name.webp") bytes webp, $(stat -c%s "$ROOT/static/seals/$name.avif") bytes avif"
 done
@@ -89,7 +105,7 @@ for src in "$ROOT"/static/backgrounds/*.webp; do
     name="$(basename "$src" .webp)"
     png="$tmp/$name.bg.png"
     dwebp -quiet "$src" -o "$png"
-    avifenc -q "$AVIF_Q" "$png" "$ROOT/static/backgrounds/$name.avif" >/dev/null
+    encode_avif "$AVIF_Q" "$png" "$ROOT/static/backgrounds/$name.avif"
     bg_entries+=("  \"$name\": \"$(lqip_data_uri "$src")\"")
     echo "  bg $name: $(stat -c%s "$src") bytes webp (untouched), $(stat -c%s "$ROOT/static/backgrounds/$name.avif") bytes avif"
 done
