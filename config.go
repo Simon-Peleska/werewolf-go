@@ -33,6 +33,7 @@ type AppConfig struct {
 	NarratorAPIKey         string `json:"narrator_api_key"`
 	NarratorURL            string `json:"narrator_url"`         // base URL for openai-compatible
 	NarratorSampleRate     int    `json:"narrator_sample_rate"` // Hz, default 24000
+	MinifyAssets           bool   `json:"minify_assets"`        // serve minified htmx/pico/idiomorph builds instead of full source
 }
 
 func (cfg AppConfig) toLogConfig() LogConfig {
@@ -48,8 +49,9 @@ func (cfg AppConfig) toLogConfig() LogConfig {
 
 func defaultConfig() AppConfig {
 	return AppConfig{
-		DB:   "file::memory:?cache=shared",
-		Addr: ":8080",
+		DB:           "file::memory:?cache=shared",
+		Addr:         ":8080",
+		MinifyAssets: true,
 	}
 }
 
@@ -145,6 +147,9 @@ func loadConfig(configPath string) AppConfig {
 			cfg.NarratorSampleRate = n
 		}
 	}
+	if v, ok := envBool("MINIFY_ASSETS"); ok {
+		cfg.MinifyAssets = v
+	}
 
 	// Layer 2: JSON config file — only fields present in the file override env vars
 	if data, err := os.ReadFile(configPath); err == nil {
@@ -194,6 +199,7 @@ func (cfg AppConfig) logConfig() {
 	log.Printf("  narrator_api_key:              %s", censor(cfg.NarratorAPIKey))
 	log.Printf("  narrator_url:                  %s", cfg.NarratorURL)
 	log.Printf("  narrator_sample_rate:          %d", cfg.NarratorSampleRate)
+	log.Printf("  minify_assets:                 %v", cfg.MinifyAssets)
 	log.Println("=====================")
 }
 
@@ -235,6 +241,7 @@ func applyJSONOverlay(cfg *AppConfig, m map[string]json.RawMessage) {
 	if v, ok := m["narrator_sample_rate"]; ok {
 		json.Unmarshal(v, &cfg.NarratorSampleRate)
 	}
+	boolean("minify_assets", &cfg.MinifyAssets)
 }
 
 type flagValues struct {
@@ -262,6 +269,7 @@ type flagValues struct {
 	narratorAPIKey         *string
 	narratorURL            *string
 	narratorSampleRate     *int
+	minifyAssets           *bool
 }
 
 func registerFlags() flagValues {
@@ -290,6 +298,7 @@ func registerFlags() flagValues {
 		narratorAPIKey:         flag.String("narrator-api-key", "", "API key for TTS provider"),
 		narratorURL:            flag.String("narrator-url", "", "base URL for openai-compatible TTS provider"),
 		narratorSampleRate:     flag.Int("narrator-sample-rate", 0, "PCM sample rate in Hz (default 24000)"),
+		minifyAssets:           flag.Bool("minify-assets", true, "serve minified htmx/pico/idiomorph builds (disable for readable source in devtools)"),
 	}
 }
 
@@ -344,6 +353,8 @@ func (fv flagValues) applyTo(cfg *AppConfig) {
 			cfg.NarratorURL = *fv.narratorURL
 		case "narrator-sample-rate":
 			cfg.NarratorSampleRate = *fv.narratorSampleRate
+		case "minify-assets":
+			cfg.MinifyAssets = *fv.minifyAssets
 		}
 	})
 }

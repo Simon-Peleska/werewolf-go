@@ -641,7 +641,7 @@ func newTestContext(t *testing.T) *TestContext {
 	testHub.logf = t.Logf
 	go testHub.run()
 
-	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets()
+	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets(false)
 	if err != nil {
 		t.Fatalf("Failed to load page assets: %v", err)
 	}

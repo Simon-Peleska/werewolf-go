@@ -123,8 +123,14 @@ type TopbarData struct {
 
 // Inlines assets directly into the page so it renders with zero extra requests.
 // indexScriptTag is a smaller bundle since the sign-in page has no WebSocket or player cards.
-func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, err error) {
-	picoCSS, err := staticFS.ReadFile("static/pico.css")
+// minify selects the official minified htmx/pico/idiomorph builds over their full-source counterparts.
+func loadPageAssets(minify bool) (styleTag, gameScriptTag, indexScriptTag template.HTML, err error) {
+	picoCSSPath, htmxPath, htmxWSPath, idiomorphPath := "static/pico.css", "static/htmx.js", "static/htmx-ws.js", "static/idiomorph-ext.js"
+	if minify {
+		picoCSSPath, htmxPath, htmxWSPath, idiomorphPath = "static/pico.min.css", "static/htmx.min.js", "static/htmx-ws.min.js", "static/idiomorph-ext.min.js"
+	}
+
+	picoCSS, err := staticFS.ReadFile(picoCSSPath)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -154,12 +160,12 @@ func loadPageAssets() (styleTag, gameScriptTag, indexScriptTag template.HTML, er
 		return template.HTML(buf.String()), nil
 	}
 
-	gameScriptTag, err = inlineScripts([]string{"static/htmx.js", "static/htmx-ws.js", "static/idiomorph-ext.js", "static/player-card.js"})
+	gameScriptTag, err = inlineScripts([]string{htmxPath, htmxWSPath, idiomorphPath, "static/player-card.js"})
 	if err != nil {
 		return "", "", "", err
 	}
 
-	indexScriptTag, err = inlineScripts([]string{"static/htmx.js", "static/idiomorph-ext.js"})
+	indexScriptTag, err = inlineScripts([]string{htmxPath, idiomorphPath})
 	if err != nil {
 		return "", "", "", err
 	}
@@ -1454,7 +1460,7 @@ func main() {
 		log.Fatal("Failed to parse templates:", err)
 	}
 
-	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets()
+	pageStyleTag, pageGameScriptTag, pageIndexScriptTag, err := loadPageAssets(cfg.MinifyAssets)
 	if err != nil {
 		log.Fatal("Failed to load page assets:", err)
 	}

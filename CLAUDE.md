@@ -320,8 +320,8 @@ Bundled third-party components and their licenses are documented in `THIRD_PARTY
 
 | Component | Files | License |
 |-----------|-------|---------|
-| PicoCSS | `static/pico.css` | MIT |
-| HTMX | `static/htmx.js`, `static/htmx-ws.js`, `static/idiomorph-ext.js` | 0BSD |
+| PicoCSS | `static/pico.css`, `static/pico.min.css` | MIT |
+| HTMX | `static/htmx.js`, `static/htmx.min.js`, `static/htmx-ws.js`, `static/htmx-ws.min.js`, `static/idiomorph-ext.js`, `static/idiomorph-ext.min.js` | 0BSD |
 | Metal Mania font | `static/fonts/MetalMania-Regular.ttf` | SIL OFL 1.1 |
 | IM Fell Great Primer font | `static/fonts/IMFellGreatPrimer-*.ttf` | SIL OFL 1.1 |
 
@@ -374,6 +374,7 @@ Bool env vars accept `1`, `true`, or `yes`.
 | Narrator API key | `NARRATOR_API_KEY` | `narrator_api_key` | `-narrator-api-key` | — | API key for TTS provider (openai-compatible falls back to `OPENAI_API_KEY` if unset) |
 | Narrator URL | `NARRATOR_URL` | `narrator_url` | `-narrator-url` | — | Base URL for openai-compatible TTS (falls back to `OPENAI_API_BASE` if unset) |
 | Narrator sample rate | `NARRATOR_SAMPLE_RATE` | `narrator_sample_rate` | `-narrator-sample-rate` | `24000` | PCM sample rate in Hz |
+| Minify assets | `MINIFY_ASSETS` | `minify_assets` | `-minify-assets` | `true` | Serve the official minified htmx/pico/idiomorph builds instead of full source (disable for readable source in devtools) |
 
 ## Tools & Claude Skills
 

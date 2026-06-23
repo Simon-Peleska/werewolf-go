@@ -6,12 +6,12 @@ This project bundles the following third-party components.
 
 ## PicoCSS
 
-Files: `static/pico.css`
+Files: `static/pico.css`, `static/pico.min.css`
 Source: https://github.com/picocss/pico
 
 MIT License
 
-Copyright (c) 2019-2024 PicoCSS contributors
+Copyright (c) 2019-2025 PicoCSS contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -35,8 +35,8 @@ SOFTWARE.
 
 ## HTMX
 
-Files: `static/htmx.js`, `static/htmx-ws.js`, `static/idiomorph-ext.js`
-Source: https://github.com/bigskysoftware/htmx
+Files: `static/htmx.js`, `static/htmx.min.js`, `static/htmx-ws.js`, `static/htmx-ws.min.js`, `static/idiomorph-ext.js`, `static/idiomorph-ext.min.js`
+Source: https://github.com/bigskysoftware/htmx, https://github.com/bigskysoftware/idiomorph (idiomorph-ext.js), https://github.com/bigskysoftware/htmx-extensions (htmx-ws.js)
 
 Zero-Clause BSD License (0BSD)
 
